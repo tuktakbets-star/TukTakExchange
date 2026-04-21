@@ -1,0 +1,135 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Unique identifier for the user" },
+        "displayName": { "type": "string", "description": "Full name of the user" },
+        "email": { "type": "string", "format": "email", "description": "Email address" },
+        "phoneNumber": { "type": "string", "description": "Phone number" },
+        "role": { "type": "string", "enum": ["user", "admin", "client"], "description": "User role" },
+        "status": { "type": "string", "enum": ["active", "banned"], "description": "User status" },
+        "kycStatus": { "type": "string", "enum": ["none", "pending", "verified", "rejected"], "description": "KYC verification status" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Account creation timestamp" }
+      },
+      "required": ["uid", "email"]
+    },
+    "Wallet": {
+      "title": "Wallet",
+      "description": "User's currency wallet",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Owner's user ID" },
+        "currency": { "type": "string", "description": "Currency code (e.g., VND, USD)" },
+        "balance": { "type": "number", "description": "Current balance" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last update timestamp" }
+      },
+      "required": ["uid", "currency", "balance"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Financial transaction record",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "User ID involved" },
+        "type": { "type": "string", "enum": ["deposit", "withdraw", "send", "receive", "exchange", "recharge"], "description": "Type of transaction" },
+        "amount": { "type": "number", "description": "Transaction amount" },
+        "currency": { "type": "string", "description": "Currency used" },
+        "status": { "type": "string", "enum": ["pending", "completed", "failed", "disputed"], "description": "Transaction status" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Transaction timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last update timestamp" },
+        "targetCurrency": { "type": "string", "description": "Target currency for exchange" },
+        "receiverId": { "type": "string", "description": "Recipient's user ID" },
+        "method": { "type": "string", "description": "Payment method used" },
+        "proofUrl": { "type": "string", "description": "URL to payment proof image" },
+        "adminProof": { "type": "string", "description": "URL to admin's payment proof" },
+        "disputeReason": { "type": "string", "description": "Reason for dispute" },
+        "bankInfo": { "type": "object", "description": "Bank details for withdrawals" },
+        "receiverInfo": { "type": "object", "description": "Recipient details for P2P" },
+        "rechargeDetails": { "type": "object", "description": "Details for mobile recharge" }
+      },
+      "required": ["uid", "type", "amount", "currency", "status", "createdAt"]
+    },
+    "Rate": {
+      "title": "Rate",
+      "description": "Exchange rate definition",
+      "type": "object",
+      "properties": {
+        "base": { "type": "string", "description": "Base currency" },
+        "target": { "type": "string", "description": "Target currency" },
+        "rate": { "type": "number", "description": "Exchange rate" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last update timestamp" }
+      },
+      "required": ["base", "target", "rate"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "System notification",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "Notification title" },
+        "message": { "type": "string", "description": "Notification content" },
+        "type": { "type": "string", "enum": ["alert", "offer", "warning"], "description": "Type of notification" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" },
+        "read": { "type": "boolean", "description": "Read status" }
+      },
+      "required": ["title", "message", "type", "createdAt"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Chat message between user and admin",
+      "type": "object",
+      "properties": {
+        "senderId": { "type": "string", "description": "ID of the sender" },
+        "receiverId": { "type": "string", "description": "ID of the receiver" },
+        "text": { "type": "string", "description": "Message content" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp" },
+        "read": { "type": "boolean", "description": "Read status" }
+      },
+      "required": ["senderId", "receiverId", "text", "createdAt"]
+    },
+    "AdminSetting": {
+      "title": "AdminSetting",
+      "description": "Global settings managed by admin",
+      "type": "object",
+      "properties": {
+        "key": { "type": "string", "description": "Setting key (e.g., deposit_info)" },
+        "value": { "type": "object", "description": "Setting value (QR code, bank details, etc.)" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last update" }
+      },
+      "required": ["key", "value"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile documents"
+    },
+    "/wallets/{walletId}": {
+      "schema": "Wallet",
+      "description": "User wallets"
+    },
+    "/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Transaction history"
+    },
+    "/rates/{rateId}": {
+      "schema": "Rate",
+      "description": "Exchange rates"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "System notifications"
+    },
+    "/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Chat messages"
+    },
+    "/adminSettings/{settingId}": {
+      "schema": "AdminSetting",
+      "description": "Global admin settings"
+    }
+  }
+}

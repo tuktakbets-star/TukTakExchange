@@ -1,0 +1,165 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId}
+    // Fields:
+    //   - uid: string (required) - User ID
+    //   - displayName: string (optional) - Full name
+    //   - email: string (required) - Email address
+    //   - phoneNumber: string (optional) - Phone number
+    //   - role: string (optional, enum: user, admin) - User role
+    //   - createdAt: timestamp (optional) - Creation time
+    //
+    // Collection: wallets
+    // Document ID: {walletId}
+    // Fields:
+    //   - uid: string (required) - Owner ID
+    //   - currency: string (required) - Currency code
+    //   - balance: number (required) - Current balance
+    //   - updatedAt: timestamp (optional) - Last update
+    //
+    // Collection: transactions
+    // Document ID: {transactionId}
+    // Fields:
+    //   - uid: string (required) - User ID
+    //   - type: string (required, enum: deposit, withdraw, send, receive, exchange)
+    //   - amount: number (required)
+    //   - currency: string (required)
+    //   - status: string (required, enum: pending, completed, failed)
+    //   - createdAt: timestamp (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        (
+          request.auth.token.email in [
+            "tuktakbets@gmail.com",
+            "shohagrana284650@gmail.com",
+            "shohagrana28465@gmail.com",
+            "shohagrana84650@gmail.com",
+            "shohagrana4650@gmail.com",
+            "shohagrana650@gmail.com",
+            "shohagrana60@gmail.com"
+          ] ||
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+        );
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.size() >= 5;
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return (data.uid == request.auth.uid || isAdmin()) &&
+             (
+               !('role' in data) || 
+               data.role == 'user' || 
+               data.role == 'client' || 
+               isAdmin()
+             );
+    }
+
+    function isValidWallet(data) {
+      return data.keys().hasAll(['uid', 'currency', 'balance']) &&
+             (data.uid == request.auth.uid || isAdmin()) &&
+             data.balance is number &&
+             data.currency is string;
+    }
+
+    function isValidTransaction(data) {
+      return data.keys().hasAll(['uid', 'type', 'amount', 'currency', 'status', 'createdAt']) &&
+             (data.uid == request.auth.uid || request.resource.data.type == 'receive' || isAdmin()) &&
+             data.amount is number &&
+             data.type in ['deposit', 'withdraw', 'send', 'receive', 'exchange', 'recharge', 'adjustment', 'cash_in', 'add_money', 'cash_out'] &&
+             data.status in ['pending', 'completed', 'failed', 'disputed', 'accepted', 'paid'];
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated(); // Allow lookup by phone number for Send Money
+      allow list: if isAdmin();
+      allow create: if (isOwner(userId) || isAdmin()) && isValidUser(request.resource.data);
+      allow update: if (isOwner(userId) || isAdmin()) && isValidUser(request.resource.data) && 
+                    (request.resource.data.role == resource.data.role || isAdmin());
+    }
+
+    match /wallets/{walletId} {
+      allow read, list: if isAuthenticated() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && isValidWallet(request.resource.data);
+      allow update: if isAuthenticated() && (
+        (resource.data.uid == request.auth.uid && isValidWallet(request.resource.data)) || 
+        isAdmin() ||
+        (request.resource.data.balance > resource.data.balance && request.resource.data.uid == resource.data.uid) // Allow anyone to deposit into a wallet
+      );
+    }
+
+    match /transactions/{transactionId} {
+      allow read, list: if isAuthenticated() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && isValidTransaction(request.resource.data);
+      allow update: if isAdmin() || (isOwner(resource.data.uid) && request.resource.data.status == 'completed' && resource.data.status == 'paid');
+      allow delete: if isAuthenticated() && (resource.data.uid == request.auth.uid || isAdmin()) && (resource.data.status == 'pending' || resource.data.status == 'disputed' || resource.data.status == 'failed' || resource.data.status == 'expired' || isAdmin());
+    }
+
+    match /kycSubmissions/{submissionId} {
+      allow read, list: if isAdmin();
+      allow create: if isAuthenticated();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /rates/{rateId} {
+      allow read: if true; // Publicly readable
+      allow write: if isAdmin();
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    match /messages/{messageId} {
+      allow read, write: if false; // Legacy root messages
+    }
+
+    match /chats/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if isOwner(userId) || isAdmin();
+      
+      match /messages/{messageId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if (isOwner(userId) && request.resource.data.senderId == request.auth.uid) || isAdmin();
+      }
+    }
+
+    match /adminSettings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}
