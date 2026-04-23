@@ -10,14 +10,23 @@ interface UserProfile {
   email: string;
   displayName: string;
   photoURL: string;
-  role: 'user' | 'admin';
+  phoneNumber?: string;
+  accountNumber?: string;
+  role: 'user' | 'admin' | 'subadmin';
   kycStatus: 'none' | 'pending' | 'verified' | 'rejected';
   createdAt: string;
   notificationsEnabled?: boolean;
   twoFactorEnabled?: boolean;
+  paymentMethods?: Array<{
+    id: string;
+    bankName: string;
+    accountNumber: string;
+    createdAt: string;
+  }>;
   kycData?: {
     passportUrl: string;
     selfieUrl: string;
+    submittedAt?: string;
   };
 }
 
@@ -26,6 +35,7 @@ interface AuthContextType {
   profile: UserProfile | null;
   loading: boolean;
   isAdmin: boolean;
+  isSubAdmin: boolean;
   isAuthReady: boolean;
   logout: () => Promise<void>;
 }
@@ -35,6 +45,7 @@ const AuthContext = createContext<AuthContextType>({
   profile: null,
   loading: true,
   isAdmin: false,
+  isSubAdmin: false,
   isAuthReady: false,
   logout: async () => {},
 });
@@ -49,11 +60,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = async () => {
     try {
       await auth.signOut();
+      // Clear all authentication related data
       localStorage.removeItem("user");
       localStorage.removeItem("token");
-      window.location.href = '/overview';
+      localStorage.removeItem("sessionId");
+      sessionStorage.clear();
+      
+      setUser(null);
+      setProfile(null);
+      
+      // Force redirect to overview page
+      navigate('/overview');
     } catch (error) {
       console.error("Logout error:", error);
+      // Even if signOut fails, try to redirect
+      navigate('/overview');
     }
   };
 
@@ -65,6 +86,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsAuthReady(true);
       
       if (firebaseUser) {
+        // Register current session
+        const sessionId = localStorage.getItem('sessionId') || Math.random().toString(36).substring(2, 15);
+        localStorage.setItem('sessionId', sessionId);
+        
+        const deviceData = {
+          id: sessionId,
+          userAgent: navigator.userAgent,
+          platform: navigator.platform,
+          lastActive: new Date().toISOString(),
+          isActive: true
+        };
+
+        // Update or register session
+        await firebaseService.setDocument(`users/${firebaseUser.uid}/sessions`, sessionId, deviceData);
+
+        // Listen for session revocation
+        const unsubSession = firebaseService.subscribeToDocument(`users/${firebaseUser.uid}/sessions`, sessionId, (data) => {
+          if (!data) {
+            // Session was deleted/revoked
+            logout();
+          }
+        });
+
         // Clear previous subscription
         if (unsubscribeProfile) unsubscribeProfile();
 
@@ -89,6 +133,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               email: firebaseUser.email || '',
               displayName: firebaseUser.displayName || '',
               photoURL: firebaseUser.photoURL || '',
+              phoneNumber: firebaseUser.phoneNumber || '',
+              accountNumber: firebaseUser.phoneNumber || '',
               role: adminEmails.includes(firebaseUser.email || '') ? 'admin' : 'user',
               kycStatus: 'none',
               createdAt: new Date().toISOString(),
@@ -117,6 +163,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     loading,
     isAdmin: profile?.role === 'admin' || 
              ['tuktakbets@gmail.com', 'shohagrana284650@gmail.com', 'shohagrana28465@gmail.com', 'shohagrana84650@gmail.com', 'shohagrana4650@gmail.com', 'shohagrana650@gmail.com', 'shohagrana60@gmail.com'].includes(user?.email || ''),
+    isSubAdmin: profile?.role === 'subadmin',
     isAuthReady,
     logout,
   };

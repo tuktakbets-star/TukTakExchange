@@ -177,8 +177,8 @@ export default function Wallet() {
   };
 
   const handleWithdraw = async () => {
-    if (!amount || isNaN(Number(amount))) {
-      toast.error('Please enter a valid amount');
+    if (!amount || isNaN(Number(amount)) || Number(amount) < 200000) {
+      toast.error('Minimum Withdrawal amount is 200,000 VND');
       return;
     }
 

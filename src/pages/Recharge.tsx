@@ -69,8 +69,8 @@ export default function Recharge() {
       }
       setStep(2);
     } else if (step === 2) {
-      if (!amount || Number(amount) <= 0) {
-        toast.error(t('enter_valid_amount'));
+      if (!amount || Number(amount) < 20000) {
+        toast.error('Minimum Recharge amount is 20,000 VND');
         return;
       }
       setStep(3);

@@ -41,7 +41,12 @@ import AdminNotifications from './pages/admin/AdminNotifications';
 import AdminMessages from './pages/admin/AdminMessages';
 import AdminDisputes from './pages/admin/AdminDisputes';
 import AdminSettings from './pages/admin/AdminSettings';
+import AdminLogs from './pages/admin/AdminLogs';
 import Layout from './components/Layout';
+import OperatorLayout from './components/operator/OperatorLayout';
+import OperatorDashboard from './pages/operator/OperatorDashboard';
+import OperatorOrders from './pages/operator/OperatorOrders';
+import OperatorCreateUser from './pages/operator/OperatorCreateUser';
 
 const ProtectedRoute = ({ children, adminOnly = false }: { children: React.ReactNode, adminOnly?: boolean }) => {
   const { user, isAdmin, loading } = useAuth();
@@ -89,6 +94,7 @@ export default function App() {
               <Route path="/overview" element={<Landing />} />
               <Route path="/auth" element={<Auth />} />
               <Route path="/secure-admin-login-987" element={<Auth defaultAdminMode={true} />} />
+              <Route path="/subadmin-login" element={<Auth defaultAdminMode={true} />} />
               <Route path="/live-rates" element={<LiveRates />} />
               
               <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
@@ -121,9 +127,19 @@ export default function App() {
                 <Route path="messages" element={<AdminMessages />} />
                 <Route path="disputes" element={<AdminDisputes />} />
                 <Route path="settings" element={<AdminSettings />} />
+                <Route path="logs" element={<AdminLogs />} />
+              </Route>
+
+              {/* Operator Routes */}
+              <Route path="/operator" element={<OperatorLayout />}>
+                <Route index element={<Navigate to="/operator/dashboard" replace />} />
+                <Route path="dashboard" element={<OperatorDashboard />} />
+                <Route path="orders" element={<OperatorOrders />} />
+                <Route path="completed-orders" element={<OperatorOrders showCompleted={true} />} />
+                <Route path="create-user" element={<OperatorCreateUser />} />
               </Route>
               
-              <Route path="*" element={<Navigate to="/" />} />
+              <Route path="*" element={<Navigate to="/overview" />} />
             </Routes>
             <Toaster position="top-right" theme="dark" closeButton />
           </div>

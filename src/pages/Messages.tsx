@@ -19,6 +19,12 @@ export default function Messages() {
   const [loading, setLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [recordedUrl, setRecordedUrl] = useState<string | null>(null);
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<any>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const mediaInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
@@ -50,7 +56,8 @@ export default function Messages() {
 
   const handleSendMessage = async (e?: React.FormEvent, mediaData?: { type: 'image' | 'video' | 'voice', url: string }) => {
     e?.preventDefault();
-    if (!message.trim() && !mediaData && !profile?.uid) return;
+    if (!profile?.uid) return;
+    if (!message.trim() && !mediaData) return;
 
     const msgText = message;
     setMessage('');
@@ -106,17 +113,69 @@ export default function Messages() {
     }
   };
 
-  const startRecording = () => {
-    setIsRecording(true);
-    toast.info('Recording voice...');
-    // Real implementation would use MediaRecorder API
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const url = URL.createObjectURL(audioBlob);
+        setRecordedUrl(url);
+        setAudioBlob(audioBlob);
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setRecordingTime(0);
+      timerRef.current = setInterval(() => {
+        setRecordingTime(prev => prev + 1);
+      }, 1000);
+      
+    } catch (error) {
+      console.error('Error starting recording:', error);
+      toast.error('Microphone access denied. Please check your browser permissions.');
+    }
   };
 
   const stopRecording = () => {
-    setIsRecording(false);
-    toast.success('Voice message sent!');
-    // Simulation
-    handleSendMessage(undefined, { type: 'voice', url: 'voice-simulation-url' });
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      if (timerRef.current) clearInterval(timerRef.current);
+    }
+  };
+
+  const handleSendVoice = async () => {
+    if (!audioBlob) return;
+
+    setIsUploading(true);
+    try {
+      const url = await firebaseService.uploadBlob(audioBlob, 'voice_message.webm');
+      await handleSendMessage(undefined, { type: 'voice', url });
+      setRecordedUrl(null);
+      setAudioBlob(null);
+      toast.success('Voice message sent!');
+    } catch (error) {
+      toast.error('Failed to send voice message');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const formatRecordingTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   return (
@@ -187,9 +246,12 @@ export default function Messages() {
                   ) : msg.type === 'video' ? (
                     <video src={msg.url} controls className="max-w-full rounded-lg" />
                   ) : msg.type === 'voice' ? (
-                    <div className="flex items-center gap-2">
-                       <Mic className="w-4 h-4" />
-                       <span className="italic uppercase text-[10px] font-bold tracking-widest">Voice Message</span>
+                    <div className="flex flex-col gap-2">
+                       <div className="flex items-center gap-2">
+                         <Mic className="w-4 h-4" />
+                         <span className="italic uppercase text-[10px] font-bold tracking-widest text-slate-400">Voice Message</span>
+                       </div>
+                       <audio src={msg.url} controls className="h-8 w-48 brightness-90 contrast-125" />
                     </div>
                   ) : (
                     msg.text
@@ -206,48 +268,96 @@ export default function Messages() {
 
       {/* Input Area */}
       <div className="p-6 bg-white/5 border-t border-white/5">
-        <form onSubmit={handleSendMessage} className="flex flex-col gap-3">
-          <div className="flex items-center gap-2 mb-2">
-             <input type="file" ref={mediaInputRef} accept="image/*" className="hidden" onChange={(e) => handleMediaUpload(e, 'image')} />
-             <input type="file" ref={videoInputRef} accept="video/*" className="hidden" onChange={(e) => handleMediaUpload(e, 'video')} />
-             
-             <Button type="button" variant="ghost" size="sm" onClick={() => mediaInputRef.current?.click()} className="text-slate-400 hover:text-white flex gap-2">
-                <Image className="w-4 h-4" /> {t('send_photo')}
-             </Button>
-             <Button type="button" variant="ghost" size="sm" onClick={() => videoInputRef.current?.click()} className="text-slate-400 hover:text-white flex gap-2">
-                <VideoIcon className="w-4 h-4" /> {t('send_video')}
-             </Button>
-          </div>
+        <AnimatePresence mode="wait">
+          {recordedUrl ? (
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 20 }}
+              className="flex items-center gap-4 bg-slate-900 border border-white/10 p-4 rounded-[2rem]"
+            >
+              <div className="flex-1 flex items-center gap-3">
+                <div className="w-10 h-10 bg-red-500/10 rounded-full flex items-center justify-center text-red-500">
+                  <Mic className="w-5 h-5" />
+                </div>
+                <div className="flex-1">
+                  <audio src={recordedUrl} controls className="h-8 w-full brightness-90" />
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={() => {
+                    setRecordedUrl(null);
+                    setAudioBlob(null);
+                  }}
+                  className="text-red-500 hover:bg-red-500/10 rounded-lg h-10 font-bold"
+                >
+                  Discard
+                </Button>
+                <Button 
+                  disabled={isUploading}
+                  onClick={handleSendVoice}
+                  className="bg-brand-blue hover:bg-blue-600 text-white rounded-lg h-10 px-6 font-bold flex items-center gap-2"
+                >
+                  {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  Send
+                </Button>
+              </div>
+            </motion.div>
+          ) : (
+            <form onSubmit={handleSendMessage} className="flex flex-col gap-3">
+              <div className="flex items-center gap-2 mb-2">
+                 <input type="file" ref={mediaInputRef} accept="image/*" className="hidden" onChange={(e) => handleMediaUpload(e, 'image')} />
+                 <input type="file" ref={videoInputRef} accept="video/*" className="hidden" onChange={(e) => handleMediaUpload(e, 'video')} />
+                 
+                 <Button type="button" variant="ghost" size="sm" onClick={() => mediaInputRef.current?.click()} className="text-slate-400 hover:text-white flex gap-2">
+                    <Image className="w-4 h-4" /> {t('send_photo')}
+                 </Button>
+                 <Button type="button" variant="ghost" size="sm" onClick={() => videoInputRef.current?.click()} className="text-slate-400 hover:text-white flex gap-2">
+                    <VideoIcon className="w-4 h-4" /> {t('send_video')}
+                 </Button>
+              </div>
 
-          <div className="flex items-center gap-3">
-            {isRecording ? (
-               <Button type="button" variant="destructive" onClick={stopRecording} className="rounded-full flex gap-2 animate-pulse">
-                  <StopCircle className="w-5 h-5" /> {t('stop')}
-               </Button>
-            ) : (
-              <Button type="button" variant="ghost" size="icon" onClick={startRecording} className="text-slate-400 hover:text-white rounded-full shrink-0">
-                <Mic className="w-5 h-5" />
-              </Button>
-            )}
-            
-            <div className="relative flex-1">
-              <Input 
-                placeholder={t('sendMsg')}
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                className="bg-slate-900 border-white/10 h-12 rounded-full pl-4 pr-12 text-white focus:ring-brand-blue/50"
-              />
-              <Button 
-                type="submit"
-                size="icon" 
-                disabled={!message.trim() || isUploading}
-                className="absolute right-1 top-1 h-10 w-10 bg-brand-blue hover:bg-blue-500 rounded-full transition-all disabled:opacity-50 disabled:bg-slate-800"
-              >
-                {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4 text-white" />}
-              </Button>
-            </div>
-          </div>
-        </form>
+              <div className="flex items-center gap-3">
+                {isRecording ? (
+                   <div className="flex-1 flex items-center gap-4 bg-red-600/10 border border-red-500/20 px-6 h-12 rounded-full text-red-500 font-bold">
+                      <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse shrink-0" />
+                      <span className="flex-1">Recording...</span>
+                      <span className="font-mono">{formatRecordingTime(recordingTime)}</span>
+                      <Button type="button" variant="ghost" size="icon" onClick={stopRecording} className="text-red-500 hover:bg-red-500/10 rounded-full">
+                         <StopCircle className="w-6 h-6" />
+                      </Button>
+                   </div>
+                ) : (
+                  <>
+                    <Button type="button" variant="ghost" size="icon" onClick={startRecording} className="text-slate-400 hover:text-white rounded-full shrink-0">
+                      <Mic className="w-5 h-5" />
+                    </Button>
+                    
+                    <div className="relative flex-1">
+                      <Input 
+                        placeholder={t('sendMsg')}
+                        value={message}
+                        onChange={(e) => setMessage(e.target.value)}
+                        className="bg-slate-900 border-white/10 h-12 rounded-full pl-4 pr-12 text-white focus:ring-brand-blue/50"
+                      />
+                      <Button 
+                        type="submit"
+                        size="icon" 
+                        disabled={!message.trim() || isUploading}
+                        className="absolute right-1 top-1 h-10 w-10 bg-brand-blue hover:bg-blue-500 rounded-full transition-all disabled:opacity-50 disabled:bg-slate-800"
+                      >
+                        {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4 text-white" />}
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </form>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

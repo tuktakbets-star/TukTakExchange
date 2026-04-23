@@ -84,6 +84,11 @@
   "features": "विशेषताहरू",
   "about": "बारेमा",
   "security_settings_updated": "सुरक्षा सेटिङ्हरू अपडेट गरियो",
+  "order_accepted_header": "अर्डर प्राप्त भयो!",
+  "payment_sent_header": "पैसा पठाइयो!",
+  "completed_header": "कार्य सम्पन्न भयो!",
+  "disputed_header": "समीक्षा अन्तर्गत",
+  "cancelled_header": "रद्द गरियो",
   "notification_settings_updated": "सूचना सेटिङ्हरू अपडेट गरियो",
   "two_factor_auth_active": "दुई-कारक प्रमाणीकरण अब सक्रिय छ",
   "settings_update_failed": "सेटिङ्हरू अपडेट गर्न असफल भयो"

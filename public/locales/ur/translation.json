@@ -81,6 +81,11 @@
   "pending_desc": "ایڈمن آپ کی درخواست کا جائزہ لے رہا ہے... براہ کرم اسی پیج پر رہیں۔",
   "trust_message": "اللہ پر بھروسہ رکھیئے۔ آپ کی محنت کی کمائی پکا آپ کے اکاؤنٹ میں پہنچ جائے گی۔ ہمارے ساتھ جڑے رہیئے - کوئی بھی دھوکہ نہیں کھائے گا، انشاء اللہ۔",
   "security_settings_updated": "سیکیورٹی ترتیبات اپ ڈیٹ کر دی گئیں",
+  "order_accepted_header": "آرڈر مل گیا!",
+  "payment_sent_header": "رقم بھیج دی گئی!",
+  "completed_header": "کام مکمل ہو گیا!",
+  "disputed_header": "زیرِ غور",
+  "cancelled_header": "منسوخ کر دیا گیا",
   "notification_settings_updated": "اطلاعات کی ترتیبات اپ ڈیٹ کر دی گئیں",
   "two_factor_auth_active": "ٹو فیکٹر توثیق اب فعال ہے",
   "settings_update_failed": "ترتیبات اپ ڈیٹ کرنے میں ناکام"

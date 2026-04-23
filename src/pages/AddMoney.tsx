@@ -66,8 +66,8 @@ export default function AddMoney() {
 
   const handleNext = () => {
     if (step === 1) {
-      if (!amountVND || Number(amountVND) <= 0) {
-        toast.error('Please enter a valid amount');
+      if (!amountVND || Number(amountVND) < 300000) {
+        toast.error('Minimum Add Money amount is 300,000 VND');
         return;
       }
       setStep(2);

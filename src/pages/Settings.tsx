@@ -24,15 +24,119 @@ import {
   SelectTrigger, 
   SelectValue 
 } from '@/components/ui/select';
-import { auth } from '../lib/firebase';
+import { auth, db } from '../lib/firebase';
 import { firebaseService } from '../lib/firebaseService';
 import { toast } from 'sonner';
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogDescription,
+  DialogFooter
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
+import { Plus, X, Trash2 } from 'lucide-react';
 
 export default function Settings() {
   const { t, i18n } = useTranslation();
   const { profile } = useAuth();
   const [notifications, setNotifications] = useState(profile?.notificationsEnabled !== false);
   const [twoFactor, setTwoFactor] = useState(profile?.twoFactorEnabled || false);
+  const [sessions, setSessions] = useState<any[]>([]);
+  const [showSessionsModal, setShowSessionsModal] = useState(false);
+  const [isLoadingSessions, setIsLoadingSessions] = useState(false);
+  
+  // Password Change State
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+
+  // Payment Methods State
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [newBankName, setNewBankName] = useState('');
+  const [newAccountNumber, setNewAccountNumber] = useState('');
+  const [isAddingPayment, setIsAddingPayment] = useState(false);
+
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword !== confirmPassword) {
+      toast.error('Passwords do not match');
+      return;
+    }
+    if (newPassword.length < 6) {
+      toast.error('Password must be at least 6 characters');
+      return;
+    }
+
+    setIsUpdatingPassword(true);
+    try {
+      const user = auth.currentUser;
+      if (user && user.email) {
+        const credential = EmailAuthProvider.credential(user.email, currentPassword);
+        await reauthenticateWithCredential(user, credential);
+        await updatePassword(user, newPassword);
+        toast.success('Password updated successfully');
+        setShowPasswordModal(false);
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+      }
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to update password');
+    } finally {
+      setIsUpdatingPassword(false);
+    }
+  };
+
+  const handleAddPaymentMethod = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newBankName || !newAccountNumber) {
+      toast.error('Please fill in all details');
+      return;
+    }
+
+    setIsAddingPayment(true);
+    try {
+      const currentMethods = profile?.paymentMethods || [];
+      const newMethod = {
+        id: Math.random().toString(36).substr(2, 9),
+        bankName: newBankName,
+        accountNumber: newAccountNumber,
+        createdAt: new Date().toISOString()
+      };
+
+      await firebaseService.updateDocument('users', profile?.uid!, {
+        paymentMethods: [...currentMethods, newMethod]
+      });
+
+      toast.success('Payment method added');
+      setNewBankName('');
+      setNewAccountNumber('');
+      setShowPaymentModal(false);
+    } catch (error) {
+      toast.error('Failed to add payment method');
+    } finally {
+      setIsAddingPayment(false);
+    }
+  };
+
+  const removePaymentMethod = async (id: string) => {
+    try {
+      const currentMethods = profile?.paymentMethods || [];
+      const filtered = currentMethods.filter((m: any) => m.id !== id);
+      await firebaseService.updateDocument('users', profile?.uid!, {
+        paymentMethods: filtered
+      });
+      toast.success('Payment method removed');
+    } catch (error) {
+      toast.error('Failed to remove payment method');
+    }
+  };
 
   const handleToggleTwoFactor = async (checked: boolean) => {
     setTwoFactor(checked);
@@ -64,6 +168,35 @@ export default function Settings() {
     }
   };
 
+  const handleManageDevices = async () => {
+    if (!profile?.uid) return;
+    setIsLoadingSessions(true);
+    setShowSessionsModal(true);
+    try {
+      const data = await firebaseService.getCollection(`users/${profile.uid}/sessions`);
+      setSessions(data);
+    } catch (error) {
+      toast.error('Failed to load active sessions');
+    } finally {
+      setIsLoadingSessions(false);
+    }
+  };
+
+  const logoutDevice = async (sessionId: string) => {
+    if (!profile?.uid) return;
+    try {
+      await firebaseService.deleteDocument(`users/${profile.uid}/sessions`, sessionId);
+      setSessions(prev => prev.filter(s => s.id !== sessionId));
+      toast.success('Device logged out successfully');
+      
+      // If it's current device, auth context will handle it via listener
+    } catch (error) {
+      toast.error('Failed to logout device');
+    }
+  };
+
+  const currentSessionId = localStorage.getItem('sessionId');
+
   return (
     <div className="max-w-4xl mx-auto space-y-8">
       <div>
@@ -78,7 +211,10 @@ export default function Settings() {
             <CardTitle className="text-lg font-display font-bold">{t('account_info')}</CardTitle>
           </CardHeader>
           <CardContent className="p-0 divide-y divide-white/5">
-            <div className="p-6 flex items-center justify-between hover:bg-white/5 transition-colors cursor-pointer group">
+            <div 
+              className="p-6 flex items-center justify-between hover:bg-white/5 transition-colors cursor-pointer group"
+              onClick={() => setShowPasswordModal(true)}
+            >
               <div className="flex items-center gap-4">
                 <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-500">
                   <Lock className="w-5 h-5" />
@@ -91,7 +227,10 @@ export default function Settings() {
               <ChevronRight className="w-5 h-5 text-slate-600 group-hover:text-white transition-colors" />
             </div>
 
-            <div className="p-6 flex items-center justify-between hover:bg-white/5 transition-colors cursor-pointer group">
+            <div 
+              className="p-6 flex items-center justify-between hover:bg-white/5 transition-colors cursor-pointer group"
+              onClick={() => setShowPaymentModal(true)}
+            >
               <div className="flex items-center gap-4">
                 <div className="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center text-purple-500">
                   <CreditCard className="w-5 h-5" />
@@ -135,7 +274,14 @@ export default function Settings() {
                   <p className="text-xs text-slate-500">{t('device_management_desc')}</p>
                 </div>
               </div>
-              <Button variant="ghost" size="sm" className="text-brand-blue">{t('manage')}</Button>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="text-brand-blue"
+                onClick={handleManageDevices}
+              >
+                {t('manage')}
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -213,6 +359,196 @@ export default function Settings() {
           </Button>
         </div>
       </div>
+
+      {/* Password Change Modal */}
+      <Dialog open={showPasswordModal} onOpenChange={setShowPasswordModal}>
+        <DialogContent className="glass-dark border-white/5 text-white rounded-3xl">
+          <DialogHeader>
+            <DialogTitle>{t('update_password') || 'Update Password'}</DialogTitle>
+            <DialogDescription className="text-slate-400">
+              {t('password_change_desc') || 'Enter your current password and a new one to update.'}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleUpdatePassword} className="space-y-4">
+            <div className="space-y-2">
+              <Label>{t('current_password') || 'Current Password'}</Label>
+              <Input 
+                type="password" 
+                value={currentPassword} 
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                required
+                className="bg-white/5 border-white/10"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>{t('new_password') || 'New Password'}</Label>
+              <Input 
+                type="password" 
+                value={newPassword} 
+                onChange={(e) => setNewPassword(e.target.value)}
+                required
+                className="bg-white/5 border-white/10"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>{t('confirm_password') || 'Confirm Password'}</Label>
+              <Input 
+                type="password" 
+                value={confirmPassword} 
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+                className="bg-white/5 border-white/10"
+              />
+            </div>
+            <DialogFooter>
+              <Button type="submit" disabled={isUpdatingPassword} className="w-full bg-brand-blue hover:bg-blue-500">
+                {isUpdatingPassword ? t('updating') || 'Updating...' : t('update_password') || 'Update Password'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Payment Methods Modal */}
+      <Dialog open={showPaymentModal} onOpenChange={setShowPaymentModal}>
+        <DialogContent className="glass-dark border-white/5 text-white rounded-3xl max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t('payment_methods')}</DialogTitle>
+            <DialogDescription className="text-slate-400">
+              {t('payment_methods_desc')}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-6">
+            {/* Existing Methods */}
+            <div className="space-y-3">
+              {profile?.paymentMethods?.map((method: any) => (
+                <div key={method.id} className="p-4 bg-white/5 rounded-2xl border border-white/5 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-white/5 rounded-lg flex items-center justify-center">
+                      <CreditCard className="w-5 h-5 text-purple-400" />
+                    </div>
+                    <div>
+                      <p className="font-bold text-sm">{method.bankName}</p>
+                      <p className="text-xs text-slate-500">{method.accountNumber}</p>
+                    </div>
+                  </div>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="text-slate-500 hover:text-red-500"
+                    onClick={() => removePaymentMethod(method.id)}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </div>
+              ))}
+              {(!profile?.paymentMethods || profile.paymentMethods.length === 0) && (
+                <p className="text-center text-xs text-slate-500 py-4 italic">{t('no_payment_methods') || 'No payment methods added yet.'}</p>
+              )}
+            </div>
+
+            <div className="h-px bg-white/5" />
+
+            {/* Add New */}
+            <form onSubmit={handleAddPaymentMethod} className="space-y-4">
+              <p className="text-xs font-bold uppercase tracking-widest text-slate-500">{t('add_new_method') || 'Add New Method'}</p>
+              <div className="space-y-2">
+                <Label className="text-xs">{t('bank_name') || 'Bank Name'}</Label>
+                <Input 
+                  value={newBankName} 
+                  onChange={(e) => setNewBankName(e.target.value)}
+                  placeholder="e.g. Vietcombank"
+                  className="bg-white/5 border-white/10"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs">{t('account_number')}</Label>
+                <Input 
+                  value={newAccountNumber} 
+                  onChange={(e) => setNewAccountNumber(e.target.value)}
+                  placeholder="1234567890"
+                  className="bg-white/5 border-white/10"
+                />
+              </div>
+              <Button type="submit" disabled={isAddingPayment} className="w-full bg-white/10 hover:bg-white/20">
+                <Plus className="w-4 h-4 mr-2" />
+                {t('add_method') || 'Add Method'}
+              </Button>
+            </form>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Device Management Modal */}
+      <Dialog open={showSessionsModal} onOpenChange={setShowSessionsModal}>
+        <DialogContent className="glass-dark border-white/5 text-white rounded-3xl max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t('device_management') || 'Device Management'}</DialogTitle>
+            <DialogDescription className="text-slate-400">
+              {t('manage_devices_desc') || 'Manage and logout other active sessions of your account.'}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+            {isLoadingSessions ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="w-6 h-6 border-2 border-brand-blue border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : sessions.length === 0 ? (
+              <p className="text-center text-xs text-slate-500 py-8 italic font-bold">No active sessions found.</p>
+            ) : (
+              sessions.map((session) => (
+                <div key={session.id} className="p-4 bg-white/5 rounded-2xl border border-white/5 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={cn(
+                      "w-10 h-10 rounded-lg flex items-center justify-center",
+                      session.id === currentSessionId ? "bg-green-500/10 text-green-500" : "bg-white/5 text-slate-400"
+                    )}>
+                      <Smartphone className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="font-bold text-sm">
+                          {session.platform || 'Unknown Device'}
+                        </p>
+                        {session.id === currentSessionId && (
+                          <Badge variant="outline" className="text-[10px] h-4 border-green-500/50 text-green-500 px-1 font-bold">CURRENT</Badge>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-slate-500 truncate max-w-[200px] font-mono">
+                        {session.userAgent.split(')')[0].split('(')[1] || 'Web Browser'}
+                      </p>
+                      <p className="text-[9px] text-slate-600 mt-1">
+                        Last Active: {new Date(session.lastActive).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                  {session.id !== currentSessionId && (
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="text-red-500 hover:bg-red-500/10 h-8 font-bold"
+                      onClick={() => logoutDevice(session.id)}
+                    >
+                      Logout
+                    </Button>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="ghost" 
+              onClick={() => setShowSessionsModal(false)}
+              className="w-full text-slate-500 font-bold"
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

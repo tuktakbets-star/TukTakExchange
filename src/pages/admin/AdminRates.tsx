@@ -35,10 +35,13 @@ export default function AdminRates() {
   useEffect(() => {
     const unsubRates = firebaseService.subscribeToCollection('rates', [], (data) => {
       setRates(data);
+      if (data.length > 0 && !data.find(r => `${r.base}-${r.target}` === calcTarget)) {
+        setCalcTarget(`${data[0].base}-${data[0].target}`);
+      }
     });
     setLoading(false);
     return () => unsubRates();
-  }, []);
+  }, [calcTarget]);
 
   const handleUpdateRate = async (e: React.FormEvent<HTMLFormElement>, id?: string) => {
     e.preventDefault();
@@ -56,8 +59,9 @@ export default function AdminRates() {
         });
         toast.success(t('rate_updated_success'));
       } else {
+        const base = formData.get('base') as string;
         await firebaseService.addDocument('rates', {
-          base: 'VND',
+          base: base || 'VND',
           target,
           rate,
           effectiveDate: date,
@@ -88,7 +92,8 @@ export default function AdminRates() {
     setIsConfirmOpen(true);
   };
 
-  const currentRate = rates.find(r => r.target === calcTarget)?.rate || 0;
+  const currentRateObj = rates.find(r => `${r.base}-${r.target}` === calcTarget);
+  const currentRate = currentRateObj?.rate || 0;
   const result = calcAmount * currentRate;
 
   return (
@@ -126,13 +131,13 @@ export default function AdminRates() {
                 <div className="space-y-2">
                   <Label className="text-[10px] uppercase tracking-widest text-slate-500">{t('currency_pair')}</Label>
                   <div className="flex items-center gap-2 h-12 px-4 bg-white/5 rounded-xl border border-white/10 font-bold">
-                    <span className="text-red-500">VND</span>
+                    <span className={rate.base === 'VND' ? "text-red-500" : "text-purple-500"}>{rate.base}</span>
                     <ArrowRight className="w-3 h-3 text-slate-600" />
-                    <span className="text-purple-500">{rate.target}</span>
+                    <span className={rate.target === 'VND' ? "text-red-500" : "text-purple-500"}>{rate.target}</span>
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-[10px] uppercase tracking-widest text-slate-500">{t('rate_value')} {t('rate_value_desc')}</Label>
+                  <Label className="text-[10px] uppercase tracking-widest text-slate-500">{t('rate_value')} (1 {rate.base} = ? {rate.target})</Label>
                   <Input 
                     key={`${rate.id}-rate-${rate.rate}`}
                     name="rate" 
@@ -172,7 +177,11 @@ export default function AdminRates() {
               <h4 className="text-sm font-bold text-slate-400 mb-6 uppercase tracking-widest flex items-center gap-2">
                 <Plus className="w-4 h-4" /> {t('add_new_pair')}
               </h4>
-              <form onSubmit={(e) => handleUpdateRate(e)} className="grid md:grid-cols-4 gap-4 items-end">
+              <form onSubmit={(e) => handleUpdateRate(e)} className="grid md:grid-cols-5 gap-4 items-end">
+                <div className="space-y-2">
+                  <Label>{t('base_currency') || 'Base'}</Label>
+                  <Input name="base" defaultValue="VND" required className="h-12 bg-white/5 border-white/10 rounded-xl uppercase" />
+                </div>
                 <div className="space-y-2">
                   <Label>{t('target_currency')}</Label>
                   <Input name="target" placeholder={t('target_currency_placeholder')} required className="h-12 bg-white/5 border-white/10 rounded-xl uppercase" />
@@ -204,16 +213,37 @@ export default function AdminRates() {
             </div>
 
             <div className="space-y-6">
-              <div className="space-y-2">
-                <Label className="text-slate-500 text-xs">{t('amount')}</Label>
-                <div className="relative">
-                  <Input 
-                    type="number" 
-                    value={calcAmount} 
-                    onChange={(e) => setCalcAmount(parseFloat(e.target.value) || 0)}
-                    className="h-14 bg-white/5 border-white/10 rounded-2xl pl-12 font-display font-bold text-lg" 
-                  />
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-bold">₫</span>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label className="text-slate-500 text-xs">{t('base_currency') || 'Convert From'}</Label>
+                  <select 
+                    value={calcTarget.split('-')[0] || 'VND'} 
+                    onChange={(e) => {
+                      const base = e.target.value;
+                      const firstTarget = rates.find(r => r.base === base)?.target || '';
+                      setCalcTarget(`${base}-${firstTarget}`);
+                    }}
+                    className="w-full h-14 bg-white/5 border border-white/10 rounded-2xl px-4 text-white outline-none focus:ring-2 focus:ring-purple-500/20 font-bold"
+                  >
+                    {Array.from(new Set(rates.map(r => r.base))).map(base => (
+                      <option key={base} value={base}>{base}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-slate-500 text-xs">{t('amount')}</Label>
+                  <div className="relative">
+                    <Input 
+                      type="number" 
+                      value={calcAmount} 
+                      onChange={(e) => setCalcAmount(parseFloat(e.target.value) || 0)}
+                      className="h-14 bg-white/5 border-white/10 rounded-2xl pl-12 font-display font-bold text-lg" 
+                    />
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-bold">
+                      {calcTarget.split('-')[0] === 'VND' ? '₫' : calcTarget.split('-')[0]}
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -225,7 +255,7 @@ export default function AdminRates() {
                   className="w-full h-14 bg-white/5 border border-white/10 rounded-2xl px-4 text-white outline-none focus:ring-2 focus:ring-purple-500/20 font-bold"
                 >
                   {rates.map(r => (
-                    <option key={r.target} value={r.target}>{r.target}</option>
+                    <option key={`${r.base}-${r.target}`} value={`${r.base}-${r.target}`}>{r.target} (from {r.base})</option>
                   ))}
                 </select>
               </div>
@@ -233,8 +263,8 @@ export default function AdminRates() {
               <div className="p-8 bg-gradient-to-br from-purple-600 to-blue-600 rounded-[2rem] text-white shadow-xl shadow-purple-600/20">
                 <p className="text-xs opacity-80 uppercase tracking-widest font-bold mb-2">{t('estimated_result')}</p>
                 <div className="flex items-baseline gap-2">
-                  <h4 className="text-4xl font-display font-bold">{result.toLocaleString(undefined, { maximumFractionDigits: 2 })}</h4>
-                  <span className="text-xl font-bold opacity-80">{calcTarget}</span>
+                  <h4 className="text-4xl font-display font-bold">{result.toLocaleString(undefined, { maximumFractionDigits: 4 })}</h4>
+                  <span className="text-xl font-bold opacity-80">{calcTarget.split('-')[1]}</span>
                 </div>
                 <div className="mt-4 pt-4 border-t border-white/10 flex items-center justify-between text-[10px] font-bold uppercase tracking-widest opacity-60">
                   <span>{t('current_rate')}: {currentRate}</span>

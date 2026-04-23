@@ -58,6 +58,12 @@ export default function ExchangeMoney() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPasswordStep, setShowPasswordStep] = useState(false);
 
+  // Derived available currencies from rates
+  const availableBaseCurrencies = Array.from(new Set(rates.map(r => r.base)));
+  const availableTargetCurrencies = rates
+    .filter(r => r.base === sourceCurrency)
+    .map(r => r.target);
+
   useEffect(() => {
     if (!profile?.uid) return;
 
@@ -70,24 +76,42 @@ export default function ExchangeMoney() {
     const unsubRates = firebaseService.subscribeToCollection(
       'rates',
       [],
-      (data) => setRates(data)
+      (data) => {
+        setRates(data);
+        // Default selection if current ones aren't available
+        if (data.length > 0) {
+          const bases = Array.from(new Set(data.map((r: any) => r.base)));
+          if (!bases.includes(sourceCurrency)) {
+            setSourceCurrency(bases[0]);
+          }
+        }
+      }
     );
 
     return () => {
       unsubWallets();
       unsubRates();
     };
-  }, [profile?.uid]);
+  }, [profile?.uid, sourceCurrency]);
 
-  // Fix: The rates collection uses 'target' as the key and base is always VND
-  const currentRate = rates.find(r => r.target === targetCurrency)?.rate || 0.0034;
-  const targetAmount = amount ? (Number(amount) * currentRate).toFixed(2) : '0.00';
+  // Adjust target currency if it's not available for the selected source
+  useEffect(() => {
+    const validTargets = rates.filter(r => r.base === sourceCurrency).map(r => r.target);
+    if (validTargets.length > 0 && !validTargets.includes(targetCurrency)) {
+      setTargetCurrency(validTargets[0]);
+    }
+  }, [sourceCurrency, rates, targetCurrency]);
+
+  // Fetch real-time rate from admin based on currency pair
+  const currentRateObj = rates.find(r => r.base === sourceCurrency && r.target === targetCurrency);
+  const currentRate = currentRateObj?.rate || 0;
+  const targetAmount = (amount && currentRate > 0) ? (Number(amount) * currentRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : '0.00';
   const fee = amount ? (Number(amount) * 0.01).toFixed(0) : '0'; // 1% fee
 
   const handleNext = () => {
     if (step === 1) {
-      if (!amount || Number(amount) <= 0) {
-        toast.error('Please enter a valid amount');
+      if (!amount || Number(amount) < 200000) {
+        toast.error('Minimum Exchange amount is 200,000 VND');
         return;
       }
       const wallet = wallets.find(w => w.currency === sourceCurrency);
@@ -214,7 +238,13 @@ export default function ExchangeMoney() {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent className="bg-slate-900 border-slate-800 text-white">
-                            <SelectItem value="VND">VND</SelectItem>
+                            {availableBaseCurrencies.length > 0 ? (
+                              availableBaseCurrencies.map(base => (
+                                <SelectItem key={base} value={base}>{base}</SelectItem>
+                              ))
+                            ) : (
+                              <SelectItem value="VND">VND</SelectItem>
+                            )}
                           </SelectContent>
                         </Select>
                       </div>
@@ -240,11 +270,13 @@ export default function ExchangeMoney() {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent className="bg-slate-900 border-slate-800 text-white">
-                            <SelectItem value="BDT">BDT</SelectItem>
-                            <SelectItem value="INR">INR</SelectItem>
-                            <SelectItem value="PKR">PKR</SelectItem>
-                            <SelectItem value="USD">USD</SelectItem>
-                            <SelectItem value="NPR">NPR</SelectItem>
+                            {availableTargetCurrencies.length > 0 ? (
+                              availableTargetCurrencies.map(target => (
+                                <SelectItem key={target} value={target}>{target}</SelectItem>
+                              ))
+                            ) : (
+                              <SelectItem value="BDT">BDT</SelectItem>
+                            )}
                           </SelectContent>
                         </Select>
                       </div>

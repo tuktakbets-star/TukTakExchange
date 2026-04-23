@@ -15,7 +15,8 @@ import {
   Lock,
   ChevronLeft,
   ChevronRight,
-  Info
+  Info,
+  Loader2
 } from 'lucide-react';
 import { 
   Card, 
@@ -57,17 +58,18 @@ export default function SendMoney() {
   }, [profile?.uid]);
 
   const verifyReceiver = async () => {
-    if (!receiverId) return;
+    const id = receiverId.trim();
+    if (!id) return;
     setLoading(true);
     setReceiverProfile(null);
     try {
       // Search by accountNumber (which is the phone number) in users collection
-      const usersByAccount = await firebaseService.getCollection('users', [where('accountNumber', '==', receiverId)]);
+      const usersByAccount = await firebaseService.getCollection('users', [where('accountNumber', '==', id)]);
       let users = usersByAccount;
 
       // Fallback to phoneNumber if not found by accountNumber
       if (users.length === 0) {
-        users = await firebaseService.getCollection('users', [where('phoneNumber', '==', receiverId)]);
+        users = await firebaseService.getCollection('users', [where('phoneNumber', '==', id)]);
       }
       
       if (users.length > 0) {
@@ -97,8 +99,8 @@ export default function SendMoney() {
       }
       setStep(2);
     } else if (step === 2) {
-      if (!amount || Number(amount) <= 0) {
-        toast.error('Please enter a valid amount');
+      if (!amount || Number(amount) < 10000) {
+        toast.error('Minimum sending amount is 10,000 VND');
         return;
       }
       if (Number(amount) > (wallet?.balance || 0)) {
@@ -258,9 +260,10 @@ export default function SendMoney() {
                       <Button 
                         onClick={verifyReceiver} 
                         disabled={loading || !receiverId}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 h-10 bg-brand-blue/10 hover:bg-brand-blue/20 text-brand-blue rounded-xl text-xs font-bold px-4"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 h-10 bg-brand-blue/10 hover:bg-brand-blue/20 text-brand-blue rounded-xl text-xs font-bold px-4 flex items-center gap-2"
                       >
-                        {loading ? '...' : 'Verify'}
+                        {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                        {loading ? 'Verifying...' : 'Verify'}
                       </Button>
                     </div>
                   </div>

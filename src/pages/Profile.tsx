@@ -32,6 +32,7 @@ export default function Profile() {
   const [isEditing, setIsEditing] = useState(false);
   const [displayName, setDisplayName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [accountNumber, setAccountNumber] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [passportFile, setPassportFile] = useState<File | null>(null);
   const [selfieFile, setSelfieFile] = useState<File | null>(null);
@@ -43,6 +44,7 @@ export default function Profile() {
     if (profile) {
       setDisplayName(profile.displayName || '');
       setPhoneNumber(profile.phoneNumber || '');
+      setAccountNumber(profile.accountNumber || '');
     }
   }, [profile]);
 
@@ -60,7 +62,8 @@ export default function Profile() {
     try {
       await firebaseService.updateDocument('users', profile.uid, {
         displayName,
-        phoneNumber
+        phoneNumber,
+        accountNumber
       });
       toast.success(t('profile_updated'));
       setIsEditing(false);
@@ -120,6 +123,11 @@ export default function Profile() {
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !profile?.uid) return;
+
+    if (file.size > 1024 * 1024) {
+      toast.error('File too large. Maximum size is 1MB');
+      return;
+    }
 
     setIsUploadingPhoto(true);
     try {
@@ -214,12 +222,12 @@ export default function Profile() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label className="text-slate-500">Account Number (Phone)</Label>
+              <Label className="text-slate-500">{t('account_number')} (Phone)</Label>
               <div className="relative">
                 <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
                 <Input 
-                  value={phoneNumber} 
-                  onChange={(e) => setPhoneNumber(e.target.value)}
+                  value={accountNumber} 
+                  onChange={(e) => setAccountNumber(e.target.value)}
                   disabled={!isEditing}
                   placeholder="+84..."
                   className="bg-white/5 border-white/10 h-12 pl-12 rounded-xl disabled:opacity-100 disabled:cursor-default"

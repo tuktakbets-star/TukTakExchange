@@ -75,8 +75,8 @@ export default function CashIn() {
 
   const handleNext = () => {
     if (step === 1) {
-      if (!amountBDT || Number(amountBDT) <= 0) {
-        toast.error('Please enter a valid amount');
+      if (!amountBDT || Number(amountBDT) < 2000) {
+        toast.error('Minimum Cash In amount is 2000 BDT');
         return;
       }
       setStep(2);

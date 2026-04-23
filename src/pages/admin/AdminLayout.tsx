@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import { Outlet, Link, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { useTranslation } from 'react-i18next';
 import { 
@@ -51,6 +51,11 @@ export default function AdminLayout() {
 
   if (!isAdmin) {
     return <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white">Access Denied</div>;
+  }
+
+  // Double Security: Force re-authentication for every new browser session
+  if (sessionStorage.getItem('mgmt_verified') !== 'true') {
+    return <Navigate to="/secure-admin-login-987" replace />;
   }
 
   return (
