@@ -102,7 +102,6 @@
   "role": "Role",
   "user": "User",
   "admin": "Admin",
-  "sub_admin": "Sub Admin",
   "check_bank": "Please check your bank account",
   "deposit_success": "Your deposit is approved",
   "type_message": "Type your message...",
@@ -509,9 +508,5 @@
   "security_settings_updated": "Security settings updated",
   "notification_settings_updated": "Notification settings updated",
   "two_factor_auth_active": "Two Factor Authentication is now active",
-  "settings_update_failed": "Failed to update settings",
-  "management_portal": "Management Portal",
-  "select_your_access_level": "Please select your role to proceed to the secure login",
-  "select_your_role": "Select your access level",
-  "change_role": "Change Role"
+  "settings_update_failed": "Failed to update settings"
 }

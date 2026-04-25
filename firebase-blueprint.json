@@ -9,7 +9,7 @@
         "displayName": { "type": "string", "description": "Full name of the user" },
         "email": { "type": "string", "format": "email", "description": "Email address" },
         "phoneNumber": { "type": "string", "description": "Phone number" },
-        "role": { "type": "string", "enum": ["user", "admin", "client", "subadmin"], "description": "User role" },
+        "role": { "type": "string", "enum": ["user", "admin", "client"], "description": "User role" },
         "status": { "type": "string", "enum": ["active", "banned"], "description": "User status" },
         "kycStatus": { "type": "string", "enum": ["none", "pending", "verified", "rejected"], "description": "KYC verification status" },
         "createdAt": { "type": "string", "format": "date-time", "description": "Account creation timestamp" }
@@ -100,48 +100,12 @@
         "updatedAt": { "type": "string", "format": "date-time", "description": "Last update" }
       },
       "required": ["key", "value"]
-    },
-    "Session": {
-      "title": "Session",
-      "description": "User active session tracking",
-      "type": "object",
-      "properties": {
-        "id": { "type": "string", "description": "Session ID" },
-        "userAgent": { "type": "string", "description": "Browser user agent" },
-        "platform": { "type": "string", "description": "Operating system platform" },
-        "lastActive": { "type": "string", "format": "date-time", "description": "Last activity timestamp" },
-        "isActive": { "type": "boolean", "description": "Session status" }
-      },
-      "required": ["id", "lastActive", "isActive"]
-    },
-    "SubAdminLog": {
-      "title": "SubAdminLog",
-      "description": "Record of actions performed by sub-admins",
-      "type": "object",
-      "properties": {
-        "subAdminId": { "type": "string" },
-        "actionType": { "type": "string" },
-        "orderId": { "type": "string" },
-        "userId": { "type": "string" },
-        "amount": { "type": "number" },
-        "status": { "type": "string" },
-        "timestamp": { "type": "string", "format": "date-time" }
-      },
-      "required": ["subAdminId", "actionType", "timestamp"]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": "User",
       "description": "User profile documents"
-    },
-    "/users/{userId}/sessions/{sessionId}": {
-      "schema": "Session",
-      "description": "User active sessions"
-    },
-    "/sub_admin_logs/{logId}": {
-      "schema": "SubAdminLog",
-      "description": "Logs of operator actions"
     },
     "/wallets/{walletId}": {
       "schema": "Wallet",

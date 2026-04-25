@@ -12,7 +12,6 @@ import {
   MessageSquare,
   Bell,
   Heart,
-  ShieldCheck,
   ArrowDownLeft,
   ArrowRight
 } from 'lucide-react';
@@ -108,7 +107,6 @@ export default function AdminDashboard() {
     { label: t('reports_disputes'), value: stats.disputes, icon: AlertTriangle, color: 'text-red-500', bg: 'bg-red-500/10', path: '/admin/disputes' },
     { label: t('messages'), value: stats.messages, icon: MessageSquare, color: 'text-indigo-500', bg: 'bg-indigo-500/10', path: '/admin/messages' },
     { label: t('notifications'), value: stats.notifications, icon: Bell, color: 'text-amber-500', bg: 'bg-amber-500/10', path: '/admin/notifications' },
-    { label: 'Operator Logs', value: 'View Logs', icon: ShieldCheck, color: 'text-indigo-500', bg: 'bg-indigo-500/10', path: '/admin/logs' },
   ];
 
   return (

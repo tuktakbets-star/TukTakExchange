@@ -58,12 +58,6 @@ export default function ExchangeMoney() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPasswordStep, setShowPasswordStep] = useState(false);
 
-  // Derived available currencies from rates
-  const availableBaseCurrencies = Array.from(new Set(rates.map(r => r.base)));
-  const availableTargetCurrencies = rates
-    .filter(r => r.base === sourceCurrency)
-    .map(r => r.target);
-
   useEffect(() => {
     if (!profile?.uid) return;
 
@@ -76,36 +70,18 @@ export default function ExchangeMoney() {
     const unsubRates = firebaseService.subscribeToCollection(
       'rates',
       [],
-      (data) => {
-        setRates(data);
-        // Default selection if current ones aren't available
-        if (data.length > 0) {
-          const bases = Array.from(new Set(data.map((r: any) => r.base)));
-          if (!bases.includes(sourceCurrency)) {
-            setSourceCurrency(bases[0]);
-          }
-        }
-      }
+      (data) => setRates(data)
     );
 
     return () => {
       unsubWallets();
       unsubRates();
     };
-  }, [profile?.uid, sourceCurrency]);
+  }, [profile?.uid]);
 
-  // Adjust target currency if it's not available for the selected source
-  useEffect(() => {
-    const validTargets = rates.filter(r => r.base === sourceCurrency).map(r => r.target);
-    if (validTargets.length > 0 && !validTargets.includes(targetCurrency)) {
-      setTargetCurrency(validTargets[0]);
-    }
-  }, [sourceCurrency, rates, targetCurrency]);
-
-  // Fetch real-time rate from admin based on currency pair
-  const currentRateObj = rates.find(r => r.base === sourceCurrency && r.target === targetCurrency);
-  const currentRate = currentRateObj?.rate || 0;
-  const targetAmount = (amount && currentRate > 0) ? (Number(amount) * currentRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : '0.00';
+  // Fix: Use division as admins usually set "VND price per unit of target currency"
+  const currentRate = rates.find(r => r.target === targetCurrency)?.rate || 230; 
+  const targetAmount = (amount && currentRate > 0) ? (Number(amount) / currentRate).toFixed(2) : '0.00';
   const fee = amount ? (Number(amount) * 0.01).toFixed(0) : '0'; // 1% fee
 
   const handleNext = () => {
@@ -238,13 +214,7 @@ export default function ExchangeMoney() {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent className="bg-slate-900 border-slate-800 text-white">
-                            {availableBaseCurrencies.length > 0 ? (
-                              availableBaseCurrencies.map(base => (
-                                <SelectItem key={base} value={base}>{base}</SelectItem>
-                              ))
-                            ) : (
-                              <SelectItem value="VND">VND</SelectItem>
-                            )}
+                            <SelectItem value="VND">VND</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -270,13 +240,11 @@ export default function ExchangeMoney() {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent className="bg-slate-900 border-slate-800 text-white">
-                            {availableTargetCurrencies.length > 0 ? (
-                              availableTargetCurrencies.map(target => (
-                                <SelectItem key={target} value={target}>{target}</SelectItem>
-                              ))
-                            ) : (
-                              <SelectItem value="BDT">BDT</SelectItem>
-                            )}
+                            <SelectItem value="BDT">BDT</SelectItem>
+                            <SelectItem value="INR">INR</SelectItem>
+                            <SelectItem value="PKR">PKR</SelectItem>
+                            <SelectItem value="USD">USD</SelectItem>
+                            <SelectItem value="NPR">NPR</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>

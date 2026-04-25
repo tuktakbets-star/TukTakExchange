@@ -64,12 +64,6 @@ service cloud.firestore {
         );
     }
 
-    function isSubAdmin() {
-      return isAuthenticated() && 
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'subadmin';
-    }
-
     function isValidEmail(email) {
       return email is string && email.size() >= 5;
     }
@@ -109,31 +103,26 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isAuthenticated(); // Allow lookup by phone number for Send Money
-      allow list: if isAdmin() || isSubAdmin();
-      allow create: if (isOwner(userId) || isAdmin() || isSubAdmin()) && isValidUser(request.resource.data);
-      allow update: if (isOwner(userId) || isAdmin() || isSubAdmin()) && isValidUser(request.resource.data) && 
+      allow list: if isAdmin();
+      allow create: if (isOwner(userId) || isAdmin()) && isValidUser(request.resource.data);
+      allow update: if (isOwner(userId) || isAdmin()) && isValidUser(request.resource.data) && 
                     (request.resource.data.role == resource.data.role || isAdmin());
-
-      match /sessions/{sessionId} {
-        allow read, write: if isOwner(userId) || isAdmin() || isSubAdmin();
-      }
     }
 
     match /wallets/{walletId} {
-      allow read, list: if isAuthenticated() && (resource.data.uid == request.auth.uid || isAdmin() || isSubAdmin());
+      allow read, list: if isAuthenticated() && (resource.data.uid == request.auth.uid || isAdmin());
       allow create: if isAuthenticated() && isValidWallet(request.resource.data);
       allow update: if isAuthenticated() && (
         (resource.data.uid == request.auth.uid && isValidWallet(request.resource.data)) || 
         isAdmin() ||
-        isSubAdmin() ||
         (request.resource.data.balance > resource.data.balance && request.resource.data.uid == resource.data.uid) // Allow anyone to deposit into a wallet
       );
     }
 
     match /transactions/{transactionId} {
-      allow read, list: if isAuthenticated() && (resource.data.uid == request.auth.uid || isAdmin() || isSubAdmin());
+      allow read, list: if isAuthenticated() && (resource.data.uid == request.auth.uid || isAdmin());
       allow create: if isAuthenticated() && isValidTransaction(request.resource.data);
-      allow update: if isAdmin() || isSubAdmin() || (isOwner(resource.data.uid) && request.resource.data.status == 'completed' && resource.data.status == 'paid');
+      allow update: if isAdmin() || (isOwner(resource.data.uid) && request.resource.data.status == 'completed' && resource.data.status == 'paid');
       allow delete: if isAuthenticated() && (resource.data.uid == request.auth.uid || isAdmin()) && (resource.data.status == 'pending' || resource.data.status == 'disputed' || resource.data.status == 'failed' || resource.data.status == 'expired' || isAdmin());
     }
 
@@ -171,11 +160,6 @@ service cloud.firestore {
     match /adminSettings/{settingId} {
       allow read: if true;
       allow write: if isAdmin();
-    }
-
-    match /sub_admin_logs/{logId} {
-      allow read, list: if isAdmin();
-      allow create: if isSubAdmin();
     }
   }
 }

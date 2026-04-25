@@ -15,8 +15,7 @@ import {
   DocumentData,
   QueryConstraint
 } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { auth, db, storage } from './firebase';
+import { auth, db } from './firebase';
 
 export enum OperationType {
   CREATE = 'create',
@@ -168,35 +167,11 @@ export const firebaseService = {
   },
 
   async uploadFile(file: File): Promise<string> {
-    try {
-      const storageRef = ref(storage, `uploads/${Date.now()}_${file.name}`);
-      await uploadBytes(storageRef, file);
-      return await getDownloadURL(storageRef);
-    } catch (error) {
-      console.error('Storage Error:', error);
-      // Fallback to base64 if storage fails (optional, but requested storage first)
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-    }
-  },
-
-  async uploadBlob(blob: Blob, fileName: string): Promise<string> {
-    try {
-      const storageRef = ref(storage, `voice/${Date.now()}_${fileName}`);
-      await uploadBytes(storageRef, blob);
-      return await getDownloadURL(storageRef);
-    } catch (error) {
-      console.error('Storage Error, falling back to base64:', error);
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
-    }
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
   }
 };

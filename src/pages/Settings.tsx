@@ -45,9 +45,6 @@ export default function Settings() {
   const { profile } = useAuth();
   const [notifications, setNotifications] = useState(profile?.notificationsEnabled !== false);
   const [twoFactor, setTwoFactor] = useState(profile?.twoFactorEnabled || false);
-  const [sessions, setSessions] = useState<any[]>([]);
-  const [showSessionsModal, setShowSessionsModal] = useState(false);
-  const [isLoadingSessions, setIsLoadingSessions] = useState(false);
   
   // Password Change State
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -168,35 +165,6 @@ export default function Settings() {
     }
   };
 
-  const handleManageDevices = async () => {
-    if (!profile?.uid) return;
-    setIsLoadingSessions(true);
-    setShowSessionsModal(true);
-    try {
-      const data = await firebaseService.getCollection(`users/${profile.uid}/sessions`);
-      setSessions(data);
-    } catch (error) {
-      toast.error('Failed to load active sessions');
-    } finally {
-      setIsLoadingSessions(false);
-    }
-  };
-
-  const logoutDevice = async (sessionId: string) => {
-    if (!profile?.uid) return;
-    try {
-      await firebaseService.deleteDocument(`users/${profile.uid}/sessions`, sessionId);
-      setSessions(prev => prev.filter(s => s.id !== sessionId));
-      toast.success('Device logged out successfully');
-      
-      // If it's current device, auth context will handle it via listener
-    } catch (error) {
-      toast.error('Failed to logout device');
-    }
-  };
-
-  const currentSessionId = localStorage.getItem('sessionId');
-
   return (
     <div className="max-w-4xl mx-auto space-y-8">
       <div>
@@ -274,14 +242,7 @@ export default function Settings() {
                   <p className="text-xs text-slate-500">{t('device_management_desc')}</p>
                 </div>
               </div>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                className="text-brand-blue"
-                onClick={handleManageDevices}
-              >
-                {t('manage')}
-              </Button>
+              <Button variant="ghost" size="sm" className="text-brand-blue">{t('manage')}</Button>
             </div>
           </CardContent>
         </Card>
@@ -477,76 +438,6 @@ export default function Settings() {
               </Button>
             </form>
           </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Device Management Modal */}
-      <Dialog open={showSessionsModal} onOpenChange={setShowSessionsModal}>
-        <DialogContent className="glass-dark border-white/5 text-white rounded-3xl max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{t('device_management') || 'Device Management'}</DialogTitle>
-            <DialogDescription className="text-slate-400">
-              {t('manage_devices_desc') || 'Manage and logout other active sessions of your account.'}
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
-            {isLoadingSessions ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="w-6 h-6 border-2 border-brand-blue border-t-transparent rounded-full animate-spin" />
-              </div>
-            ) : sessions.length === 0 ? (
-              <p className="text-center text-xs text-slate-500 py-8 italic font-bold">No active sessions found.</p>
-            ) : (
-              sessions.map((session) => (
-                <div key={session.id} className="p-4 bg-white/5 rounded-2xl border border-white/5 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className={cn(
-                      "w-10 h-10 rounded-lg flex items-center justify-center",
-                      session.id === currentSessionId ? "bg-green-500/10 text-green-500" : "bg-white/5 text-slate-400"
-                    )}>
-                      <Smartphone className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <p className="font-bold text-sm">
-                          {session.platform || 'Unknown Device'}
-                        </p>
-                        {session.id === currentSessionId && (
-                          <Badge variant="outline" className="text-[10px] h-4 border-green-500/50 text-green-500 px-1 font-bold">CURRENT</Badge>
-                        )}
-                      </div>
-                      <p className="text-[10px] text-slate-500 truncate max-w-[200px] font-mono">
-                        {session.userAgent.split(')')[0].split('(')[1] || 'Web Browser'}
-                      </p>
-                      <p className="text-[9px] text-slate-600 mt-1">
-                        Last Active: {new Date(session.lastActive).toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
-                  {session.id !== currentSessionId && (
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      className="text-red-500 hover:bg-red-500/10 h-8 font-bold"
-                      onClick={() => logoutDevice(session.id)}
-                    >
-                      Logout
-                    </Button>
-                  )}
-                </div>
-              ))
-            )}
-          </div>
-          <DialogFooter>
-            <Button 
-              variant="ghost" 
-              onClick={() => setShowSessionsModal(false)}
-              className="w-full text-slate-500 font-bold"
-            >
-              Close
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
