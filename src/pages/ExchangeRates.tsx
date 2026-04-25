@@ -17,6 +17,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { 
+  Select, 
+  SelectContent, 
+  SelectItem, 
+  SelectTrigger, 
+  SelectValue 
+} from '@/components/ui/select';
+import { 
   LineChart, 
   Line, 
   XAxis, 
@@ -46,21 +53,18 @@ export default function ExchangeRates() {
   const [search, setSearch] = useState('');
 
   useEffect(() => {
-    const unsub = firebaseService.subscribeToCollection('exchangeRates', [], (data) => {
-      if (data.length === 0) {
-        // Seed initial rates if empty
-        const initialRates = [
-          { pair: 'VND_INR', base: 'VND', target: 'INR', rate: 0.0034, updatedAt: new Date().toISOString() },
-          { pair: 'VND_PKR', base: 'VND', target: 'PKR', rate: 0.0112, updatedAt: new Date().toISOString() },
-          { pair: 'VND_BDT', base: 'VND', target: 'BDT', rate: 0.0045, updatedAt: new Date().toISOString() },
-          { pair: 'VND_USD', base: 'VND', target: 'USD', rate: 0.000041, updatedAt: new Date().toISOString() },
-        ];
-        initialRates.forEach(r => firebaseService.setDocument('exchangeRates', r.pair, r));
-      }
+    const unsub = firebaseService.subscribeToCollection('rates', [], (data) => {
       setRates(data);
     });
     return () => unsub();
   }, []);
+
+  const [calcAmount, setCalcAmount] = useState('1000000');
+  const [calcTarget, setCalcTarget] = useState('BDT');
+
+  const currentRateObj = rates.find(r => r.target?.toUpperCase() === calcTarget?.toUpperCase());
+  const currentRate = currentRateObj?.rate || 0;
+  const convertedAmount = currentRate > 0 ? parseFloat(calcAmount) / currentRate : 0;
 
   const handleUpdateRate = async (pair: string) => {
     if (!editValue || isNaN(Number(editValue))) {
@@ -68,7 +72,7 @@ export default function ExchangeRates() {
       return;
     }
     try {
-      await firebaseService.updateDocument('exchangeRates', pair, {
+      await firebaseService.updateDocument('rates', pair, {
         rate: Number(editValue),
         updatedAt: new Date().toISOString()
       });
@@ -80,7 +84,6 @@ export default function ExchangeRates() {
   };
 
   const filteredRates = rates.filter(r => 
-    r.pair.toLowerCase().includes(search.toLowerCase()) ||
     r.target.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -142,21 +145,21 @@ export default function ExchangeRates() {
               <Card key={idx} className="glass border-white/5 rounded-2xl p-5 hover:border-white/10 transition-all">
                 <div className="flex justify-between items-start mb-4">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center font-bold text-xs">
+                    <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center font-bold text-xs uppercase">
                       {rate.target}
                     </div>
                     <div>
-                      <p className="font-bold">{rate.pair}</p>
+                      <p className="font-bold">{rate.base}/{rate.target}</p>
                       <p className="text-[10px] text-slate-500 uppercase tracking-wider">{t('global_market')}</p>
                     </div>
                   </div>
-                  {isAdmin && editingPair !== rate.pair && (
+                  {isAdmin && editingPair !== rate.id && (
                     <Button 
                       variant="ghost" 
                       size="icon" 
                       className="h-8 w-8 text-slate-500 hover:text-white"
                       onClick={() => {
-                        setEditingPair(rate.pair);
+                        setEditingPair(rate.id);
                         setEditValue(rate.rate.toString());
                       }}
                     >
@@ -166,7 +169,7 @@ export default function ExchangeRates() {
                 </div>
                 
                 <div className="flex items-end justify-between">
-                  {editingPair === rate.pair ? (
+                  {editingPair === rate.id ? (
                     <div className="flex items-center gap-2 w-full">
                       <Input 
                         type="number" 
@@ -174,7 +177,7 @@ export default function ExchangeRates() {
                         onChange={(e) => setEditValue(e.target.value)}
                         className="bg-white/5 border-white/10 h-9 text-sm"
                       />
-                      <Button size="icon" className="h-9 w-9 bg-green-600 hover:bg-green-500" onClick={() => handleUpdateRate(rate.pair)}>
+                      <Button size="icon" className="h-9 w-9 bg-green-600 hover:bg-green-500" onClick={() => handleUpdateRate(rate.id)}>
                         <Save className="w-4 h-4" />
                       </Button>
                       <Button size="icon" variant="ghost" className="h-9 w-9 text-slate-400" onClick={() => setEditingPair(null)}>
@@ -207,16 +210,39 @@ export default function ExchangeRates() {
             <CardContent className="p-0 space-y-4">
               <div className="space-y-2">
                 <Label className="text-xs text-slate-500">{t('from')} VND</Label>
-                <Input placeholder="1,000,000" className="bg-white/5 border-white/10 h-12 rounded-xl text-lg font-bold" />
+                <Input 
+                  value={calcAmount} 
+                  onChange={(e) => setCalcAmount(e.target.value)}
+                  className="bg-white/5 border-white/10 h-12 rounded-xl text-lg font-bold" 
+                />
               </div>
               <div className="flex justify-center -my-2 relative z-10">
                 <div className="w-8 h-8 bg-slate-800 rounded-full flex items-center justify-center border border-white/10">
                   <RefreshCw className="w-4 h-4 text-slate-400" />
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label className="text-xs text-slate-500">{t('to')} INR</Label>
-                <Input placeholder="3,400.00" readOnly className="bg-white/5 border-white/10 h-12 rounded-xl text-lg font-bold text-brand-blue" />
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label className="text-xs text-slate-500">{t('to')}</Label>
+                  <Select value={calcTarget} onValueChange={setCalcTarget}>
+                    <SelectTrigger className="bg-white/5 border-white/10 h-12 rounded-xl text-lg font-bold">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-slate-900 border-slate-800 text-white">
+                      {rates.map(r => (
+                        <SelectItem key={r.target} value={r.target}>{r.target}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="p-4 rounded-xl bg-brand-blue/5 border border-brand-blue/10">
+                   <p className="text-2xl font-bold text-brand-blue">
+                     {convertedAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })} {calcTarget}
+                   </p>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase mt-1">
+                    {currentRate > 0 ? `1 ${calcTarget} = ${currentRate} VND` : t('rate_not_set')}
+                  </p>
+                </div>
               </div>
               <Button className="w-full h-12 bg-brand-blue hover:bg-blue-500 text-white rounded-xl font-bold mt-4">
                 {t('send_now')}

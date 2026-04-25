@@ -76,6 +76,7 @@ export default function Wallet() {
 
   // Withdrawal Detailed States
   const [withdrawBankName, setWithdrawBankName] = useState('');
+  const [withdrawCountry, setWithdrawCountry] = useState('Bangladesh');
   const [withdrawAccountName, setWithdrawAccountName] = useState('');
   const [withdrawAccountNumber, setWithdrawAccountNumber] = useState('');
   const [isQRScannerOpen, setIsQRScannerOpen] = useState(false);
@@ -217,7 +218,8 @@ export default function Wallet() {
         bankInfo: {
           bankName: withdrawBankName,
           accountNumber: withdrawAccountNumber,
-          accountName: withdrawAccountName
+          accountName: withdrawAccountName,
+          country: withdrawCountry
         }
       };
 
@@ -530,6 +532,23 @@ export default function Wallet() {
                   </div>
                   <div className="space-y-4">
                     <div className="space-y-2">
+                       <Label className="text-xs text-slate-500 uppercase tracking-widest font-bold">Country</Label>
+                       <Select value={withdrawCountry} onValueChange={setWithdrawCountry}>
+                         <SelectTrigger className="bg-white/5 border-white/10 h-12 rounded-xl">
+                           <SelectValue />
+                         </SelectTrigger>
+                         <SelectContent className="bg-slate-900 border-slate-800 text-white">
+                           <SelectItem value="Bangladesh">Bangladesh</SelectItem>
+                           <SelectItem value="Vietnam">Vietnam</SelectItem>
+                           <SelectItem value="India">India</SelectItem>
+                           <SelectItem value="Pakistan">Pakistan</SelectItem>
+                           <SelectItem value="Nepal">Nepal</SelectItem>
+                           <SelectItem value="USA">USA</SelectItem>
+                         </SelectContent>
+                       </Select>
+                    </div>
+
+                    <div className="space-y-2">
                        <Label className="text-xs text-slate-500 uppercase tracking-widest font-bold">Bank Name</Label>
                        <div className="relative">
                          <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
@@ -587,6 +606,10 @@ export default function Wallet() {
                     <div className="flex justify-between text-sm">
                       <span className="text-slate-500">Withdraw Amount</span>
                       <span className="font-bold">{Number(amount).toLocaleString()} {currency}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500">Country</span>
+                      <span className="font-bold">{withdrawCountry}</span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-slate-500">Bank</span>

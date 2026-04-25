@@ -40,8 +40,8 @@ export default function LiveRates() {
   const [calcAmount, setCalcAmount] = useState<number>(1000000);
   const [calcTarget, setCalcTarget] = useState('BDT');
 
-  const currentRate = rates.find(r => r.target === calcTarget)?.rate || 0;
-  const result = calcAmount * currentRate;
+  const currentRate = rates.find(r => r.target?.toUpperCase() === calcTarget?.toUpperCase())?.rate || 0;
+  const result = currentRate > 0 ? calcAmount / currentRate : 0;
 
   const handleSendMoneyNow = () => {
     if (user) {

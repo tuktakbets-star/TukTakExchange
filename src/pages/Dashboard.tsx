@@ -140,7 +140,8 @@ export default function Dashboard() {
     setTimeout(() => setIsRefreshing(false), 1000);
   };
 
-  const currentRate = rates.find(r => r.target === calcTarget)?.rate || 0;
+  const currentRate = rates.find(r => r.target?.toUpperCase() === calcTarget?.toUpperCase())?.rate || 0;
+  const calcResult = (currentRate > 0 ? parseFloat(calcAmount) / currentRate : 0);
   const totalBalanceVND = wallets.reduce((acc, curr) => acc + curr.balance, 0);
 
   const handleTransactionClick = (tx: any) => {
@@ -407,12 +408,14 @@ export default function Dashboard() {
           <div>
             <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mb-1">{t('estimated_result')}</p>
             <p className="text-3xl font-display font-bold text-white">
-              {(parseFloat(calcAmount) * currentRate).toLocaleString(undefined, { maximumFractionDigits: 2 })} {calcTarget}
+              {calcResult.toLocaleString(undefined, { maximumFractionDigits: 2 })} {calcTarget}
             </p>
           </div>
           <div className="text-right">
             <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mb-1">{t('current_rate')}</p>
-            <p className="text-sm font-bold text-brand-blue">1 VND = {currentRate} {calcTarget}</p>
+            <p className="text-sm font-bold text-brand-blue">
+              {currentRate > 0 ? `1 ${calcTarget} = ${currentRate} VND` : t('rate_not_set')}
+            </p>
           </div>
         </div>
       </Card>

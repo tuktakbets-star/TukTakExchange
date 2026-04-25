@@ -57,6 +57,7 @@ export default function Settings() {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [newBankName, setNewBankName] = useState('');
   const [newAccountNumber, setNewAccountNumber] = useState('');
+  const [newCountry, setNewCountry] = useState('Bangladesh');
   const [isAddingPayment, setIsAddingPayment] = useState(false);
 
   const handleUpdatePassword = async (e: React.FormEvent) => {
@@ -104,6 +105,7 @@ export default function Settings() {
         id: Math.random().toString(36).substr(2, 9),
         bankName: newBankName,
         accountNumber: newAccountNumber,
+        country: newCountry,
         createdAt: new Date().toISOString()
       };
 
@@ -390,7 +392,10 @@ export default function Settings() {
                       <CreditCard className="w-5 h-5 text-purple-400" />
                     </div>
                     <div>
-                      <p className="font-bold text-sm">{method.bankName}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-bold text-sm">{method.bankName}</p>
+                        <Badge variant="outline" className="text-[8px] py-0 h-4 border-white/10">{method.country || 'N/A'}</Badge>
+                      </div>
                       <p className="text-xs text-slate-500">{method.accountNumber}</p>
                     </div>
                   </div>
@@ -414,6 +419,24 @@ export default function Settings() {
             {/* Add New */}
             <form onSubmit={handleAddPaymentMethod} className="space-y-4">
               <p className="text-xs font-bold uppercase tracking-widest text-slate-500">{t('add_new_method') || 'Add New Method'}</p>
+              
+              <div className="space-y-2">
+                <Label className="text-xs">{t('country') || 'Country'}</Label>
+                <Select value={newCountry} onValueChange={setNewCountry}>
+                  <SelectTrigger className="bg-white/5 border-white/10 h-12">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-slate-900 border-slate-800 text-white">
+                    <SelectItem value="Bangladesh">Bangladesh</SelectItem>
+                    <SelectItem value="Vietnam">Vietnam</SelectItem>
+                    <SelectItem value="India">India</SelectItem>
+                    <SelectItem value="Pakistan">Pakistan</SelectItem>
+                    <SelectItem value="Nepal">Nepal</SelectItem>
+                    <SelectItem value="USA">USA</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="space-y-2">
                 <Label className="text-xs">{t('bank_name') || 'Bank Name'}</Label>
                 <Input 

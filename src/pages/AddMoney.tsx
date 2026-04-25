@@ -41,7 +41,8 @@ export default function AddMoney() {
   const [adminSettings, setAdminSettings] = useState<any>(null);
   
   // Form states
-  const [amountVND, setAmountVND] = useState('');
+  const [selectedCountry, setSelectedCountry] = useState('Vietnam');
+  const [amountSource, setAmountSource] = useState('');
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [transactionId, setTransactionId] = useState('');
   const [password, setPassword] = useState('');
@@ -49,13 +50,9 @@ export default function AddMoney() {
 
   useEffect(() => {
     const unsubSettings = firebaseService.subscribeToCollection('adminSettings', [], (data) => {
-      // Look for the specific key, but fallback to any setting with value if only one exists (defensive)
-      const amSettings = data.find(s => s.key === 'add_money_settings') || 
-                        data.find(s => s.key === 'deposit_info') ||
-                        (data.length === 1 ? data[0] : null);
-      
-      if (amSettings?.value) {
-        setAdminSettings(amSettings.value);
+      const gSettings = data.find(s => s.key === 'global_settings');
+      if (gSettings?.value) {
+        setAdminSettings(gSettings.value);
       }
     });
 
@@ -66,8 +63,8 @@ export default function AddMoney() {
 
   const handleNext = () => {
     if (step === 1) {
-      if (!amountVND || Number(amountVND) < 300000) {
-        toast.error('Minimum Add Money amount is 300,000 VND');
+      if (!amountSource || Number(amountSource) <= 0) {
+        toast.error('Please enter a valid amount');
         return;
       }
       setStep(2);
@@ -88,17 +85,16 @@ export default function AddMoney() {
     setIsSubmitting(true);
     try {
       const realProofUrl = await firebaseService.uploadFile(proofFile);
-      // For Vietnam load, we use 'add_money' type
       const tx = {
         uid: profile?.uid,
         type: 'add_money',
         status: 'pending',
-        amount: Number(amountVND),
-        currency: 'VND',
+        amount: Number(amountSource),
+        currency: 'VND', // Primary currency for Vietnam load
         proofUrl: realProofUrl,
         transactionCode: transactionId || null,
         createdAt: new Date().toISOString(),
-        description: `Add Money ${amountVND} VND`
+        description: `Add Money ${amountSource} VND from Vietnam`
       };
 
       const docId = await firebaseService.addDocument('transactions', tx);
@@ -160,8 +156,8 @@ export default function AddMoney() {
                       <Input 
                         type="number"
                         placeholder="0.00"
-                        value={amountVND}
-                        onChange={(e) => setAmountVND(e.target.value)}
+                        value={amountSource}
+                        onChange={(e) => setAmountSource(e.target.value)}
                         className="h-14 bg-white/5 border-white/10 text-2xl font-display font-bold rounded-2xl pl-12"
                       />
                       <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-bold">₫</span>

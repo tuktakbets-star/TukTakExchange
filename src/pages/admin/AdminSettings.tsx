@@ -64,6 +64,21 @@ export default function AdminSettings() {
       }
     ].filter(b => b.bankName && b.accountNumber);
 
+    const indiaBanks = [
+      { bankName: formData.get('inBankName1'), accountNumber: formData.get('inAccNum1'), accountHolder: formData.get('inAccHolder1') },
+      { bankName: formData.get('inBankName2'), accountNumber: formData.get('inAccNum2'), accountHolder: formData.get('inAccHolder2') }
+    ].filter(b => b.bankName && b.accountNumber);
+
+    const pakistanBanks = [
+      { bankName: formData.get('pkBankName1'), accountNumber: formData.get('pkAccNum1'), accountHolder: formData.get('pkAccHolder1') },
+      { bankName: formData.get('pkBankName2'), accountNumber: formData.get('pkAccNum2'), accountHolder: formData.get('pkAccHolder2') }
+    ].filter(b => b.bankName && b.accountNumber);
+
+    const nepalBanks = [
+      { bankName: formData.get('npBankName1'), accountNumber: formData.get('npAccNum1'), accountHolder: formData.get('npAccHolder1') },
+      { bankName: formData.get('npBankName2'), accountNumber: formData.get('npAccNum2'), accountHolder: formData.get('npAccHolder2') }
+    ].filter(b => b.bankName && b.accountNumber);
+
     const value = {
       systemName: formData.get('systemName'),
       supportEmail: formData.get('supportEmail'),
@@ -74,6 +89,9 @@ export default function AdminSettings() {
       accountHolder: formData.get('accountHolder'),
       qrCode: formData.get('qrCode'),
       bangladeshBanks,
+      indiaBanks,
+      pakistanBanks,
+      nepalBanks,
       vietnamBanks
     };
 
@@ -281,6 +299,58 @@ export default function AdminSettings() {
             ))}
           </div>
         </Card>
+
+        {[
+          { key: 'indiaBanks', title: 'India Bank Details (INR Cash In)', prefix: 'in', color: 'orange' },
+          { key: 'pakistanBanks', title: 'Pakistan Bank Details (PKR Cash In)', prefix: 'pk', color: 'green' },
+          { key: 'nepalBanks', title: 'Nepal Bank Details (NPR Cash In)', prefix: 'blue' }
+        ].map((country) => (
+          <Card key={country.key} className="lg:col-span-2 glass-dark border-white/5 rounded-[2.5rem] p-8">
+            <div className="flex items-center gap-3 mb-8">
+              <div className={`w-10 h-10 bg-${country.color || 'slate'}-600/10 rounded-xl flex items-center justify-center text-${country.color || 'slate'}-500`}>
+                <Plus className="w-5 h-5" />
+              </div>
+              <h3 className="text-xl font-display font-bold">{country.title}</h3>
+            </div>
+            
+            <div className="grid md:grid-cols-2 gap-8">
+              {[1, 2].map(i => (
+                <div key={i} className="p-6 rounded-3xl bg-white/5 border border-white/10 space-y-4">
+                  <h4 className="font-bold text-slate-400">Account #{i}</h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2 col-span-2">
+                      <Label className="text-[10px] uppercase">Bank Name</Label>
+                      <Input 
+                        name={`${country.prefix}BankName${i}`} 
+                        defaultValue={settings?.value?.[country.key]?.[i-1]?.bankName}
+                        placeholder="Bank Name"
+                        className="bg-white/5 border-white/10"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[10px] uppercase">Account Number</Label>
+                      <Input 
+                        name={`${country.prefix}AccNum${i}`} 
+                        defaultValue={settings?.value?.[country.key]?.[i-1]?.accountNumber}
+                        placeholder="Account #"
+                        className="bg-white/5 border-white/10"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[10px] uppercase">Account Holder</Label>
+                      <Input 
+                        name={`${country.prefix}AccHolder${i}`} 
+                        defaultValue={settings?.value?.[country.key]?.[i-1]?.accountHolder}
+                        placeholder="Name"
+                        className="bg-white/5 border-white/10"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        ))}
 
         {/* Vietnam Bank Settings */}
         <Card className="lg:col-span-2 glass-dark border-white/5 rounded-[2.5rem] p-8">

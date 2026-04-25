@@ -43,7 +43,7 @@ export default function AdminRates() {
   const handleUpdateRate = async (e: React.FormEvent<HTMLFormElement>, id?: string) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    const target = formData.get('target') as string;
+    const target = (formData.get('target') as string)?.toUpperCase().trim();
     const rate = parseFloat(formData.get('rate') as string);
     const date = formData.get('date') as string;
 
@@ -88,7 +88,7 @@ export default function AdminRates() {
     setIsConfirmOpen(true);
   };
 
-  const currentRate = rates.find(r => r.target === calcTarget)?.rate || 0;
+  const currentRate = rates.find(r => r.target?.toUpperCase() === calcTarget?.toUpperCase())?.rate || 0;
   const result = currentRate > 0 ? calcAmount / currentRate : 0;
 
   return (

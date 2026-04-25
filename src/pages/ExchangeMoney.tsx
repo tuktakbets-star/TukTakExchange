@@ -48,6 +48,7 @@ export default function ExchangeMoney() {
   const [sourceCurrency, setSourceCurrency] = useState('VND');
   const [targetCurrency, setTargetCurrency] = useState('BDT');
   const [amount, setAmount] = useState('');
+  const [receiverCountry, setReceiverCountry] = useState('Bangladesh');
   const [receiverName, setReceiverName] = useState('');
   const [receiverBankName, setReceiverBankName] = useState('');
   const [receiverAccountNumber, setReceiverAccountNumber] = useState('');
@@ -80,14 +81,18 @@ export default function ExchangeMoney() {
   }, [profile?.uid]);
 
   // Fix: Use division as admins usually set "VND price per unit of target currency"
-  const currentRate = rates.find(r => r.target === targetCurrency)?.rate || 230; 
-  const targetAmount = (amount && currentRate > 0) ? (Number(amount) / currentRate).toFixed(2) : '0.00';
+  const currentRate = rates.find(r => r.target?.toUpperCase() === targetCurrency?.toUpperCase())?.rate;
+  const targetAmount = (amount && currentRate && currentRate > 0) ? (Number(amount) / currentRate).toFixed(2) : '0.00';
   const fee = amount ? (Number(amount) * 0.01).toFixed(0) : '0'; // 1% fee
 
   const handleNext = () => {
     if (step === 1) {
       if (!amount || Number(amount) < 200000) {
         toast.error('Minimum Exchange amount is 200,000 VND');
+        return;
+      }
+      if (!currentRate || currentRate <= 0) {
+        toast.error(t('rate_not_set'));
         return;
       }
       const wallet = wallets.find(w => w.currency === sourceCurrency);
@@ -127,6 +132,7 @@ export default function ExchangeMoney() {
         currency: sourceCurrency,
         targetAmount: Number(targetAmount),
         targetCurrency: targetCurrency,
+        targetCountry: receiverCountry,
         fee: Number(fee),
         totalToDeduct: Number(amount) + Number(fee),
         receiverInfo: {
@@ -254,7 +260,9 @@ export default function ExchangeMoney() {
                   <div className="space-y-3 bg-white/5 rounded-2xl p-4 border border-white/5">
                     <div className="flex justify-between text-sm">
                       <span className="text-slate-400">{t('current_rate')}</span>
-                      <span className="font-medium">1 {sourceCurrency} = {currentRate} {targetCurrency}</span>
+                      <span className="font-medium">
+                        {currentRate ? `1 ${targetCurrency} = ${currentRate} ${sourceCurrency}` : t('rate_not_set')}
+                      </span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-slate-400">{t('fee')} (1%)</span>
@@ -281,6 +289,22 @@ export default function ExchangeMoney() {
                   className="space-y-6"
                 >
                   <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label>{t('country') || 'Country'}</Label>
+                      <Select value={receiverCountry} onValueChange={setReceiverCountry}>
+                        <SelectTrigger className="bg-white/5 border-white/10 h-12 rounded-xl">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-slate-900 border-slate-800 text-white">
+                          <SelectItem value="Bangladesh">Bangladesh</SelectItem>
+                          <SelectItem value="Vietnam">Vietnam</SelectItem>
+                          <SelectItem value="India">India</SelectItem>
+                          <SelectItem value="Pakistan">Pakistan</SelectItem>
+                          <SelectItem value="Nepal">Nepal</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
                     <div className="space-y-2">
                       <Label>Receiver Bank Name</Label>
                       <div className="relative">
@@ -384,6 +408,10 @@ export default function ExchangeMoney() {
                     </div>
 
                     <div className="p-6 rounded-2xl bg-white/5 border border-white/5 space-y-4 shadow-xl">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-slate-400">Country</span>
+                        <span className="font-bold">{receiverCountry}</span>
+                      </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-slate-400">Receiver Name</span>
                         <span className="font-bold">{receiverName}</span>
