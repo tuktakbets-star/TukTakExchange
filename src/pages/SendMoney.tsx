@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { supabaseService, where } from '../lib/supabaseService';
+import { firebaseService, where, doc, runTransaction, db } from '../lib/firebaseService';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Send, 
@@ -47,7 +47,7 @@ export default function SendMoney() {
 
   useEffect(() => {
     if (!profile?.uid) return;
-    const unsub = supabaseService.subscribeToCollection(
+    const unsub = firebaseService.subscribeToCollection(
       'wallets',
       [where('uid', '==', profile.uid), where('currency', '==', 'VND')],
       (data) => setWallet(data[0])
@@ -61,13 +61,13 @@ export default function SendMoney() {
     setLoading(true);
     setReceiverProfile(null);
     try {
-      // Search by accountNumber (which is the phone number) - Supabase use snake_case
-      const usersByAccount = await supabaseService.getCollection('users', [where('account_number', '==', id)]);
+      // Search by accountNumber (which is the phone number) in users collection
+      const usersByAccount = await firebaseService.getCollection('users', [where('accountNumber', '==', id)]);
       let users = usersByAccount;
 
-      // Fallback to phone_number if not found by account_number
+      // Fallback to phoneNumber if not found by accountNumber
       if (users.length === 0) {
-        users = await supabaseService.getCollection('users', [where('phone_number', '==', id)]);
+        users = await firebaseService.getCollection('users', [where('phoneNumber', '==', id)]);
       }
       
       if (users.length > 0) {
@@ -122,77 +122,82 @@ export default function SendMoney() {
 
     setIsSubmitting(true);
     try {
-      // 1. Verify Password first
-      const { error: authError } = await supabaseService.signIn(profile.email, password);
+      // 0. Verify Password first
+      const { error: authError } = await firebaseService.signIn(profile.email, password);
       if (authError) {
         toast.error('Incorrect password. Please try again.');
         setIsSubmitting(false);
         return;
       }
       
-      // 2. Get receiver wallet
-      const receiverWallets = await supabaseService.getCollection('wallets', [
+      const senderWalletRef = doc(db, 'wallets', wallet.id);
+      
+      // Get receiver wallet
+      const receiverWallets = await firebaseService.getCollection('wallets', [
         where('uid', '==', receiverProfile.uid),
         where('currency', '==', 'VND')
       ]);
 
       if (receiverWallets.length === 0) {
-        toast.error("Receiver does not have a VND wallet");
-        setIsSubmitting(false);
-        return;
+        throw new Error("Receiver does not have a VND wallet");
       }
 
-      const receiverWallet = receiverWallets[0];
+      const receiverWalletRef = doc(db, 'wallets', receiverWallets[0].id);
       const amountNum = Number(amount);
 
-      // 3. Check sender balance again
-      if (wallet.balance < amountNum) {
-        toast.error("Insufficient balance");
-        setIsSubmitting(false);
-        return;
-      }
+      await runTransaction(db, async (transaction) => {
+        const sSnap = await transaction.get(senderWalletRef);
+        const rSnap = await transaction.get(receiverWalletRef);
 
-      // 4. Sequential updates (Simulating transaction)
-      // Deduct from sender
-      await supabaseService.updateDocument('wallets', wallet.id, { 
-        balance: wallet.balance - amountNum,
-        updatedAt: new Date().toISOString()
-      });
+        if (!sSnap.exists() || !rSnap.exists()) {
+          throw new Error("One or both wallets were not found. Transfer aborted.");
+        }
 
-      // Add to receiver
-      await supabaseService.updateDocument('wallets', receiverWallet.id, { 
-        balance: receiverWallet.balance + amountNum,
-        updatedAt: new Date().toISOString()
-      });
+        const sBalance = sSnap.data().balance;
+        const rBalance = rSnap.data().balance;
 
-      // Add transaction records for both
-      const txData = {
-        status: 'completed',
-        amount: amountNum,
-        currency: 'VND',
-        createdAt: new Date().toISOString()
-      };
+        if (sBalance < amountNum) {
+          throw new Error("Insufficient balance in your wallet.");
+        }
 
-      await supabaseService.addDocument('transactions', {
-        ...txData,
-        uid: profile?.uid,
-        userName: profile?.displayName || profile?.email?.split('@')[0],
-        type: 'send',
-        receiverId: receiverProfile.uid,
-        receiverName: receiverProfile.displayName || 'Tuktak User',
-        receiverPhone: receiverProfile.phoneNumber,
-        description: `Internal Transfer to ${receiverProfile.displayName || receiverProfile.phoneNumber}`
-      });
+        transaction.update(senderWalletRef, { 
+          balance: sBalance - amountNum,
+          updatedAt: new Date().toISOString()
+        });
+        transaction.update(receiverWalletRef, { 
+          balance: rBalance + amountNum,
+          updatedAt: new Date().toISOString()
+        });
 
-      await supabaseService.addDocument('transactions', {
-        ...txData,
-        uid: receiverProfile.uid,
-        userName: receiverProfile.displayName || receiverProfile.email?.split('@')[0],
-        type: 'receive',
-        senderId: profile?.uid,
-        senderName: profile?.displayName || 'Tuktak User',
-        senderPhone: profile?.phoneNumber,
-        description: `Internal Transfer from ${profile?.displayName || profile?.phoneNumber}`
+        // Add transaction records for both
+        const senderTxRef = doc(db, 'transactions', crypto.randomUUID());
+        const receiverTxRef = doc(db, 'transactions', crypto.randomUUID());
+
+        transaction.set(senderTxRef, {
+          uid: profile?.uid,
+          type: 'send',
+          status: 'completed',
+          amount: amountNum,
+          currency: 'VND',
+          receiverId: receiverProfile.uid,
+          receiverName: receiverProfile.displayName || 'Tuktak User',
+          receiverPhone: receiverProfile.phoneNumber,
+          createdAt: new Date().toISOString(),
+          description: `Internal Transfer to ${receiverProfile.displayName || receiverProfile.phoneNumber}`
+        });
+
+        transaction.set(receiverTxRef, {
+          uid: receiverProfile.uid,
+          type: 'receive',
+          status: 'completed',
+          amount: amountNum,
+          currency: 'VND',
+          senderId: profile?.uid,
+          senderName: profile?.displayName || 'Tuktak User',
+          senderPhone: profile?.phoneNumber,
+          createdAt: new Date().toISOString(),
+          description: `Internal Transfer from ${profile?.displayName || profile?.phoneNumber}`
+        });
       });
 
       toast.success(t('p2p_transfer_success'));

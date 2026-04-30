@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
-import { supabaseService, where } from '@/lib/supabaseService';
+import { firebaseService, where } from '../lib/firebaseService';
 import { 
   Send, 
   ArrowRight, 
@@ -62,13 +62,13 @@ export default function ExchangeMoney() {
   useEffect(() => {
     if (!profile?.uid) return;
 
-    const unsubWallets = supabaseService.subscribeToCollection(
+    const unsubWallets = firebaseService.subscribeToCollection(
       'wallets',
       [where('uid', '==', profile.uid)],
       (data) => setWallets(data)
     );
 
-    const unsubRates = supabaseService.subscribeToCollection(
+    const unsubRates = firebaseService.subscribeToCollection(
       'rates',
       [],
       (data) => setRates(data)
@@ -169,7 +169,7 @@ export default function ExchangeMoney() {
     setIsSubmitting(true);
     try {
       // Verify Password first
-      const { error: authError } = await supabaseService.signIn(profile.email, password);
+      const { error: authError } = await firebaseService.signIn(profile.email, password);
       if (authError) {
         toast.error('Incorrect password. Please try again.');
         setIsSubmitting(false);
@@ -178,7 +178,7 @@ export default function ExchangeMoney() {
 
       let qrUrl = null;
       if (receiverQrFile) {
-        qrUrl = await supabaseService.uploadFile(receiverQrFile);
+        qrUrl = await firebaseService.uploadFile(receiverQrFile);
       }
 
       const tx = {
@@ -208,7 +208,7 @@ export default function ExchangeMoney() {
         updated_at: new Date().toISOString()
       };
       
-      const response = await supabaseService.addDocument('transactions', tx);
+      const response = await firebaseService.addDocument('transactions', tx);
       const docId = typeof response === 'string' ? response : (response as any)?.id;
       
       if (!docId) {
@@ -218,7 +218,7 @@ export default function ExchangeMoney() {
       // Lock balance immediately (Hidden deduction)
       const wallet = wallets.find(w => w.currency === sourceCurrency);
       if (wallet) {
-        await supabaseService.updateWalletBalance(profile?.uid!, sourceCurrency, 0, Number(amount) + Number(fee));
+        await firebaseService.updateWalletBalance(profile?.uid!, sourceCurrency, 0, Number(amount) + Number(fee));
       }
       
       toast.success('Exchange request submitted! Admin will verify.');

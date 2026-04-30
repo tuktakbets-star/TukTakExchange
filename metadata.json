@@ -1,5 +1,5 @@
 {
   "name": "Tuktak Exchange",
   "description": "Premium fintech platform for seamless currency exchange and international transfers between Vietnam and South Asia.",
-  "requestFramePermissions": ["camera"]
+  "requestFramePermissions": []
 }

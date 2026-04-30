@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
-import { supabaseService, where, orderBy } from '@/lib/supabaseService';
+import { firebaseService } from '../lib/firebaseService';
 import { motion } from 'motion/react';
 import { 
   Clock, 
@@ -55,7 +55,7 @@ export default function WaitingPage() {
   const status = tx?.status?.toLowerCase().trim();
   const isPending = status === 'pending';
   const isAccepted = status === 'accepted';
-  const isWaitingUserResponse = status === 'waiting_user_response';
+  const isPaid = status === 'paid';
   const isCompleted = status === 'completed';
   const isDisputed = status === 'disputed';
   const isCancelled = status === 'cancelled';
@@ -64,9 +64,11 @@ export default function WaitingPage() {
   const handleAppealClick = async () => {
     if (!txId) return;
     try {
-      await supabaseService.updateDocument('transactions', txId, {
+      // Immediately set status to disputed to stop all timers
+      await firebaseService.updateDocument('transactions', txId, {
         status: 'disputed',
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       });
       navigate(`/appeal/${txId}`);
     } catch (error) {
@@ -85,60 +87,39 @@ export default function WaitingPage() {
     setIsConfirming(true);
     try {
       // Verify Password first
-      const { error: authError } = await supabaseService.signIn(profile.email, confirmPassword);
+      const { error: authError } = await firebaseService.signIn(profile.email, confirmPassword);
       if (authError) {
         toast.error('Incorrect password. Please try again.');
         setIsConfirming(false);
         return;
       }
 
+      const status = tx.status?.toLowerCase().trim();
       // Avoid double confirmation
-      if (tx.status === 'completed') {
+      if (status === 'completed') {
         setShowPasswordDialog(false);
         navigate('/wallet');
         return;
       }
 
-      // 1. Transaction status update
-      await supabaseService.updateDocument('transactions', txId, { 
+      // 1. Finalize Balance Deduction (Move from pendingLocked to real deduction)
+      const amountToDeduct = tx.total_to_deduct || tx.totalToDeduct || tx.amount;
+      await firebaseService.updateWalletBalance(tx.uid, tx.currency, -amountToDeduct, -amountToDeduct);
+
+      // 2. Update transaction status
+      await firebaseService.updateDocument('transactions', txId, { 
         status: 'completed',
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       });
-
-      // 2. Finalize Balance Deduction for User (if not already handled)
-      const amountToDeduct = tx.totalToDeduct || tx.amount;
-      if (tx.type === 'withdraw' || tx.type === 'exchange' || tx.type === 'recharge') {
-          // If the money was already "locked" (pending_locked), we reduce it now.
-          await supabaseService.updateWalletBalance(tx.uid, tx.currency, 0, -amountToDeduct);
-      }
-
-      // 3. CREDIT SUB-ADMIN WALLET
-      // When a user confirms they received funds, the system adds balance to the operator's system wallet
-      // as they have successfully fulfilled the transaction using their own liquidity.
-      if (tx.assignedSubAdminId) {
-        const { data: subAdmin } = await supabaseService.getDocument('sub_admins', tx.assignedSubAdminId);
-        if (subAdmin) {
-          const newBalance = (subAdmin.wallet_balance || 0) + tx.amount;
-          await supabaseService.updateDocument('sub_admins', subAdmin.id, {
-            wallet_balance: newBalance
-          });
-
-          // Log the credit
-          await supabaseService.addDocument('sub_admin_wallet_transactions', {
-            sub_admin_id: subAdmin.id,
-            type: 'deposit',
-            amount: tx.amount,
-            reason: `Order ${txId} completed by user confirmation`,
-            order_id: txId,
-            balance_after: newBalance,
-            created_at: new Date().toISOString()
-          });
-        }
-      }
 
       setShowPasswordDialog(false);
       toast.success('Transaction completed successfully!');
-      setTimeout(() => navigate('/wallet'), 1500);
+      
+      // Delay navigation slightly to show success state
+      setTimeout(() => {
+        navigate('/wallet');
+      }, 1500);
     } catch (error) {
       toast.error('Failed to complete transaction');
       setIsConfirming(false);
@@ -148,10 +129,11 @@ export default function WaitingPage() {
   useEffect(() => {
     if (!txId) return;
 
-    const unsub = supabaseService.subscribeToDocument('transactions', txId, (data) => {
+    const unsub = firebaseService.subscribeToDocument('transactions', txId, (data) => {
       if (data) {
         setTx(data);
-        const createdAtStr = data.createdAt || data.created_at;
+        // If transaction is already old, calculate remaining time
+        const createdAtStr = data.created_at || data.createdAt;
         if (createdAtStr) {
           const createdAt = new Date(createdAtStr).getTime();
           const now = new Date().getTime();
@@ -159,8 +141,9 @@ export default function WaitingPage() {
           const remaining = Math.max(0, 1800 - elapsed);
           setTimeLeft(remaining);
 
-          if (data.status?.toLowerCase().trim() === 'waiting_user_response') {
-            const paidAtStr = data.subAdminActionedAt || data.sub_admin_actioned_at;
+          // Also set auto-complete timer if paid
+          if (data.status?.toLowerCase().trim() === 'paid') {
+            const paidAtStr = data.paid_at || data.paidAt;
             const paidAt = paidAtStr ? new Date(paidAtStr).getTime() : now;
             const paidElapsed = Math.floor((now - paidAt) / 1000);
             const paidRemaining = Math.max(0, 600 - paidElapsed); // 10 mins
@@ -206,7 +189,7 @@ export default function WaitingPage() {
   }, [timeLeft, tx?.status, txId, isDisputed]);
 
   useEffect(() => {
-    if (tx?.status?.toLowerCase().trim() !== 'waiting_user_response' || isDisputed) return;
+    if (tx?.status?.toLowerCase().trim() !== 'paid' || isDisputed) return;
 
     const timer = setInterval(() => {
       setAutoCompleteTime((prev) => {
@@ -254,14 +237,13 @@ export default function WaitingPage() {
       const needsRefund = tx.type === 'withdraw' || tx.type === 'exchange' || tx.type === 'recharge' || tx.type === 'cash_out';
       
       if (needsRefund) {
-        const amountToRefund = tx.totalToDeduct || tx.amount;
-        await supabaseService.updateWalletBalance(tx.uid, tx.currency, 0, -amountToRefund);
+        await firebaseService.updateWalletBalance(tx.uid, tx.currency, 0, -(tx.totalToDeduct || tx.amount));
       }
 
       // Update status to cancelled instead of deleting (so it shows in history)
-      await supabaseService.updateDocument('transactions', txId, {
+      await firebaseService.updateDocument('transactions', txId, {
         status: 'cancelled',
-        updated_at: new Date().toISOString()
+        updatedAt: new Date().toISOString()
       });
 
       toast.success('Transaction cancelled and refunded');
@@ -291,17 +273,17 @@ export default function WaitingPage() {
           <div className="relative inline-block">
             <div className={cn(
               "w-28 h-28 rounded-full flex items-center justify-center mx-auto mb-2 relative z-10",
-              (isPending || isAccepted || isWaitingUserResponse) ? "bg-blue-500/10 text-blue-500" :
+              (isPending || isAccepted || isPaid) ? "bg-blue-500/10 text-blue-500" :
               isCompleted ? "bg-green-500/20 text-green-500" :
               (isDisputed || isCancelled) ? "bg-red-500/20 text-red-500" :
               "bg-red-500/10 text-red-500"
             )}>
-              {(isPending || isAccepted || isWaitingUserResponse) ? <Clock className="w-14 h-14 animate-pulse" /> :
+              {(isPending || isAccepted || isPaid) ? <Clock className="w-14 h-14 animate-pulse" /> :
                isCompleted ? <Trophy className="w-14 h-14" /> :
                (isDisputed || isCancelled) ? <AlertTriangle className="w-14 h-14" /> :
                <XCircle className="w-14 h-14" />}
             </div>
-            {(isPending || isAccepted || isWaitingUserResponse) && (
+            {(isPending || isAccepted || isPaid) && (
               <div className="absolute inset-0 bg-blue-500/20 blur-3xl rounded-full animate-pulse"></div>
             )}
             {isCompleted && (
@@ -316,7 +298,7 @@ export default function WaitingPage() {
             <h1 className="text-4xl font-display font-black tracking-tight">
               {isPending ? t('pending') :
                isAccepted ? t('order_accepted_header', 'Order Received!') :
-               isWaitingUserResponse ? t('payment_sent_header', 'Money Sent!') :
+               isPaid ? t('payment_sent_header', 'Money Sent!') :
                isCompleted ? t('completed_header', 'Task Finished!') :
                isDisputed ? t('disputed_header', 'Under Review') :
                isCancelled ? t('cancelled_header', 'Cancelled') :
@@ -324,35 +306,28 @@ export default function WaitingPage() {
             </h1>
             
             {isDisputed ? (
-              <div className="p-8 bg-red-600/20 border-4 border-red-500 rounded-[3rem] animate-pulse shadow-[0_0_50px_rgba(239,68,68,0.3)] text-center space-y-4 cursor-pointer hover:scale-105 transition-transform"
-                onClick={() => navigate(`/dispute-chat/${txId}`)}
-              >
-                <div className="flex flex-col items-center">
-                  <AlertTriangle className="w-16 h-16 text-red-500 mx-auto" />
-                  <div className="bg-red-500 text-white text-[10px] font-black px-4 py-1 rounded-full uppercase tracking-widest -mt-2 mb-2">
-                    Enter Dispute Chat
-                  </div>
-                </div>
+              <div className="p-8 bg-red-600/20 border-4 border-red-500 rounded-[3rem] animate-pulse shadow-[0_0_50px_rgba(239,68,68,0.3)] text-center space-y-4">
+                <AlertTriangle className="w-16 h-16 text-red-500 mx-auto" />
                 <div className="space-y-2">
                   <h2 className="text-3xl font-black text-red-500 uppercase tracking-tighter">Appeal in Progress</h2>
                   <p className="text-red-400 font-bold leading-tight">
-                    Our support team is investigating your claim. Click here to join the discussion.
+                    Our support team is investigating your claim. All timers are paused.
                   </p>
                 </div>
                 <div className="flex items-center justify-center gap-2 text-red-500/60 font-black text-[10px] uppercase tracking-[0.3em] pt-4">
                    <RefreshCw className="w-3 h-3 animate-spin" />
-                   Reviewing Evidence
+                   Pending Admin Investigation
                 </div>
               </div>
             ) : (
               <div className={cn(
                   "p-10 rounded-[3rem] border-4 transition-all duration-500 relative overflow-hidden",
                   isAccepted ? "bg-blue-600/20 border-blue-500 shadow-[0_0_50px_rgba(59,130,246,0.3)]" :
-                  isWaitingUserResponse ? "bg-green-600/20 border-green-500 shadow-[0_0_50px_rgba(34,197,94,0.3)] scale-105" :
+                  isPaid ? "bg-green-600/20 border-green-500 shadow-[0_0_50px_rgba(34,197,94,0.3)] scale-105" :
                   "bg-white/5 border-white/5"
               )}>
                   {/* Decorative background glow */}
-                  {(isAccepted || isWaitingUserResponse) && (
+                  {(isAccepted || isPaid) && (
                       <motion.div 
                         animate={{ opacity: [0.1, 0.3, 0.1] }}
                         transition={{ duration: 2, repeat: Infinity }}
@@ -362,25 +337,25 @@ export default function WaitingPage() {
 
                   <p className={cn(
                       "font-black leading-tight tracking-tight text-center uppercase mb-2 text-xs opacity-50",
-                      (isAccepted || isWaitingUserResponse) ? "text-white" : "text-slate-500"
+                      (isAccepted || isPaid) ? "text-white" : "text-slate-500"
                   )}>
                     Current Status Info
                   </p>
 
                   <p className={cn(
                       "font-black leading-tight tracking-tight text-center",
-                      (isAccepted || isWaitingUserResponse) ? "text-3xl sm:text-4xl text-white" : "text-xl text-slate-400"
+                      (isAccepted || isPaid) ? "text-3xl sm:text-4xl text-white" : "text-xl text-slate-400"
                   )}>
                     {isPending ? t('pending_desc') :
                      isAccepted ? t('accepted_desc') :
-                     isWaitingUserResponse ? t('paid_desc') :
+                     isPaid ? t('paid_desc') :
                      isCompleted ? t('completed_desc') :
                      isDisputed ? t('disputed_desc') :
                      isCancelled ? t('cancelled_desc') :
                      t('failed')}
                   </p>
                   
-                  {(isAccepted || isWaitingUserResponse) && (
+                  {(isAccepted || isPaid) && (
                       <div className="mt-6 flex items-center justify-center gap-2">
                           <div className="flex gap-1">
                               <span className="w-1.5 h-1.5 bg-brand-blue rounded-full animate-bounce [animation-delay:-0.3s]"></span>
@@ -405,7 +380,7 @@ export default function WaitingPage() {
           </Card>
         )}
 
-        {isWaitingUserResponse && isExchangeFlow && (
+        {isPaid && isExchangeFlow && (
            <Card className="glass-dark border-brand-blue/40 rounded-[2rem] overflow-hidden shadow-2xl shadow-blue-600/10">
             <CardContent className="p-8 space-y-6">
               <div className="text-center space-y-2">
@@ -413,17 +388,17 @@ export default function WaitingPage() {
                 <h3 className="text-xl font-bold">{t('payment_sent_header', 'Money Sent!')}</h3>
                 <p className="text-sm text-slate-400">
                   {t('check_bank_for_amount', { 
-                    bank: (tx.receiver_info?.bankName || tx.receiverInfo?.bankName || 'Your Account'), 
-                    amount: (tx.target_amount || tx.targetAmount || tx.amount), 
-                    currency: (tx.target_currency || tx.targetCurrency || 'BDT') 
+                    bank: (tx.receiver_info?.bankName || tx.receiverInfo?.bankName), 
+                    amount: (tx.target_amount || tx.targetAmount), 
+                    currency: (tx.target_currency || tx.targetCurrency) 
                   })}
                 </p>
-                  <div className={cn(
-                    "mt-4 p-8 rounded-[2.5rem] transition-all duration-500 flex flex-col items-center justify-center space-y-4",
-                    autoCompleteTime <= 120 
+                 <div className={cn(
+                   "mt-4 p-8 rounded-[2.5rem] transition-all duration-500 flex flex-col items-center justify-center space-y-4",
+                   autoCompleteTime <= 120 
                     ? "bg-red-500/20 border-4 border-red-500 animate-pulse shadow-[0_0_40px_rgba(239,68,68,0.5)]" 
                     : "bg-white/5 border border-white/10"
-                  )}>
+                 )}>
                    <div className="text-center">
                      <p className={cn(
                        "text-xs md:text-sm uppercase tracking-[0.6em] font-black mb-4",
@@ -457,18 +432,18 @@ export default function WaitingPage() {
                  </div>
               </div>
 
-              {(tx.paymentReceiptUrl || tx.payment_receipt_url) && (
+              {tx.adminProof && (
                 <div className="space-y-3">
                   <p className="text-xs font-bold text-slate-500 uppercase tracking-widest text-center">Payment Receipt</p>
                   <div 
                     className="aspect-video rounded-2xl bg-black/40 border border-white/5 overflow-hidden relative group cursor-pointer"
                     onClick={() => {
-                      setViewerSrc(tx.paymentReceiptUrl || tx.payment_receipt_url);
+                      setViewerSrc(tx.adminProof);
                       setIsViewerOpen(true);
                     }}
                   >
                     <img 
-                      src={tx.paymentReceiptUrl || tx.payment_receipt_url} 
+                      src={tx.adminProof} 
                       alt="Admin Proof" 
                       className="w-full h-full object-cover" 
                       referrerPolicy="no-referrer" 
@@ -592,16 +567,16 @@ export default function WaitingPage() {
                 <span className="capitalize font-bold text-slate-300">{tx.type}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500 text-sm">Status</span>
+                <span className="text-slate-500 text-sm">{t('status')}</span>
                 <Badge className={cn(
                   "capitalize rounded-full px-3 py-1 font-bold",
                   tx.status?.toLowerCase().trim() === 'completed' ? "bg-green-500/20 text-green-500" :
                   tx.status?.toLowerCase().trim() === 'pending' ? "bg-yellow-500/20 text-yellow-500" :
                   tx.status?.toLowerCase().trim() === 'accepted' ? "bg-blue-500/20 text-blue-500" :
-                  tx.status?.toLowerCase().trim() === 'waiting_user_response' ? "bg-indigo-500/20 text-indigo-500" :
+                  tx.status?.toLowerCase().trim() === 'paid' ? "bg-indigo-500/20 text-indigo-500" :
                   "bg-red-500/20 text-red-500"
                 )}>
-                  {tx.status?.replace(/_/g, ' ')}
+                  {tx.status}
                 </Badge>
               </div>
             </div>
@@ -611,12 +586,12 @@ export default function WaitingPage() {
             <h3 className="font-bold text-slate-400 text-sm uppercase tracking-wider">{t('need_help')}</h3>
             <p className="text-xs text-slate-500">{t('need_help_desc')}</p>
             <div className="space-y-4">
-              {(tx.paymentReceiptUrl || tx.payment_receipt_url) && (
+              {tx.adminProof && (
                 <Button 
                   variant="send" 
                   className="w-full bg-blue-600/10 hover:bg-blue-600/20 text-blue-500 rounded-xl h-12 font-bold border border-blue-500/20"
                   onClick={() => {
-                    setViewerSrc(tx.paymentReceiptUrl || tx.payment_receipt_url);
+                    setViewerSrc(tx.adminProof);
                     setIsViewerOpen(true);
                   }}
                 >

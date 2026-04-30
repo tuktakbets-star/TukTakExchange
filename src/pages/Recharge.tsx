@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { supabaseService, where } from '@/lib/supabaseService';
+import { firebaseService, where } from '../lib/firebaseService';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { 
@@ -46,7 +46,7 @@ export default function Recharge() {
   useEffect(() => {
     if (!profile?.uid) return;
 
-    const unsubWallets = supabaseService.subscribeToCollection(
+    const unsubWallets = firebaseService.subscribeToCollection(
       'wallets',
       [where('uid', '==', profile.uid)],
       (data) => setWallets(data)
@@ -96,7 +96,7 @@ export default function Recharge() {
     setIsSubmitting(true);
     try {
       // 1. Verify Password first
-      const { error: authError } = await supabaseService.signIn(profile.email, password);
+      const { error: authError } = await firebaseService.signIn(profile.email, password);
       if (authError) {
         toast.error('Incorrect password. Please try again.');
         setIsSubmitting(false);
@@ -105,10 +105,7 @@ export default function Recharge() {
 
       const tx = {
         uid: profile?.uid,
-        userName: profile?.displayName || profile?.email?.split('@')[0],
         type: 'recharge',
-        method: 'RECHARGE',
-        paymentMethod: 'WALLET_VND',
         status: 'pending',
         amount: Number(amount),
         currency: 'VND',
@@ -121,11 +118,11 @@ export default function Recharge() {
         }
       };
       
-      const docId = await supabaseService.addDocument('transactions', tx);
+      const docId = await firebaseService.addDocument('transactions', tx);
       
       if (docId) {
         // Deduct from wallet
-        await supabaseService.updateDocument('wallets', wallet.id, {
+        await firebaseService.updateDocument('wallets', wallet.id, {
           balance: wallet.balance - Number(amount),
           updatedAt: new Date().toISOString()
         });

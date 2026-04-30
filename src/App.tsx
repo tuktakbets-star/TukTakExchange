@@ -5,6 +5,8 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { Toaster } from '@/components/ui/sonner';
 import SplashScreen from './components/SplashScreen';
 import SessionRequestDialog from './components/SessionRequestDialog';
+import { doc, getDocFromCache, getDocFromServer } from './lib/firebaseService';
+import { db } from './lib/firebase';
 import './lib/i18n';
 
 // Pages (to be created)
@@ -26,7 +28,6 @@ import WaitingPage from './pages/WaitingPage';
 import Recharge from './pages/Recharge';
 import AddMoney from './pages/AddMoney';
 import Appeal from './pages/Appeal';
-import DisputeChat from './pages/DisputeChat';
 import AdminPanel from './pages/AdminPanel';
 import AdminLayout from './pages/admin/AdminLayout';
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -124,7 +125,6 @@ export default function App() {
                 <Route path="/recharge" element={<Recharge />} />
                 <Route path="/add-money" element={<AddMoney />} />
                 <Route path="/appeal/:txId" element={<Appeal />} />
-                <Route path="/dispute-chat/:txId" element={<DisputeChat />} />
                 <Route path="/waiting/:txId" element={<WaitingPage />} />
               </Route>
               

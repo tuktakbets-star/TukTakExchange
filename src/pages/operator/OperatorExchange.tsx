@@ -40,8 +40,6 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
   const [rejectionReason, setRejectionReason] = useState('');
   const [isAcceptConfirmOpen, setIsAcceptConfirmOpen] = useState(false);
   const [isPaidConfirmOpen, setIsPaidConfirmOpen] = useState(false);
-  const [receiptFile, setReceiptFile] = useState<File | null>(null);
-  const [receiptUrl, setReceiptUrl] = useState('');
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [operator, setOperator] = useState<any>(null);
@@ -93,53 +91,35 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
 
   const handleMarkAsPaid = async () => {
     if (!selectedOrder || !operator) return;
-    
-    if (!receiptFile && !receiptUrl) {
-      toast.error('Please upload a payment receipt photo');
-      return;
-    }
-
-    setLoading(true);
-    toast.loading('Uploading receipt and updating status...', { id: 'paid' });
+    toast.loading('Marking as paid...', { id: 'paid' });
     
     try {
-      let finalReceiptUrl = receiptUrl;
-      
-      // If there's a file, we should upload it. 
-      // For this implementation, I'll use a data URL or simulated upload since I don't have a direct storage mock,
-      // but in a real app, this would be supabaseService.uploadFile
-      if (receiptFile) {
-        // Simulating upload delay
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        finalReceiptUrl = URL.createObjectURL(receiptFile); // Using blob for preview, would be real URL usually
-      }
-
       await supabaseService.updateDocument('transactions', selectedOrder.id, {
-        status: 'waiting_user_response',
+        status: 'mark_as_paid',
         sub_admin_action: 'mark_as_paid',
-        paymentReceiptUrl: finalReceiptUrl,
         sub_admin_actioned_at: new Date().toISOString()
       });
 
+      // For Exchange/Withdraw, the balance is added back to operator wallet?
+      // Actually, usually in these flows the sub-admin pays the user.
+      // So they get a "commission" or the admin refills them.
+      // For now, let's just log it.
+      
       await supabaseService.addDocument('sub_admin_logs', {
         sub_admin_id: operator.id,
         action_type: mode,
         order_id: selectedOrder.id,
         user_id: selectedOrder.uid,
         amount: selectedOrder.amount,
-        status: 'waiting_user_response',
+        status: 'mark_as_paid',
         timestamp: new Date().toISOString()
       });
 
-      toast.success('Funds marked as paid. Waiting for user response.', { id: 'paid' });
+      toast.success('Funds marked as paid. Waiting for finality.', { id: 'paid' });
       setIsPaidConfirmOpen(false);
-      setReceiptFile(null);
-      setReceiptUrl('');
       fetchData();
     } catch (error) {
       toast.error('Failed to mark as paid', { id: 'paid' });
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -232,65 +212,25 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
                       </span>
                     </div>
                   </td>
-                   <td className="px-6 py-5">
+                  <td className="px-6 py-5">
                     <div className="text-xs space-y-1">
-                      {order.bankInfo ? (
+                      {order.bankDetails ? (
                         <>
-                          <div className="flex items-center gap-1.5 mb-1">
-                             <Building2 className="w-3 h-3 text-blue-500" />
-                             <p className="font-bold text-slate-200">{order.bankInfo.bankName}</p>
-                          </div>
-                          <p className="text-slate-500 flex items-center gap-1.5"><User className="w-3 h-3" />{order.bankInfo.accountName}</p>
-                          <p className="text-blue-400 font-mono font-bold mt-1 bg-blue-400/5 px-2 py-0.5 rounded border border-blue-400/10 inline-block">{order.bankInfo.accountNumber}</p>
-                          {order.bankInfo.country && <Badge variant="outline" className="text-[8px] h-4 ml-2 border-white/10">{order.bankInfo.country}</Badge>}
-                        </>
-                      ) : order.rechargeDetails ? (
-                        <>
-                          <div className="flex items-center gap-1.5 mb-1">
-                             <Smartphone className="w-3 h-3 text-amber-500" />
-                             <p className="font-bold text-slate-200">{order.rechargeDetails.operator}</p>
-                          </div>
-                          <p className="text-amber-500 font-mono font-bold mt-1 bg-amber-500/5 px-2 py-0.5 rounded border border-amber-500/10 inline-block">{order.rechargeDetails.phoneNumber}</p>
-                          <p className="text-[10px] text-slate-600 italic mt-1">{order.rechargeDetails.country}</p>
-                        </>
-                      ) : order.receiver_info ? (
-                        <>
-                          <div className="flex items-center gap-1.5 mb-1">
-                             <ArrowRightLeft className="w-3 h-3 text-purple-500" />
-                             <p className="font-bold text-slate-200">{order.receiver_info.name}</p>
-                          </div>
-                          <p className="text-slate-500">{order.receiver_info.bankName}</p>
-                          <p className="text-purple-400 font-mono font-bold mt-1 bg-purple-400/5 px-2 py-0.5 rounded border border-purple-400/10 inline-block">{order.receiver_info.accountNumber}</p>
-                          {order.receiver_info.branch && <p className="text-[10px] text-slate-600 mt-1">Branch: {order.receiver_info.branch}</p>}
+                          <p className="font-bold text-slate-200">{order.bankDetails.bankName}</p>
+                          <p className="text-slate-500">{order.bankDetails.accountNumber}</p>
                         </>
                       ) : (
-                        <span className="text-slate-600 italic">No details available</span>
+                        <>
+                          <p className="font-bold text-slate-200">{order.rechargeDetails?.operator}</p>
+                          <p className="text-slate-500">{order.rechargeDetails?.number}</p>
+                        </>
                       )}
-                      
-                      <div className="flex gap-2 mt-2">
-                        {(order.proofUrl || (order.receiver_info && order.receiver_info.qrCode)) && (
-                          <button 
-                            onClick={() => { 
-                              setSelectedOrder({ 
-                                ...order, 
-                                docUrl: order.proofUrl || (order.receiver_info && order.receiver_info.qrCode) 
-                              }); 
-                              setIsDocModalOpen(true); 
-                            }}
-                            className="text-blue-500 hover:underline text-[10px] font-black uppercase tracking-widest flex items-center gap-1"
-                          >
-                             <FileImage className="w-3 h-3" /> Info Doc
-                          </button>
-                        )}
-                        {order.paymentReceiptUrl && (
-                          <button 
-                            onClick={() => { setSelectedOrder({ ...order, docUrl: order.paymentReceiptUrl }); setIsDocModalOpen(true); }}
-                            className="text-green-500 hover:underline text-[10px] font-black uppercase tracking-widest flex items-center gap-1"
-                          >
-                             <FileImage className="w-3 h-3" /> Receipt
-                          </button>
-                        )}
-                      </div>
+                      <button 
+                        onClick={() => { setSelectedOrder(order); setIsDocModalOpen(true); }}
+                        className="text-blue-500 hover:underline text-[10px] font-black uppercase tracking-widest flex items-center gap-1 mt-2"
+                      >
+                         <FileImage className="w-3 h-3" /> View Doc
+                      </button>
                     </div>
                   </td>
                   <td className="px-6 py-5">
@@ -304,7 +244,7 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
                         "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider inline-block",
                         order.status === 'pending' ? "bg-amber-500/10 text-amber-500" :
                         order.status === 'accepted' ? "bg-blue-500/10 text-blue-500" :
-                        order.status === 'waiting_user_response' ? "bg-cyan-500/10 text-cyan-500" :
+                        order.status === 'mark_as_paid' ? "bg-cyan-500/10 text-cyan-500" :
                         order.status === 'completed' ? "bg-purple-500/10 text-purple-500" :
                         "bg-red-500/10 text-red-500"
                       )}>
@@ -322,8 +262,8 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
                        {order.status === 'accepted' && (
                          <Button onClick={() => { setSelectedOrder(order); setIsPaidConfirmOpen(true); }} className="h-9 px-4 bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white rounded-xl text-xs font-bold shadow-xl shadow-blue-600/20">Mark as Paid</Button>
                        )}
-                       {order.status === 'waiting_user_response' && (
-                         <span className="text-[10px] font-bold text-slate-500 italic uppercase">User Confirming...</span>
+                       {order.status === 'mark_as_paid' && (
+                         <span className="text-[10px] font-bold text-slate-500 italic uppercase">Awaiting Completion</span>
                        )}
                        {order.status === 'completed' && (
                          <CheckCircle2 className="w-5 h-5 text-purple-500" />
@@ -392,50 +332,9 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
                    Only confirm if you've already sent the funds to the user's provided bank/wallet account.
                  </p>
               </div>
-
-              <div className="mt-6 flex flex-col gap-2 text-left">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Upload Payment Receipt (Required)</label>
-                <div className="relative group">
-                   <div className={cn(
-                     "h-32 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center transition-all cursor-pointer",
-                     receiptFile ? "border-green-500 bg-green-500/5" : "border-white/10 hover:border-blue-500/50 bg-white/5"
-                   )}
-                   onClick={() => document.getElementById('receipt-upload')?.click()}
-                   >
-                     {receiptFile ? (
-                        <>
-                          <CheckCircle2 className="w-8 h-8 text-green-500 mb-2" />
-                          <p className="text-xs font-bold text-green-500 truncate max-w-[200px]">{receiptFile.name}</p>
-                          <p className="text-[10px] text-green-500/50 mt-1 uppercase font-black">Click to change</p>
-                        </>
-                     ) : (
-                        <>
-                          <FileImage className="w-8 h-8 text-slate-500 mb-2 group-hover:text-blue-500 transition-colors" />
-                          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Click to upload photo</p>
-                        </>
-                     )}
-                   </div>
-                   <input 
-                     id="receipt-upload" 
-                     type="file" 
-                     className="hidden" 
-                     accept="image/*" 
-                     onChange={(e) => {
-                       const file = e.target.files?.[0];
-                       if (file) setReceiptFile(file);
-                     }} 
-                   />
-                </div>
-              </div>
            </div>
-           <DialogFooter className="flex flex-col gap-2 px-4 pb-4">
-              <Button 
-                onClick={handleMarkAsPaid} 
-                disabled={loading || !receiptFile}
-                className="w-full h-14 bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white rounded-2xl font-bold shadow-xl shadow-blue-600/30 text-lg disabled:opacity-50"
-              >
-                {loading ? 'Processing...' : 'Confirm & Send Proof'}
-              </Button>
+           <DialogFooter className="flex flex-col gap-2">
+              <Button onClick={handleMarkAsPaid} className="w-full h-14 bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white rounded-2xl font-bold shadow-xl shadow-blue-600/30 text-lg">Confirm Sent Payment</Button>
               <Button variant="ghost" onClick={() => setIsPaidConfirmOpen(false)} className="w-full h-12 rounded-xl text-slate-500">Cancel</Button>
            </DialogFooter>
         </DialogContent>

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useTranslation } from 'react-i18next';
-import { supabaseService } from '@/lib/supabaseService';
+import { firebaseService } from '../lib/firebaseService';
 import { 
   AlertTriangle, 
   MessageSquare, 
@@ -33,7 +33,7 @@ export default function Appeal() {
 
   useEffect(() => {
     if (!txId) return;
-    const unsub = supabaseService.subscribeToDocument('transactions', txId, (data) => {
+    const unsub = firebaseService.subscribeToDocument('transactions', txId, (data) => {
       setTx(data);
     });
     return () => unsub();
@@ -49,40 +49,30 @@ export default function Appeal() {
     setIsSubmitting(true);
     try {
       // Update transaction status to disputed
-      await supabaseService.updateDocument('transactions', txId!, {
+      await firebaseService.updateDocument('transactions', txId!, {
         status: 'disputed',
-        dispute_info: {
+        disputeInfo: {
           reason,
           description,
-          opened_at: new Date().toISOString(),
-          status: 'open'
+          openedAt: new Date().toISOString(),
+          status: 'open',
+          proofUrl: proofFile ? 'https://picsum.photos/seed/dispute/800/600' : null
         }
       });
 
-      // Create first message in dispute chat
-      await supabaseService.addDocument(`disputes/${txId}/messages`, {
-        tx_id: txId,
-        sender_id: profile?.uid || profile?.id,
-        sender_name: profile?.displayName || profile?.username || 'User',
-        sender_role: 'user',
-        text: `NEW APPEAL FILED: ${reason}. Description: ${description}`,
-        type: 'system',
-        created_at: new Date().toISOString()
-      });
-
       // Notify admin
-      await supabaseService.addDocument('notifications', {
-        uid: 'admin',
+      await firebaseService.addDocument('notifications', {
+        uid: 'admin', // Global admin notification
         title: 'New Dispute Filed',
         message: `User ${profile?.displayName} has filed a dispute for transaction ${txId?.substring(0, 8)}`,
         type: 'dispute',
-        tx_id: txId,
-        created_at: new Date().toISOString(),
+        txId: txId,
+        createdAt: new Date().toISOString(),
         read: false
       });
 
-      toast.success('Dispute filed successfully! Entering chat...');
-      navigate(`/dispute-chat/${txId}`);
+      toast.success('Dispute filed successfully. Admin will review your case.');
+      navigate(`/waiting/${txId}`);
     } catch (error) {
       toast.error('Failed to file dispute');
     } finally {

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { supabaseService, where, orderBy, limit } from '@/lib/supabaseService';
+import { firebaseService, where, orderBy, limit } from '../lib/firebaseService';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Wallet, 
@@ -79,29 +79,29 @@ export default function Dashboard() {
   useEffect(() => {
     if (!profile?.uid) return;
 
-    const unsubWallets = supabaseService.subscribeToCollection(
+    const unsubWallets = firebaseService.subscribeToCollection(
       'wallets',
       [where('uid', '==', profile.uid)],
       (data) => setWallets(data)
     );
 
-    const unsubTransactions = supabaseService.subscribeToCollection(
+    const unsubTransactions = firebaseService.subscribeToCollection(
       'transactions',
       [where('uid', '==', profile.uid), orderBy('createdAt', 'desc'), limit(5)],
       (data) => setTransactions(data)
     );
 
-    const unsubActive = supabaseService.subscribeToCollection(
+    const unsubActive = firebaseService.subscribeToCollection(
       'transactions',
       [where('uid', '==', profile.uid), where('status', 'in', ['pending', 'accepted', 'paid', 'disputed'])],
       (data) => setActiveTransactions(data)
     );
 
-    const unsubRates = supabaseService.subscribeToCollection('rates', [], (data) => {
+    const unsubRates = firebaseService.subscribeToCollection('rates', [], (data) => {
       setRates(data);
     });
 
-    const unsubNotifications = supabaseService.subscribeToCollection(
+    const unsubNotifications = firebaseService.subscribeToCollection(
       'notifications',
       [where('uid', '==', profile.uid), orderBy('createdAt', 'desc'), limit(5)],
       (data) => setNotifications(data)
@@ -119,7 +119,7 @@ export default function Dashboard() {
 
   const handleNotificationClick = async (notif: any) => {
     if (!notif.read) {
-      await supabaseService.updateDocument('notifications', notif.id, { read: true });
+      await firebaseService.updateDocument('notifications', notif.id, { read: true });
     }
     
     if (notif.txId) {
@@ -128,7 +128,7 @@ export default function Dashboard() {
         handleTransactionClick(tx);
       } else {
         // Fetch tx if not in recent
-        const { data: fetchedTx } = await supabaseService.getDocument('transactions', notif.txId);
+        const { data: fetchedTx } = await firebaseService.getDocument('transactions', notif.txId);
         if (fetchedTx) handleTransactionClick({ id: notif.txId, ...fetchedTx });
       }
     }

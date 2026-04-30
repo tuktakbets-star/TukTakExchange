@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { supabaseService, where } from '@/lib/supabaseService';
+import { firebaseService, where } from '../lib/firebaseService';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Plus, 
@@ -48,7 +48,7 @@ export default function AddMoney() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    const unsubSettings = supabaseService.subscribeToCollection('adminSettings', [], (data) => {
+    const unsubSettings = firebaseService.subscribeToCollection('adminSettings', [], (data) => {
       // Look for specific add_money_settings first, then fallback to global_settings (Vietnam section)
       const amSettings = data.find(s => s.key === 'add_money_settings');
       const globalSettings = data.find(s => s.key === 'global_settings');
@@ -95,30 +95,28 @@ export default function AddMoney() {
     setIsSubmitting(true);
     try {
       // 1. Verify Password first
-      const { error: authError } = await supabaseService.signIn(profile.email, password);
+      const { error: authError } = await firebaseService.signIn(profile.email, password);
       if (authError) {
         toast.error('Incorrect password. Please try again.');
         setIsSubmitting(false);
         return;
       }
 
-      const realProofUrl = await supabaseService.uploadFile(proofFile);
+      const realProofUrl = await firebaseService.uploadFile(proofFile);
       const tx = {
         uid: profile.uid,
-        userName: profile.displayName || profile.email?.split('@')[0],
         type: 'add_money',
         status: 'pending',
         amount: Number(amountSource),
         currency: 'VND',
         method: 'ADD_MONEY',
-        paymentMethod: 'BANK_VIETNAM',
         proofUrl: realProofUrl,
         transactionCode: transactionId || null,
         createdAt: new Date().toISOString(),
         description: `Add Money ${amountSource} VND from Vietnam`
       };
 
-      const docId = await supabaseService.addDocument('transactions', tx);
+      const docId = await firebaseService.addDocument('transactions', tx);
       if (docId) {
         toast.success('Add Money request submitted!');
         navigate(`/waiting/${docId}`);

@@ -242,22 +242,16 @@ export default function OperatorAddMoney({ type = 'add_money' }: { type?: 'add_m
                     <td className="px-6 py-5">
                        <div className="flex items-center gap-3">
                          <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center font-bold text-xs text-blue-500">
-                           {order?.userName?.[0] || order?.displayName?.[0] || '?'}
+                           {order?.userName?.[0] || '?'}
                          </div>
                          <div className="flex flex-col">
-                           <span className="font-bold text-sm tracking-tight">{order?.userName || order?.displayName || 'User'}</span>
-                           <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">{order?.method || order?.paymentMethod || 'BANK'}</span>
-                           {order?.country && <p className="text-[9px] text-slate-500 font-bold">{order.country}</p>}
+                           <span className="font-bold text-sm tracking-tight">{order?.userName || 'User'}</span>
+                           <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">{order?.paymentMethod || 'BANK'}</span>
                          </div>
                        </div>
                     </td>
                     <td className="px-6 py-5">
-                       <div className="flex flex-col">
-                         <span className="text-lg font-black text-white">
-                           {order.sourceAmount ? `${order.sourceCurrency || '৳'} ${order.sourceAmount.toLocaleString()}` : `৳${order.amount.toLocaleString()}`}
-                         </span>
-                         {order.sourceAmount && <span className="text-[10px] text-slate-600 font-bold">Expect: ₫{order.amount.toLocaleString()}</span>}
-                       </div>
+                       <span className="text-lg font-black text-white">৳{order.amount}</span>
                     </td>
                     <td className="px-6 py-5">
                       <span className={cn(
@@ -270,22 +264,15 @@ export default function OperatorAddMoney({ type = 'add_money' }: { type?: 'add_m
                       </span>
                     </td>
                     <td className="px-6 py-5">
-                       <div className="flex flex-col gap-1">
-                         <button 
-                          onClick={() => {
-                            setSelectedOrder(order);
-                            setIsProofModalOpen(true);
-                          }}
-                          className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-500 hover:bg-blue-600/10 hover:text-blue-500 transition-all font-bold"
-                         >
-                           <Eye className="w-4 h-4" />
-                         </button>
-                         {order.transactionCode && (
-                           <div className="text-[9px] font-mono text-slate-500 truncate max-w-[80px]" title={order.transactionCode}>
-                             TXID: {order.transactionCode}
-                           </div>
-                         )}
-                       </div>
+                       <button 
+                        onClick={() => {
+                          setSelectedOrder(order);
+                          setIsProofModalOpen(true);
+                        }}
+                        className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-500 hover:bg-blue-600/10 hover:text-blue-500 transition-all"
+                       >
+                         <Eye className="w-4 h-4" />
+                       </button>
                     </td>
                     <td className="px-6 py-5 text-right">
                       {order.status === 'pending' ? (
