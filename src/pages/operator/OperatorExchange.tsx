@@ -117,7 +117,7 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
       await supabaseService.updateDocument('transactions', selectedOrder.id, {
         status: 'waiting_user_response',
         sub_admin_action: 'mark_as_paid',
-        payment_receipt_url: finalReceiptUrl,
+        paymentReceiptUrl: finalReceiptUrl,
         sub_admin_actioned_at: new Date().toISOString()
       });
 
@@ -232,34 +232,59 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
                       </span>
                     </div>
                   </td>
-                  <td className="px-6 py-5">
+                   <td className="px-6 py-5">
                     <div className="text-xs space-y-1">
-                      {order.bankDetails ? (
+                      {order.bankInfo ? (
                         <>
-                          <p className="font-bold text-slate-200">{order.bankDetails.bankName}</p>
-                          <p className="text-slate-500">{order.bankDetails.holderName}</p>
-                          <p className="text-slate-500">{order.bankDetails.accountNumber}</p>
-                          {order.bankDetails.branch && <p className="text-[10px] text-slate-600 italic">{order.bankDetails.branch}</p>}
+                          <div className="flex items-center gap-1.5 mb-1">
+                             <Building2 className="w-3 h-3 text-blue-500" />
+                             <p className="font-bold text-slate-200">{order.bankInfo.bankName}</p>
+                          </div>
+                          <p className="text-slate-500 flex items-center gap-1.5"><User className="w-3 h-3" />{order.bankInfo.accountName}</p>
+                          <p className="text-blue-400 font-mono font-bold mt-1 bg-blue-400/5 px-2 py-0.5 rounded border border-blue-400/10 inline-block">{order.bankInfo.accountNumber}</p>
+                          {order.bankInfo.country && <Badge variant="outline" className="text-[8px] h-4 ml-2 border-white/10">{order.bankInfo.country}</Badge>}
+                        </>
+                      ) : order.rechargeDetails ? (
+                        <>
+                          <div className="flex items-center gap-1.5 mb-1">
+                             <Smartphone className="w-3 h-3 text-amber-500" />
+                             <p className="font-bold text-slate-200">{order.rechargeDetails.operator}</p>
+                          </div>
+                          <p className="text-amber-500 font-mono font-bold mt-1 bg-amber-500/5 px-2 py-0.5 rounded border border-amber-500/10 inline-block">{order.rechargeDetails.phoneNumber}</p>
+                          <p className="text-[10px] text-slate-600 italic mt-1">{order.rechargeDetails.country}</p>
+                        </>
+                      ) : order.receiver_info ? (
+                        <>
+                          <div className="flex items-center gap-1.5 mb-1">
+                             <ArrowRightLeft className="w-3 h-3 text-purple-500" />
+                             <p className="font-bold text-slate-200">{order.receiver_info.name}</p>
+                          </div>
+                          <p className="text-slate-500">{order.receiver_info.bankName}</p>
+                          <p className="text-purple-400 font-mono font-bold mt-1 bg-purple-400/5 px-2 py-0.5 rounded border border-purple-400/10 inline-block">{order.receiver_info.accountNumber}</p>
+                          {order.receiver_info.branch && <p className="text-[10px] text-slate-600 mt-1">Branch: {order.receiver_info.branch}</p>}
                         </>
                       ) : (
-                        <>
-                          <p className="font-bold text-slate-200">{order.rechargeDetails?.operator}</p>
-                          <p className="text-slate-500">{order.rechargeDetails?.number}</p>
-                          <p className="text-[10px] text-slate-600 italic">Type: {order.rechargeDetails?.accountType}</p>
-                        </>
+                        <span className="text-slate-600 italic">No details available</span>
                       )}
+                      
                       <div className="flex gap-2 mt-2">
-                        {order.proofUrl && (
+                        {(order.proofUrl || (order.receiver_info && order.receiver_info.qrCode)) && (
                           <button 
-                            onClick={() => { setSelectedOrder(order); setIsDocModalOpen(true); }}
+                            onClick={() => { 
+                              setSelectedOrder({ 
+                                ...order, 
+                                docUrl: order.proofUrl || (order.receiver_info && order.receiver_info.qrCode) 
+                              }); 
+                              setIsDocModalOpen(true); 
+                            }}
                             className="text-blue-500 hover:underline text-[10px] font-black uppercase tracking-widest flex items-center gap-1"
                           >
                              <FileImage className="w-3 h-3" /> Info Doc
                           </button>
                         )}
-                        {order.payment_receipt_url && (
+                        {order.paymentReceiptUrl && (
                           <button 
-                            onClick={() => { setSelectedOrder({ ...order, docUrl: order.payment_receipt_url }); setIsDocModalOpen(true); }}
+                            onClick={() => { setSelectedOrder({ ...order, docUrl: order.paymentReceiptUrl }); setIsDocModalOpen(true); }}
                             className="text-green-500 hover:underline text-[10px] font-black uppercase tracking-widest flex items-center gap-1"
                           >
                              <FileImage className="w-3 h-3" /> Receipt

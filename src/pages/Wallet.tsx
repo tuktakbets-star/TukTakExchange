@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
-import { firebaseService, where, orderBy } from '../lib/firebaseService';
+import { supabaseService, where, orderBy } from '../lib/supabaseService';
 import { QRScanner } from '../components/QRScanner';
 import { 
   Plus, 
@@ -94,17 +94,16 @@ export default function Wallet() {
   useEffect(() => {
     if (!profile?.uid) return;
 
-    const unsubWallets = firebaseService.subscribeToCollection(
+    const unsubWallets = supabaseService.subscribeToCollection(
       'wallets',
       [where('uid', '==', profile.uid)],
       (data) => setWallets(data)
     );
 
-    const unsubTransactions = firebaseService.subscribeToCollection(
+    const unsubTransactions = supabaseService.subscribeToCollection(
       'transactions',
       [where('uid', '==', profile.uid)],
       (data) => {
-        // Client side sorting to handle both createdAt and created_at
         const sorted = [...data].sort((a, b) => {
           const dateA = new Date(a.created_at || a.createdAt).getTime();
           const dateB = new Date(b.created_at || b.createdAt).getTime();
@@ -114,20 +113,20 @@ export default function Wallet() {
       }
     );
 
-    const unsubActive = firebaseService.subscribeToCollection(
+    const unsubActive = supabaseService.subscribeToCollection(
       'transactions',
-      [where('uid', '==', profile.uid), where('status', 'in', ['pending', 'accepted', 'paid', 'disputed'])],
+      [where('uid', '==', profile.uid), where('status', 'in', ['pending', 'accepted', 'paid', 'disputed', 'waiting_user_response'])],
       (data) => setActiveTransactions(data)
     );
 
-    const unsubIncoming = firebaseService.subscribeToCollection(
+    const unsubIncoming = supabaseService.subscribeToCollection(
       'transactions',
-      [where('receiverInfo.email', '==', profile.email), where('status', '==', 'pending')],
+      [where('receiver_info->>email', '==', profile.email), where('status', '==', 'waiting_user_response')],
       (data) => setPendingIncoming(data)
     );
 
-    const unsubSettings = firebaseService.subscribeToCollection('adminSettings', [], (data) => {
-      const globalSettings = data.find(s => s.key === 'global_settings');
+    const unsubSettings = supabaseService.subscribeToCollection('admin_settings', [], (data) => {
+      const globalSettings = data.find((s: any) => s.key === 'global_settings');
       if (globalSettings) setAdminSettings(globalSettings.value);
     });
 
@@ -145,7 +144,6 @@ export default function Wallet() {
     const action = searchParams.get('action');
     if (action === 'deposit') {
       setIsDepositOpen(true);
-      // Remove param after opening
       setSearchParams({}, { replace: true });
     } else if (action === 'withdraw') {
       setIsWithdrawOpen(true);
@@ -166,18 +164,20 @@ export default function Wallet() {
 
     setIsSubmitting(true);
     try {
-      const realProofUrl = await firebaseService.uploadFile(proofFile);
+      const realProofUrl = await supabaseService.uploadFile(proofFile);
       const tx = {
         uid: profile?.uid,
+        userName: profile?.displayName || profile?.email?.split('@')[0],
         type: 'deposit',
         status: 'pending',
         amount: Number(amount),
         currency: currency,
         createdAt: new Date().toISOString(),
         description: `Deposit ${currency} to wallet`,
-        proofUrl: realProofUrl
+        proofUrl: realProofUrl,
+        paymentMethod: 'MANUAL_DEPOSIT'
       };
-      const docId = await firebaseService.addDocument('transactions', tx);
+      const docId = await supabaseService.addDocument('transactions', tx);
       toast.success('Deposit request submitted!');
       navigate(`/waiting/${docId}`);
     } catch (error) {
@@ -195,8 +195,8 @@ export default function Wallet() {
     }
 
     const wallet = wallets.find(w => w.currency === currency);
-    if (!wallet || wallet.balance < Number(amount)) {
-      toast.error('Insufficient balance');
+    if (!wallet) {
+      toast.error('Wallet not found');
       return;
     }
 
@@ -213,14 +213,13 @@ export default function Wallet() {
     setIsSubmitting(true);
     try {
       // 1. Verify Password first
-      const { error: authError } = await firebaseService.signIn(profile.email, withdrawPassword);
+      const { error: authError } = await supabaseService.signIn(profile.email, withdrawPassword);
       if (authError) {
         toast.error('Incorrect password. Please try again.');
         setIsSubmitting(false);
         return;
       }
 
-      const wallet = wallets.find(w => w.currency === currency);
       const currentBalance = wallet?.balance || 0;
       const locked = wallet?.pendingLocked || 0;
       const spendable = currentBalance - locked;
@@ -233,6 +232,7 @@ export default function Wallet() {
 
       const tx = {
         uid: profile?.uid,
+        userName: profile?.displayName || profile?.email?.split('@')[0],
         type: 'withdraw',
         status: 'pending',
         amount: Number(amount),
@@ -248,10 +248,10 @@ export default function Wallet() {
       };
 
       // 1. Create Transaction
-      const docId = await firebaseService.addDocument('transactions', tx);
+      const docId = await supabaseService.addDocument('transactions', tx);
 
-      // 2. Lock Balance (Hidden Deduction)
-      await firebaseService.updateWalletBalance(profile?.uid!, currency, 0, Number(amount));
+      // 2. Lock Balance
+      await supabaseService.updateWalletBalance(profile?.uid!, currency, 0, Number(amount));
 
       toast.success('Withdrawal request submitted!');
       navigate(`/waiting/${docId}`);
@@ -264,8 +264,6 @@ export default function Wallet() {
   };
 
   const handleQRScan = (data: string) => {
-    // Basic parser: Expects BankName|AccountNumber|AccountName or similar
-    // Or just a raw string that we might try to guess
     const parts = data.split('|');
     if (parts.length >= 3) {
       setWithdrawBankName(parts[0]);
@@ -273,7 +271,6 @@ export default function Wallet() {
       setWithdrawAccountName(parts[2]);
       toast.success('QR Data parsed successfully!');
     } else {
-      // If simple data, set it to account number
       setWithdrawAccountNumber(data);
       toast.info('QR Data added to account number field');
     }
@@ -290,7 +287,7 @@ export default function Wallet() {
     setIsConfirmingReceive(true);
     try {
       // 1. Verify Password
-      const { error: authError } = await firebaseService.signIn(profile.email, receivePassword);
+      const { error: authError } = await supabaseService.signIn(profile.email, receivePassword);
       if (authError) {
         toast.error('Incorrect password. Please try again.');
         setIsConfirmingReceive(false);
@@ -298,25 +295,63 @@ export default function Wallet() {
       }
 
       const tx = selectedTxForConfirm;
-      await firebaseService.updateDocument('transactions', tx.id, { status: 'completed' });
       
-      const walletId = `${profile?.uid}_${tx.targetCurrency || tx.currency}`;
-      const wallet = wallets.find(w => w.currency === (tx.targetCurrency || tx.currency));
-      
-      const currentBalance = wallet?.balance || 0;
-      const newBalance = currentBalance + (tx.targetAmount || tx.amount);
-
-      await firebaseService.setDocument('wallets', walletId, {
-        uid: profile?.uid,
-        currency: tx.targetCurrency || tx.currency,
-        balance: newBalance,
-        updatedAt: new Date().toISOString()
+      // 2. Update transaction status
+      await supabaseService.updateDocument('transactions', tx.id, { 
+        status: 'completed',
+        updated_at: new Date().toISOString()
       });
+      
+      // 3. CREDIT USER WALLET
+      const targetCurr = tx.targetCurrency || tx.currency;
+      const targetAmt = tx.targetAmount || tx.amount;
+      
+      const wallet = wallets.find(w => w.currency === targetCurr);
+      
+      if (wallet) {
+        await supabaseService.updateDocument('wallets', wallet.id, {
+          balance: (wallet.balance || 0) + targetAmt,
+          updatedAt: new Date().toISOString()
+        });
+      } else {
+        // Create wallet if not exists
+        await supabaseService.addDocument('wallets', {
+          uid: profile?.uid,
+          currency: targetCurr,
+          balance: targetAmt,
+          updatedAt: new Date().toISOString(),
+          createdAt: new Date().toISOString()
+        });
+      }
+
+      // 4. CREDIT SUB-ADMIN WALLET
+      if (tx.assignedSubAdminId) {
+        const { data: subAdmin } = await supabaseService.getDocument('sub_admins', tx.assignedSubAdminId);
+        if (subAdmin) {
+          const newBalance = (subAdmin.wallet_balance || 0) + tx.amount;
+          await supabaseService.updateDocument('sub_admins', subAdmin.id, {
+            wallet_balance: newBalance,
+            updated_at: new Date().toISOString()
+          });
+
+          // Log the credit
+          await supabaseService.addDocument('sub_admin_wallet_transactions', {
+            sub_admin_id: subAdmin.id,
+            type: 'deposit',
+            amount: tx.amount,
+            reason: `Order ${tx.id} completed by user confirmation`,
+            order_id: tx.id,
+            balance_after: newBalance,
+            created_at: new Date().toISOString()
+          });
+        }
+      }
 
       setShowReceiveDialog(false);
       setReceivePassword('');
       setSelectedTxForConfirm(null);
       toast.success('Funds received and added to your wallet!');
+      navigate('/wallet');
     } catch (error) {
       console.error(error);
       toast.error('Failed to confirm receipt');
@@ -326,7 +361,7 @@ export default function Wallet() {
   };
 
   const handleTransactionClick = (tx: any) => {
-    const activeStatuses = ['pending', 'accepted', 'paid', 'disputed'];
+    const activeStatuses = ['pending', 'accepted', 'paid', 'disputed', 'waiting_user_response'];
     if (activeStatuses.includes(tx.status)) {
       navigate(`/waiting/${tx.id}`);
     } else {
@@ -336,12 +371,13 @@ export default function Wallet() {
 
   const handleAppeal = async (tx: any) => {
     try {
-      await firebaseService.updateDocument('transactions', tx.id, { 
+      await supabaseService.updateDocument('transactions', tx.id, { 
         status: 'disputed',
-        disputedAt: new Date().toISOString(),
-        disputeReason: 'User reported issue with transaction'
+        updated_at: new Date().toISOString(),
+        dispute_reason: 'User reported issue with transaction'
       });
       toast.success('Dispute opened. Admin will review shortly.');
+      navigate(`/appeal/${tx.id}`);
     } catch (error) {
       toast.error('Failed to open dispute');
     }
