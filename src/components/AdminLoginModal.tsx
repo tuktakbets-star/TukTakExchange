@@ -7,8 +7,8 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
-import { auth, db, googleProvider } from '../lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { auth, googleProvider } from '../lib/firebase';
+import { doc, getDoc, db } from '../lib/firebaseService';
 import { useTranslation } from 'react-i18next';
 
 interface AdminLoginModalProps {

@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { firebaseService } from '../../lib/firebaseService';
+import { firebaseService, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, db } from '../../lib/firebaseService';
 import { useAuth } from '../../hooks/useAuth';
 import { useTranslation } from 'react-i18next';
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { auth } from '../../lib/firebase';
 import { 
   MessageSquare, 
   Search, 

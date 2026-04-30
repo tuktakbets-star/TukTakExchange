@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { firebaseService } from '../../lib/firebaseService';
 import { useTranslation } from 'react-i18next';
-import { Mail, Phone, Calendar, Shield, ShieldAlert, AlertTriangle, X, Search, UserPlus, Edit2, Ban, CheckCircle2, Wallet, MoreVertical, Users } from 'lucide-react';
+import { Mail, Phone, Calendar, Shield, ShieldAlert, AlertTriangle, X, Search, UserPlus, Edit2, Ban, CheckCircle2, Wallet, MoreVertical, Users, Trash2, ShieldCheck } from 'lucide-react';
+import { where } from 'firebase/firestore';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { ConfirmModal } from '@/components/ConfirmModal';
@@ -22,10 +23,12 @@ export default function AdminUsers() {
   const { t } = useTranslation();
   const [users, setUsers] = useState<any[]>([]);
   const [wallets, setWallets] = useState<any[]>([]);
+  const [kycSubmissions, setKycSubmissions] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [selectedKYC, setSelectedKYC] = useState<any>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modalMode, setModalMode] = useState<'view' | 'edit' | 'add' | 'balance'>('view');
+  const [modalMode, setModalMode] = useState<'view' | 'edit' | 'add' | 'balance' | 'kyc_review'>('view');
   const [loading, setLoading] = useState(true);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [confirmConfig, setConfirmConfig] = useState<any>(null);
@@ -33,12 +36,129 @@ export default function AdminUsers() {
   useEffect(() => {
     const unsubUsers = firebaseService.subscribeToCollection('users', [], (data) => setUsers(data));
     const unsubWallets = firebaseService.subscribeToCollection('wallets', [], (data) => setWallets(data));
+    const unsubKYC = firebaseService.subscribeToCollection('kycSubmissions', [], (data) => setKycSubmissions(data));
     setLoading(false);
     return () => {
       unsubUsers();
       unsubWallets();
+      unsubKYC();
     };
   }, []);
+
+  const handleReviewKYC = (user: any) => {
+    // Look for any pending or submitted KYC record for this user
+    const kyc = kycSubmissions.find(k => k.uid === user.uid && (k.status === 'pending' || k.status === 'submitted' || k.status === 'none'));
+    if (kyc && (kyc.passportUrl || kyc.passport_url || kyc.passportImage)) {
+      setSelectedUser(user);
+      setSelectedKYC({
+        ...kyc,
+        passportUrl: kyc.passportUrl || kyc.passport_url || kyc.passportImage,
+        selfieUrl: kyc.selfieUrl || kyc.selfie_url || kyc.selfieImage
+      });
+      setModalMode('kyc_review');
+      setIsModalOpen(true);
+    } else {
+      // Fallback: Check if user has kycData attached to their profile
+      if (user.kycData) {
+        setSelectedUser(user);
+        const kycData = user.kycData;
+        setSelectedKYC({
+          id: user.uid,
+          uid: user.uid,
+          passportUrl: kycData.passportUrl || kycData.passport_url || kycData.passportImage || user.passportImage,
+          selfieUrl: kycData.selfieUrl || kycData.selfie_url || kycData.selfieImage || user.selfieImage,
+          status: user.kycStatus || 'pending',
+          userName: user.displayName,
+          userEmail: user.email
+        });
+        setModalMode('kyc_review');
+        setIsModalOpen(true);
+      } else if (user.passportImage || user.selfieImage) {
+        // Second Fallback: Direct properties on user object
+        setSelectedUser(user);
+        setSelectedKYC({
+          id: user.uid,
+          uid: user.uid,
+          passportUrl: user.passportImage || user.passport_url,
+          selfieUrl: user.selfieImage || user.selfie_url,
+          status: user.kycStatus || 'pending',
+          userName: user.displayName,
+          userEmail: user.email
+        });
+        setModalMode('kyc_review');
+        setIsModalOpen(true);
+      } else {
+        toast.error('No KYC submission documents found for this user');
+      }
+    }
+  };
+
+  const handleApproveKYC = async (kycId: string, userId: string) => {
+    try {
+      await firebaseService.updateDocument('kycSubmissions', kycId, { status: 'verified', verifiedAt: new Date().toISOString() });
+      await firebaseService.updateDocument('users', userId, { kycStatus: 'verified' });
+      toast.success('KYC Approved');
+      setIsModalOpen(false);
+    } catch (error) {
+      toast.error('Approval failed');
+    }
+  };
+
+  const handleRejectKYC = async (kycId: string, userId: string) => {
+    try {
+      await firebaseService.updateDocument('kycSubmissions', kycId, { status: 'rejected', rejectedAt: new Date().toISOString() });
+      await firebaseService.updateDocument('users', userId, { kycStatus: 'rejected' });
+      toast.success('KYC Rejected');
+      setIsModalOpen(false);
+    } catch (error) {
+      toast.error('Rejection failed');
+    }
+  };
+
+  const handleDeleteUser = async (user: any) => {
+    setConfirmConfig({
+      title: 'Delete User Account',
+      description: 'Are you sure you want to PERMANENTLY delete this user? This action will remove all profile data, wallets, transactions, and KYC records. This CANNOT be undone.',
+      variant: 'danger',
+      onConfirm: async () => {
+        const loadingToast = toast.loading('Deleting user data...');
+        try {
+          // 1. Delete associated wallets
+          const userWallets = wallets.filter(w => w.uid === user.uid);
+          await Promise.all(userWallets.map(w => firebaseService.deleteDocument('wallets', w.id)));
+
+          // 2. Delete KYC Submissions
+          const kycData = await firebaseService.getCollection('kycSubmissions', [
+            where('uid', '==', user.uid)
+          ]);
+          await Promise.all(kycData.map(k => firebaseService.deleteDocument('kycSubmissions', k.id)));
+
+          // 3. Delete Transactions
+          const transactionsData = await firebaseService.getCollection('transactions', [
+            where('uid', '==', user.uid)
+          ]);
+          await Promise.all(transactionsData.map(t => firebaseService.deleteDocument('transactions', t.id)));
+
+          // 4. Delete Notifications
+          const notificationsData = await firebaseService.getCollection('notifications', [
+            where('uid', '==', user.uid)
+          ]);
+          await Promise.all(notificationsData.map(n => firebaseService.deleteDocument('notifications', n.id)));
+
+          // 5. Delete from users table last
+          await firebaseService.deleteDocument('users', user.uid);
+
+          toast.dismiss(loadingToast);
+          toast.success('User and all associated data deleted successfully. They can now re-register.');
+        } catch (error) {
+          toast.dismiss(loadingToast);
+          console.error("Delete operation failed:", error);
+          toast.error('Failed to delete user fully');
+        }
+      }
+    });
+    setIsConfirmOpen(true);
+  };
 
   const handleBanUnban = async (user: any) => {
     setConfirmConfig({
@@ -228,22 +348,35 @@ export default function AdminUsers() {
                         <p className="text-[10px] text-slate-500 uppercase tracking-widest">{t('wallet')} VND</p>
                       </td>
                       <td className="px-8 py-6">
-                        <select 
-                          value={user.kycStatus || 'none'} 
-                          onChange={(e) => handleUpdateKYC(user, e.target.value)}
-                          className={cn(
-                            "rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider bg-transparent border outline-none cursor-pointer transition-all",
-                            user.kycStatus === 'verified' ? "border-green-500/50 text-green-500 hover:bg-green-500/10" :
-                            user.kycStatus === 'pending' ? "border-yellow-500/50 text-yellow-500 hover:bg-yellow-500/10" :
-                            user.kycStatus === 'rejected' ? "border-red-500/50 text-red-500 hover:bg-red-500/10" :
-                            "border-slate-700 text-slate-500 hover:bg-white/5"
+                        <div className="flex items-center gap-2">
+                          <select 
+                            value={user.kycStatus || 'none'} 
+                            onChange={(e) => handleUpdateKYC(user, e.target.value)}
+                            className={cn(
+                              "rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider bg-transparent border outline-none cursor-pointer transition-all",
+                              user.kycStatus === 'verified' ? "border-green-500/50 text-green-500 hover:bg-green-500/10" :
+                              (user.kycStatus === 'pending' || user.kycStatus === 'submitted') ? "border-yellow-500/50 text-yellow-500 hover:bg-yellow-500/10" :
+                              user.kycStatus === 'rejected' ? "border-red-500/50 text-red-500 hover:bg-red-500/10" :
+                              "border-slate-700 text-slate-500 hover:bg-white/5"
+                            )}
+                          >
+                            <option value="none">{t('none')}</option>
+                            <option value="pending">{t('pending')}</option>
+                            <option value="submitted">{t('submitted')}</option>
+                            <option value="verified">{t('verified')}</option>
+                            <option value="rejected">{t('rejected')}</option>
+                          </select>
+                          {(user.kycStatus === 'pending' || user.kycStatus === 'submitted') && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 w-7 p-0 rounded-full bg-yellow-500/10 text-yellow-500 hover:bg-yellow-500/20"
+                              onClick={() => handleReviewKYC(user)}
+                            >
+                              <ShieldCheck className="w-4 h-4" />
+                            </Button>
                           )}
-                        >
-                          <option value="none">{t('none')}</option>
-                          <option value="pending">{t('pending')}</option>
-                          <option value="verified">{t('verified')}</option>
-                          <option value="rejected">{t('rejected')}</option>
-                        </select>
+                        </div>
                       </td>
                       <td className="px-8 py-6 text-right">
                         <DropdownMenu>
@@ -276,6 +409,9 @@ export default function AdminUsers() {
                             )}>
                               <Ban className="w-4 h-4 mr-2" /> {user.status === 'banned' ? t('active') : t('reject')}
                             </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleDeleteUser(user)} className="rounded-xl cursor-pointer focus:bg-red-500/10 text-red-500">
+                              <Trash2 className="w-4 h-4 mr-2" /> {t('delete')}
+                            </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </td>
@@ -304,12 +440,79 @@ export default function AdminUsers() {
                     <h2 className="text-2xl font-display font-bold capitalize">
                       {modalMode === 'view' ? t('user_profile') : 
                        modalMode === 'balance' ? t('update_balance') : 
+                       modalMode === 'kyc_review' ? 'Verify KYC Document' :
                        modalMode === 'add' ? t('add_new_user') : t('edit_user')}
                     </h2>
                     <Button variant="ghost" size="icon" className="rounded-full" onClick={() => setIsModalOpen(false)}>
                       <X className="w-5 h-5" />
                     </Button>
                   </div>
+
+                  {modalMode === 'kyc_review' && selectedKYC && (
+                    <div className="space-y-6">
+                      <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
+                        <p className="text-xs text-slate-500 uppercase font-bold tracking-widest mb-1">User Info</p>
+                        <p className="font-bold text-lg">{selectedKYC.userName}</p>
+                        <p className="text-sm text-slate-400">{selectedKYC.userEmail}</p>
+                      </div>
+
+                      <div className="bg-yellow-500/10 border border-yellow-500/20 p-4 rounded-2xl">
+                        <p className="text-xs text-yellow-500 uppercase font-bold tracking-widest mb-1">Passport Number to Verify</p>
+                        <p className="text-2xl font-display font-bold text-yellow-500">
+                          {selectedKYC.passportNumber || selectedUser.passportNumber || "No Number Found"}
+                        </p>
+                        <p className="text-[10px] text-yellow-500/60 mt-1 italic">Compare this number with the number visible on the passport image below.</p>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label className="text-[10px] uppercase tracking-widest text-slate-500">Passport Document</Label>
+                          <div className="aspect-[4/3] bg-black/40 rounded-2xl overflow-hidden border border-white/10 group relative">
+                            <img 
+                              src={selectedKYC.passportUrl} 
+                              alt="Passport" 
+                              className="w-full h-full object-contain cursor-zoom-in"
+                              onClick={() => window.open(selectedKYC.passportUrl, '_blank')}
+                              referrerPolicy="no-referrer"
+                            />
+                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity pointer-events-none">
+                              <p className="text-xs font-bold">Click to Expand</p>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-[10px] uppercase tracking-widest text-slate-500">Live Selfie</Label>
+                          <div className="aspect-[4/3] bg-black/40 rounded-2xl overflow-hidden border border-white/10 group relative">
+                            <img 
+                              src={selectedKYC.selfieUrl} 
+                              alt="Selfie" 
+                              className="w-full h-full object-contain cursor-zoom-in"
+                              onClick={() => window.open(selectedKYC.selfieUrl, '_blank')}
+                              referrerPolicy="no-referrer"
+                            />
+                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity pointer-events-none">
+                              <p className="text-xs font-bold">Click to Expand</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-4 pt-4">
+                        <Button 
+                          className="flex-1 h-12 rounded-xl bg-red-500 hover:bg-red-600 font-bold"
+                          onClick={() => handleRejectKYC(selectedKYC.id, selectedKYC.uid)}
+                        >
+                          Reject
+                        </Button>
+                        <Button 
+                          className="flex-2 h-12 rounded-xl bg-green-500 hover:bg-green-600 font-bold"
+                          onClick={() => handleApproveKYC(selectedKYC.id, selectedKYC.uid)}
+                        >
+                          Approve KYC
+                        </Button>
+                      </div>
+                    </div>
+                  )}
 
                   {modalMode === 'view' && selectedUser && (
                     <div className="space-y-8">
@@ -360,16 +563,16 @@ export default function AdminUsers() {
 
                       <div className="p-6 bg-white/5 rounded-3xl border border-white/5">
                         <h4 className="text-sm font-bold text-slate-400 mb-4 uppercase tracking-widest">{t('kyc_documents')}</h4>
-                        {selectedUser.kycData ? (
+                        {(selectedUser.kycData || selectedUser.passportImage || selectedUser.selfieImage) ? (
                           <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
                               <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest">Passport Copy</p>
                               <div className="aspect-video bg-black/20 rounded-xl overflow-hidden border border-white/5">
                                 <img 
-                                  src={selectedUser.kycData.passportUrl} 
+                                  src={selectedUser.kycData?.passportUrl || selectedUser.kycData?.passport_url || selectedUser.kycData?.passportImage || selectedUser.passportImage} 
                                   alt="Passport" 
                                   className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform"
-                                  onClick={() => window.open(selectedUser.kycData.passportUrl, '_blank')}
+                                  onClick={() => window.open(selectedUser.kycData?.passportUrl || selectedUser.kycData?.passport_url || selectedUser.kycData?.passportImage || selectedUser.passportImage, '_blank')}
                                   referrerPolicy="no-referrer"
                                 />
                               </div>
@@ -378,10 +581,10 @@ export default function AdminUsers() {
                               <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest">Selfie</p>
                               <div className="aspect-video bg-black/20 rounded-xl overflow-hidden border border-white/5">
                                 <img 
-                                  src={selectedUser.kycData.selfieUrl} 
+                                  src={selectedUser.kycData?.selfieUrl || selectedUser.kycData?.selfie_url || selectedUser.kycData?.selfieImage || selectedUser.selfieImage} 
                                   alt="Selfie" 
                                   className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform"
-                                  onClick={() => window.open(selectedUser.kycData.selfieUrl, '_blank')}
+                                  onClick={() => window.open(selectedUser.kycData?.selfieUrl || selectedUser.kycData?.selfie_url || selectedUser.kycData?.selfieImage || selectedUser.selfieImage, '_blank')}
                                   referrerPolicy="no-referrer"
                                 />
                               </div>

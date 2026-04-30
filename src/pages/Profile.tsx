@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
-import { firebaseService } from '../lib/firebaseService';
+import { firebaseService, where } from '../lib/firebaseService';
 import { 
   User, 
   Mail, 
@@ -60,10 +60,22 @@ export default function Profile() {
     if (!profile?.uid) return;
     setIsSubmitting(true);
     try {
+      // 1. Check for uniqueness (Phone) - exclude self
+      if (phoneNumber.trim() !== profile.phoneNumber) {
+        const checkPhone = await firebaseService.getCollection('users', [
+          where('phoneNumber', '==', phoneNumber.trim())
+        ]);
+        if (checkPhone.length > 0) {
+          toast.error('This phone number is already associated with another account');
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
       await firebaseService.updateDocument('users', profile.uid, {
         displayName,
-        phoneNumber,
-        accountNumber
+        phoneNumber: phoneNumber.trim(),
+        accountNumber: phoneNumber.trim() // Keep them synced as in registration
       });
       toast.success(t('profile_updated'));
       setIsEditing(false);
@@ -179,10 +191,14 @@ export default function Profile() {
             <Badge className={cn(
               "px-3 py-1",
               profile?.kycStatus === 'verified' ? "bg-green-500/20 text-green-500 border-green-500/20" : 
-              profile?.kycStatus === 'pending' ? "bg-yellow-500/20 text-yellow-500 border-yellow-500/20" : "bg-red-500/20 text-red-500 border-red-500/20"
+              (profile?.kycStatus === 'pending' || profile?.kycStatus === 'submitted') ? "bg-yellow-500/20 text-yellow-500 border-yellow-500/20" : "bg-red-500/20 text-red-500 border-red-500/20"
             )}>
               <ShieldCheck className="w-3 h-3 mr-2" />
-              {t('kycStatus')}: {profile?.kycStatus === 'pending' ? t('waiting_for_admin') : profile?.kycStatus ? t(profile.kycStatus) : t('none')}
+              {t('kycStatus')}: {
+                profile?.kycStatus === 'verified' ? t('verified') : 
+                (profile?.kycStatus === 'pending' || profile?.kycStatus === 'submitted') ? t('waiting_for_admin') : 
+                profile?.kycStatus ? t(profile.kycStatus) : t('none')
+              }
             </Badge>
           </div>
         </div>
@@ -260,7 +276,7 @@ export default function Profile() {
                   <p className="text-sm text-slate-400">{t('kyc_verified_desc')}</p>
                 </div>
               </div>
-            ) : profile?.kycStatus === 'pending' || profile?.kycStatus === 'verified' ? (
+            ) : (profile?.kycStatus === 'pending' || profile?.kycStatus === 'submitted') ? (
               <div className="text-center py-8 space-y-4">
                 <div className={cn(
                   "w-16 h-16 rounded-full flex items-center justify-center mx-auto",

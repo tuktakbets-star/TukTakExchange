@@ -3,8 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
-import { firebaseService } from '../lib/firebaseService';
-import { where, orderBy } from 'firebase/firestore';
+import { firebaseService, where, orderBy } from '../lib/firebaseService';
 import { QRScanner } from '../components/QRScanner';
 import { 
   Plus, 
@@ -87,6 +86,10 @@ export default function Wallet() {
   const [withdrawBank, setWithdrawBank] = useState('');
   const [withdrawAccount, setWithdrawAccount] = useState('');
   const [withdrawPassword, setWithdrawPassword] = useState('');
+  const [isConfirmingReceive, setIsConfirmingReceive] = useState(false);
+  const [selectedTxForConfirm, setSelectedTxForConfirm] = useState<any>(null);
+  const [receivePassword, setReceivePassword] = useState('');
+  const [showReceiveDialog, setShowReceiveDialog] = useState(false);
 
   useEffect(() => {
     if (!profile?.uid) return;
@@ -99,8 +102,16 @@ export default function Wallet() {
 
     const unsubTransactions = firebaseService.subscribeToCollection(
       'transactions',
-      [where('uid', '==', profile.uid), orderBy('createdAt', 'desc')],
-      (data) => setTransactions(data)
+      [where('uid', '==', profile.uid)],
+      (data) => {
+        // Client side sorting to handle both createdAt and created_at
+        const sorted = [...data].sort((a, b) => {
+          const dateA = new Date(a.created_at || a.createdAt).getTime();
+          const dateB = new Date(b.created_at || b.createdAt).getTime();
+          return dateB - dateA;
+        });
+        setTransactions(sorted);
+      }
     );
 
     const unsubActive = firebaseService.subscribeToCollection(
@@ -189,6 +200,11 @@ export default function Wallet() {
       return;
     }
 
+    if (!profile?.uid || !profile?.email) {
+      toast.error('You must be logged in to create a transaction.');
+      return;
+    }
+
     if (!withdrawPassword) {
       toast.error('Please enter your password');
       return;
@@ -196,6 +212,14 @@ export default function Wallet() {
 
     setIsSubmitting(true);
     try {
+      // 1. Verify Password first
+      const { error: authError } = await firebaseService.signIn(profile.email, withdrawPassword);
+      if (authError) {
+        toast.error('Incorrect password. Please try again.');
+        setIsSubmitting(false);
+        return;
+      }
+
       const wallet = wallets.find(w => w.currency === currency);
       const currentBalance = wallet?.balance || 0;
       const locked = wallet?.pendingLocked || 0;
@@ -255,9 +279,25 @@ export default function Wallet() {
     }
   };
 
-  const handleConfirmReceive = async (tx: any) => {
-    setIsSubmitting(true);
+  const handleConfirmReceive = async () => {
+    if (!selectedTxForConfirm || !profile?.email) return;
+
+    if (!receivePassword) {
+      toast.error('Please enter your password to confirm');
+      return;
+    }
+
+    setIsConfirmingReceive(true);
     try {
+      // 1. Verify Password
+      const { error: authError } = await firebaseService.signIn(profile.email, receivePassword);
+      if (authError) {
+        toast.error('Incorrect password. Please try again.');
+        setIsConfirmingReceive(false);
+        return;
+      }
+
+      const tx = selectedTxForConfirm;
       await firebaseService.updateDocument('transactions', tx.id, { status: 'completed' });
       
       const walletId = `${profile?.uid}_${tx.targetCurrency || tx.currency}`;
@@ -273,11 +313,15 @@ export default function Wallet() {
         updatedAt: new Date().toISOString()
       });
 
+      setShowReceiveDialog(false);
+      setReceivePassword('');
+      setSelectedTxForConfirm(null);
       toast.success('Funds received and added to your wallet!');
     } catch (error) {
+      console.error(error);
       toast.error('Failed to confirm receipt');
     } finally {
-      setIsSubmitting(false);
+      setIsConfirmingReceive(false);
     }
   };
 
@@ -700,8 +744,11 @@ export default function Wallet() {
                   </div>
                   <div className="flex gap-3 w-full md:w-auto">
                     <Button 
-                      onClick={() => handleConfirmReceive(tx)}
-                      disabled={isSubmitting}
+                      onClick={() => {
+                        setSelectedTxForConfirm(tx);
+                        setShowReceiveDialog(true);
+                      }}
+                      disabled={isConfirmingReceive}
                       className="flex-1 md:flex-none bg-green-600 hover:bg-green-500 text-white rounded-xl h-11 px-6 font-bold"
                     >
                       Confirm Receipt
@@ -733,17 +780,22 @@ export default function Wallet() {
                 <Badge variant="outline" className="border-white/10 text-slate-400">{t('active')}</Badge>
               </div>
               <p className="text-slate-400 text-sm font-medium mb-1">{wallet.currency} {t('wallet')}</p>
-              <h3 className="text-3xl font-display font-bold mb-2">
+              <h3 className="text-3xl font-display font-bold mb-1">
                 {wallet.currency === 'VND' ? '₫' : wallet.currency === 'USD' ? '$' : ''}
-                {wallet.balance.toLocaleString()}
+                {(wallet.balance - (wallet.pendingLocked || 0)).toLocaleString()}
               </h3>
+              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mb-4">Available Balance</p>
+              
               {wallet.pendingLocked > 0 && (
-                <div className="flex items-center gap-1.5 text-[10px] text-orange-400 font-bold uppercase tracking-wider mb-4">
-                  <Lock className="w-3 h-3" />
-                  {wallet.pendingLocked.toLocaleString()} {t('locked', 'Locked')}
+                <div className="flex items-center justify-between p-3 bg-orange-500/10 border border-orange-500/20 rounded-xl mb-4">
+                  <div className="flex items-center gap-2">
+                    <Lock className="w-3 h-3 text-orange-400" />
+                    <span className="text-[10px] text-orange-400 font-bold uppercase tracking-wider">Locked</span>
+                  </div>
+                  <span className="text-xs font-bold text-orange-400">{wallet.pendingLocked.toLocaleString()} {wallet.currency}</span>
                 </div>
               )}
-              {!wallet.pendingLocked && <div className="mb-6 h-4" />}
+              {!wallet.pendingLocked && <div className="mb-4 h-[46px]" />}
               <div className="flex gap-2">
                 <Button variant="ghost" className="flex-1 bg-white/5 hover:bg-white/10 text-xs h-9">{t('notificationHistory')}</Button>
                 <Button variant="ghost" className="flex-1 bg-white/5 hover:bg-white/10 text-xs h-9">{t('viewAll')}</Button>
@@ -805,7 +857,7 @@ export default function Wallet() {
                       </div>
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-400">
-                      {new Date(tx.createdAt).toLocaleDateString()}
+                      {new Date(tx.created_at || tx.createdAt).toLocaleDateString()}
                     </td>
                     <td className="px-6 py-4">
                       <span className={cn(
@@ -818,8 +870,10 @@ export default function Wallet() {
                     <td className="px-6 py-4">
                       <Badge variant="outline" className={cn(
                         "text-[10px] h-5",
-                        tx.status === 'completed' ? "border-green-500/50 text-green-500" : 
-                        tx.status === 'pending' ? "border-yellow-500/50 text-yellow-500" : "border-red-500/50 text-red-500"
+                        tx.status?.toLowerCase() === 'completed' ? "border-green-500/50 text-green-500" : 
+                        tx.status?.toLowerCase() === 'pending' ? "border-yellow-500/50 text-yellow-500" : 
+                        tx.status?.toLowerCase() === 'paid' ? "border-indigo-500/50 text-indigo-500" :
+                        "border-red-500/50 text-red-500"
                       )}>
                         {tx.status}
                       </Badge>
@@ -842,8 +896,10 @@ export default function Wallet() {
                                 </div>
                                 <Badge className={cn(
                                   "capitalize",
-                                  tx.status === 'completed' ? "bg-green-500/20 text-green-500" : 
-                                  tx.status === 'pending' ? "bg-yellow-500/20 text-yellow-500" : "bg-red-500/20 text-red-500"
+                                  tx.status?.toLowerCase().trim() === 'completed' ? "bg-green-500/20 text-green-500" : 
+                                  tx.status?.toLowerCase().trim() === 'pending' ? "bg-yellow-500/20 text-yellow-500" : 
+                                  tx.status?.toLowerCase().trim() === 'paid' ? "bg-indigo-500/20 text-indigo-500" :
+                                  "bg-red-500/20 text-red-500"
                                 )}>
                                   {tx.status}
                                 </Badge>
@@ -856,7 +912,7 @@ export default function Wallet() {
                                 </div>
                                 <div className="flex justify-between text-sm">
                                   <span className="text-slate-500">Date</span>
-                                  <span>{new Date(tx.createdAt).toLocaleString()}</span>
+                                  <span>{new Date(tx.created_at || tx.createdAt).toLocaleString()}</span>
                                 </div>
                                 <div className="flex justify-between text-sm">
                                   <span className="text-slate-500">Type</span>
@@ -915,6 +971,49 @@ export default function Wallet() {
         onClose={() => setIsQRScannerOpen(false)} 
         onScan={handleQRScan} 
       />
+      {/* Receive Confirmation Dialog */}
+      <Dialog open={showReceiveDialog} onOpenChange={setShowReceiveDialog}>
+        <DialogContent className="bg-slate-900 border-slate-800 text-white max-w-sm rounded-[2rem]">
+          <DialogHeader className="text-center">
+            <DialogTitle className="text-2xl font-display font-bold">Confirm Receipt</DialogTitle>
+            <p className="text-slate-400 text-sm mt-2">Enter your password to confirm you've received the money on your external wallet/bank.</p>
+          </DialogHeader>
+          <div className="py-6 space-y-4">
+            <div className="space-y-2">
+              <Label className="text-slate-500 uppercase text-[10px] font-bold tracking-widest">{t('password')}</Label>
+              <Input 
+                type="password" 
+                placeholder="••••••••" 
+                value={receivePassword}
+                onChange={(e) => setReceivePassword(e.target.value)}
+                className="bg-white/5 border-white/10 h-14 rounded-2xl text-center text-2xl tracking-[0.3em]"
+              />
+            </div>
+            <div className="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-2xl flex gap-3">
+              <AlertTriangle className="w-5 h-5 text-yellow-500 shrink-0" />
+              <p className="text-[10px] text-yellow-500 leading-tight font-bold italic">
+                This action is irreversible. Only confirm if you've actually verified the funds.
+              </p>
+            </div>
+          </div>
+          <DialogFooter className="flex flex-col gap-3 sm:flex-col">
+            <Button 
+              onClick={handleConfirmReceive}
+              disabled={isConfirmingReceive || !receivePassword}
+              className="w-full h-14 bg-green-600 hover:bg-green-500 text-white rounded-2xl font-bold text-lg shadow-xl shadow-green-600/20"
+            >
+              {isConfirmingReceive ? 'Confirming...' : 'I Received Money'}
+            </Button>
+            <Button 
+              variant="ghost" 
+              onClick={() => setShowReceiveDialog(false)}
+              className="w-full h-12 rounded-xl text-slate-500"
+            >
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -13,7 +13,8 @@ import {
   Bell,
   Heart,
   ArrowDownLeft,
-  ArrowRight
+  ArrowRight,
+  ShieldCheck
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -31,12 +32,14 @@ export default function AdminDashboard() {
     pendingSends: 0,
     pendingWithdraws: 0,
     pendingRecharges: 0,
+    pendingKYC: 0,
     donations: 0,
     disputes: 0,
     messages: 0,
     notifications: 0,
     rates: [] as any[]
   });
+  const [pendingKYCList, setPendingKYCList] = useState<any[]>([]);
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -85,6 +88,12 @@ export default function AdminDashboard() {
       setStats(prev => ({ ...prev, notifications: data.length }));
     });
 
+    const unsubKYC = firebaseService.subscribeToCollection('kycSubmissions', [], (data) => {
+      const pending = data.filter(k => k.status === 'pending' || k.status === 'submitted');
+      setStats(prev => ({ ...prev, pendingKYC: pending.length }));
+      setPendingKYCList(pending.slice(0, 5));
+    });
+
     setLoading(false);
     return () => {
       unsubUsers();
@@ -93,6 +102,7 @@ export default function AdminDashboard() {
       unsubRates();
       unsubMessages();
       unsubNotifications();
+      unsubKYC();
     };
   }, []);
 
@@ -103,7 +113,8 @@ export default function AdminDashboard() {
     { label: t('pendingSends'), value: stats.pendingSends, icon: Send, color: 'text-purple-500', bg: 'bg-purple-500/10', path: '/admin/send-money' },
     { label: t('pendingWithdraws'), value: stats.pendingWithdraws, icon: ArrowUpRight, color: 'text-orange-500', bg: 'bg-orange-500/10', path: '/admin/withdraw' },
     { label: t('pendingRecharges'), value: stats.pendingRecharges, icon: Zap, color: 'text-cyan-500', bg: 'bg-cyan-500/10', path: '/admin/recharge' },
-    { label: t('totalDonations'), value: `₫${stats.donations.toLocaleString()}`, icon: Heart, color: 'text-pink-500', bg: 'bg-pink-500/10', path: '/admin' },
+    { label: 'Pending KYC', value: stats.pendingKYC, icon: ShieldCheck, color: 'text-rose-500', bg: 'bg-rose-500/10', path: '/admin-dashboard/users' },
+    { label: t('totalDonations'), value: `₫${stats.donations.toLocaleString()}`, icon: Heart, color: 'text-pink-500', bg: 'bg-pink-500/10', path: '/admin-dashboard' },
     { label: t('reports_disputes'), value: stats.disputes, icon: AlertTriangle, color: 'text-red-500', bg: 'bg-red-500/10', path: '/admin/disputes' },
     { label: t('messages'), value: stats.messages, icon: MessageSquare, color: 'text-indigo-500', bg: 'bg-indigo-500/10', path: '/admin/messages' },
     { label: t('notifications'), value: stats.notifications, icon: Bell, color: 'text-amber-500', bg: 'bg-amber-500/10', path: '/admin/notifications' },
@@ -153,32 +164,40 @@ export default function AdminDashboard() {
       <div className="grid lg:grid-cols-3 gap-8">
         <Card className="lg:col-span-2 glass-dark border-white/5 rounded-[2.5rem] p-8">
           <div className="flex items-center justify-between mb-8">
-            <h3 className="text-xl font-display font-bold">{t('recentActivity')}</h3>
-            <Button variant="ghost" className="text-slate-400 hover:text-white">{t('viewAll')}</Button>
+            <h3 className="text-xl font-display font-bold">Pending KYC Applications</h3>
+            <Button variant="ghost" className="text-slate-400 hover:text-white" onClick={() => navigate('/admin-dashboard/users')}>View All</Button>
           </div>
           <div className="space-y-4">
-            {recentActivity.map((tx, idx) => (
-              <div key={tx.id} className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5 hover:border-white/10 transition-colors group">
-                <div className="flex items-center gap-4">
-                  <div className={cn(
-                    "w-12 h-12 rounded-xl flex items-center justify-center transition-transform group-hover:rotate-12",
-                    tx.status === 'completed' ? "bg-green-500/10 text-green-500" : 
-                    tx.status === 'pending' ? "bg-yellow-500/10 text-yellow-500" : "bg-red-500/10 text-red-500"
-                  )}>
-                    {tx.type === 'deposit' ? <ArrowDownLeft className="w-6 h-6" /> : 
-                     tx.type === 'withdraw' ? <ArrowUpRight className="w-6 h-6" /> : <ArrowRight className="w-6 h-6" />}
+            {pendingKYCList.length === 0 ? (
+              <div className="text-center py-12 text-slate-500">No pending KYC applications</div>
+            ) : (
+              pendingKYCList.map((kyc) => (
+                <div key={kyc.id} className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5 hover:border-white/10 transition-colors group">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl bg-rose-500/10 text-rose-500 flex items-center justify-center">
+                      <ShieldCheck className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <p className="font-bold">{kyc.userName || 'Anonymous'}</p>
+                      <p className="text-xs text-slate-500 uppercase tracking-widest">{kyc.userEmail}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-bold">{t('transaction_id', { id: tx.id.slice(-6).toUpperCase() })}</p>
-                    <p className="text-xs text-slate-500 uppercase tracking-widest">{t(tx.type)} • {t(tx.status)}</p>
+                  <div className="flex items-center gap-3">
+                    <p className="text-[10px] text-slate-500 hidden sm:block">
+                      {kyc.submittedAt ? new Date(kyc.submittedAt).toLocaleString() : 'N/A'}
+                    </p>
+                    <Button 
+                      size="sm" 
+                      variant="confirm" 
+                      className="rounded-xl h-9 px-4"
+                      onClick={() => navigate('/admin-dashboard/users')}
+                    >
+                      Review
+                    </Button>
                   </div>
                 </div>
-                <div className="text-right">
-                  <p className="font-display font-bold text-lg">{tx.amount.toLocaleString()} {tx.currency}</p>
-                  <p className="text-[10px] text-slate-500">{new Date(tx.createdAt).toLocaleString()}</p>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </Card>
 

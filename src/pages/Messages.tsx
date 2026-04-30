@@ -6,9 +6,8 @@ import { Input } from '@/components/ui/input';
 import { useTranslation } from 'react-i18next';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useAuth } from '../hooks/useAuth';
-import { firebaseService } from '../lib/firebaseService';
-import { orderBy, query, collection, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { firebaseService, orderBy, query, collection, onSnapshot, addDoc, serverTimestamp, db } from '../lib/firebaseService';
+import { auth } from '../lib/firebase';
 import { toast } from 'sonner';
 
 export default function Messages() {

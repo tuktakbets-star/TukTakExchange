@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { firebaseService } from '../lib/firebaseService';
-import { where } from 'firebase/firestore';
+import { firebaseService, where } from '../lib/firebaseService';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Plus, 
@@ -50,9 +49,15 @@ export default function AddMoney() {
 
   useEffect(() => {
     const unsubSettings = firebaseService.subscribeToCollection('adminSettings', [], (data) => {
-      const gSettings = data.find(s => s.key === 'global_settings');
-      if (gSettings?.value) {
-        setAdminSettings(gSettings.value);
+      // Look for specific add_money_settings first, then fallback to global_settings (Vietnam section)
+      const amSettings = data.find(s => s.key === 'add_money_settings');
+      const globalSettings = data.find(s => s.key === 'global_settings');
+      
+      if (amSettings?.value) {
+        setAdminSettings(amSettings.value);
+      } else if (globalSettings?.value) {
+        // Map global_settings fields to what AddMoney expects if needed
+        setAdminSettings(globalSettings.value);
       }
     });
 
@@ -82,15 +87,29 @@ export default function AddMoney() {
         return;
     }
 
+    if (!profile?.uid || !profile?.email) {
+      toast.error('You must be logged in to create a transaction.');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
+      // 1. Verify Password first
+      const { error: authError } = await firebaseService.signIn(profile.email, password);
+      if (authError) {
+        toast.error('Incorrect password. Please try again.');
+        setIsSubmitting(false);
+        return;
+      }
+
       const realProofUrl = await firebaseService.uploadFile(proofFile);
       const tx = {
-        uid: profile?.uid,
+        uid: profile.uid,
         type: 'add_money',
         status: 'pending',
         amount: Number(amountSource),
-        currency: 'VND', // Primary currency for Vietnam load
+        currency: 'VND',
+        method: 'ADD_MONEY',
         proofUrl: realProofUrl,
         transactionCode: transactionId || null,
         createdAt: new Date().toISOString(),
@@ -98,8 +117,12 @@ export default function AddMoney() {
       };
 
       const docId = await firebaseService.addDocument('transactions', tx);
-      toast.success('Add Money request submitted!');
-      navigate(`/waiting/${docId}`);
+      if (docId) {
+        toast.success('Add Money request submitted!');
+        navigate(`/waiting/${docId}`);
+      } else {
+        toast.error('Failed to create transaction. Please check your connection or contact admin.');
+      }
     } catch (error) {
       console.error(error);
       toast.error('Failed to submit request');
@@ -193,43 +216,85 @@ export default function AddMoney() {
 
                 <div className="space-y-4">
                   {adminSettings ? (
-                    <div className="p-5 rounded-2xl bg-white/5 border border-white/10 space-y-3">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">RECEIVING BANK</p>
-                          <h4 className="text-lg font-bold text-white">{adminSettings.bankName}</h4>
-                        </div>
-                        <div className="w-10 h-10 bg-brand-blue/10 rounded-xl flex items-center justify-center">
-                          <CreditCard className="w-5 h-5 text-brand-blue" />
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <p className="text-[10px] text-slate-500 uppercase tracking-widest">{t('account_number')}</p>
-                          <p className="font-mono text-white text-base">{adminSettings.accountNumber}</p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] text-slate-500 uppercase tracking-widest">{t('account_holder')}</p>
-                          <p className="text-white text-base font-bold">{adminSettings.accountHolder}</p>
-                        </div>
-                      </div>
-                      {adminSettings.qrCode && (
-                        <div className="pt-2">
-                           <div className="aspect-square bg-slate-950 rounded-2xl border border-white/10 flex items-center justify-center overflow-hidden mb-2">
-                              <img src={adminSettings.qrCode} alt="QR" className="w-full h-full object-contain p-4" referrerPolicy="no-referrer" />
-                           </div>
-                           <p className="text-[10px] text-center text-slate-500 uppercase font-black">Scan to Pay</p>
-                        </div>
+                    <div className="space-y-4">
+                      {/* Check if we have vietnamBanks array from AdminSettings.tsx */}
+                      {Array.isArray(adminSettings.vietnamBanks) && adminSettings.vietnamBanks.length > 0 ? (
+                        adminSettings.vietnamBanks.map((bank: any, idx: number) => (
+                          <div key={idx} className="p-5 rounded-2xl bg-white/5 border border-white/10 space-y-3">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">RECEIVING BANK #{idx + 1}</p>
+                                <h4 className="text-lg font-bold text-white">{bank.bankName}</h4>
+                              </div>
+                              <div className="w-10 h-10 bg-brand-blue/10 rounded-xl flex items-center justify-center">
+                                <CreditCard className="w-5 h-5 text-brand-blue" />
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <p className="text-[10px] text-slate-500 uppercase tracking-widest">{t('account_number')}</p>
+                                <p className="font-mono text-white text-base">{bank.accountNumber}</p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] text-slate-500 uppercase tracking-widest">{t('account_holder')}</p>
+                                <p className="text-white text-base font-bold">{bank.accountHolder}</p>
+                              </div>
+                            </div>
+                            {bank.qrUrl && (
+                              <div className="pt-2">
+                                <div className="aspect-square max-w-[200px] mx-auto bg-slate-950 rounded-2xl border border-white/10 flex items-center justify-center overflow-hidden mb-2">
+                                  <img src={bank.qrUrl} alt="QR" className="w-full h-full object-contain p-4" referrerPolicy="no-referrer" />
+                                </div>
+                                <p className="text-[10px] text-center text-slate-500 uppercase font-black">Scan to Pay</p>
+                              </div>
+                            )}
+                          </div>
+                        ))
+                      ) : (
+                        /* Fallback to legacy fields */
+                        adminSettings.bankName && (
+                          <div className="p-5 rounded-2xl bg-white/5 border border-white/10 space-y-3">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">RECEIVING BANK</p>
+                                <h4 className="text-lg font-bold text-white">{adminSettings.bankName}</h4>
+                              </div>
+                              <div className="w-10 h-10 bg-brand-blue/10 rounded-xl flex items-center justify-center">
+                                <CreditCard className="w-5 h-5 text-brand-blue" />
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <p className="text-[10px] text-slate-500 uppercase tracking-widest">{t('account_number')}</p>
+                                <p className="font-mono text-white text-base">{adminSettings.accountNumber}</p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] text-slate-500 uppercase tracking-widest">{t('account_holder')}</p>
+                                <p className="text-white text-base font-bold">{adminSettings.accountHolder}</p>
+                              </div>
+                            </div>
+                            {adminSettings.qrCode && (
+                              <div className="pt-2">
+                                <div className="aspect-square max-w-[200px] mx-auto bg-slate-950 rounded-2xl border border-white/10 flex items-center justify-center overflow-hidden mb-2">
+                                  <img src={adminSettings.qrCode} alt="QR" className="w-full h-full object-contain p-4" referrerPolicy="no-referrer" />
+                                </div>
+                                <p className="text-[10px] text-center text-slate-500 uppercase font-black">Scan to Pay</p>
+                              </div>
+                            )}
+                          </div>
+                        )
                       )}
+
+                      {/* Display instructions and terms if they exist at the root level */}
                       {adminSettings.instructions && (
-                        <div className="pt-4 mt-4 border-t border-white/5">
+                        <div className="pt-4 mt-4 border-t border-white/5 bg-white/5 p-4 rounded-xl">
                           <Label className="text-[10px] text-slate-500 uppercase tracking-widest mb-1 block">Instructions</Label>
                           <p className="text-xs text-slate-400 whitespace-pre-line">{adminSettings.instructions}</p>
                         </div>
                       )}
                       {adminSettings.terms && (
-                        <div className="pt-4 mt-4 border-t border-red-500/10">
-                          <Label className="text-[10px] text-red-500 uppercase tracking-widest mb-1 block">Terms & Conditions</Label>
+                        <div className="pt-4 mt-4 border-t border-red-500/10 bg-red-500/5 p-4 rounded-xl">
+                          <Label className="text-[10px] text-red-500 uppercase tracking-widest mb-1 block font-bold">Terms & Conditions</Label>
                           <p className="text-[10px] text-slate-500 italic whitespace-pre-line">{adminSettings.terms}</p>
                         </div>
                       )}
@@ -237,6 +302,7 @@ export default function AddMoney() {
                   ) : (
                     <div className="p-8 text-center bg-white/5 border border-white/10 rounded-2xl">
                        <p className="text-slate-400">Admin hasn't configured Vietnam bank accounts yet.</p>
+                       <p className="text-xs text-slate-500 mt-2">Please contact admin via chat.</p>
                     </div>
                   )}
                 </div>

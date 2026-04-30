@@ -24,7 +24,7 @@ import {
   SelectTrigger, 
   SelectValue 
 } from '@/components/ui/select';
-import { auth, db } from '../lib/firebase';
+import { auth } from '../lib/firebase';
 import { firebaseService } from '../lib/firebaseService';
 import { toast } from 'sonner';
 import { 

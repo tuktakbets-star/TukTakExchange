@@ -30,6 +30,7 @@ export default function AdminDeposits() {
   const [users, setUsers] = useState<any[]>([]);
   const [wallets, setWallets] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<'add_money' | 'cash_in'>('add_money');
+  const [selectedSetupCountry, setSelectedSetupCountry] = useState('BDT');
   const [addMoneySettings, setAddMoneySettings] = useState<any>(null);
   const [cashInSettings, setCashInSettings] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -48,7 +49,11 @@ export default function AdminDeposits() {
     const unsubTX = firebaseService.subscribeToCollection('transactions', [], (data) => {
       setRequests(data.filter(tx => tx.type === 'deposit' || tx.type === 'cash_in' || tx.type === 'add_money'));
     });
-    const unsubUsers = firebaseService.subscribeToCollection('users', [], (data) => setUsers(data));
+    const unsubUsers = firebaseService.subscribeToCollection('users', [], (data) => {
+      // Map 'id' to 'uid' if necessary for backward compatibility in the app logic
+      const mapped = data.map((u: any) => ({ ...u, uid: u.id || u.uid }));
+      setUsers(mapped);
+    });
     const unsubWallets = firebaseService.subscribeToCollection('wallets', [], (data) => setWallets(data));
     const unsubSettings = firebaseService.subscribeToCollection('adminSettings', [], (data) => {
       const amInfo = data.find(s => s.key === 'add_money_settings');
@@ -87,14 +92,54 @@ export default function AdminDeposits() {
         qrUrl = await firebaseService.uploadFile(qrFile);
       }
 
-      const value = {
-        qrCode: qrUrl,
-        bankName: formData.get('bankName'),
-        accountNumber: formData.get('accountNumber'),
-        accountHolder: formData.get('accountHolder'),
-        instructions: formData.get('instructions'),
-        terms: formData.get('terms')
-      };
+      let value = { ...currentSettings?.value };
+
+      if (activeTab === 'add_money') {
+        value = {
+          ...value,
+          qrCode: qrUrl,
+          bankName: formData.get('bankName'),
+          accountNumber: formData.get('accountNumber'),
+          accountHolder: formData.get('accountHolder'),
+          instructions: formData.get('instructions'),
+          terms: formData.get('terms')
+        };
+      } else {
+        // Cash In multi-country update
+        const countryKey = selectedSetupCountry;
+        const rate = parseFloat(formData.get('rate') as string) || 0;
+        
+        const banks = [
+          { 
+            bankName: formData.get('bankName1'), 
+            accountNumber: formData.get('accNum1'), 
+            accountHolder: formData.get('accHolder1') 
+          },
+          { 
+            bankName: formData.get('bankName2'), 
+            accountNumber: formData.get('accNum2'), 
+            accountHolder: formData.get('accHolder2') 
+          }
+        ].filter(b => b.bankName && b.accountNumber);
+
+        const newRates = { ...(value.rates || {}), [countryKey]: rate };
+        const newCountries = { 
+          ...(value.countries || {}), 
+          [countryKey]: { 
+            banks,
+            updatedAt: new Date().toISOString()
+          } 
+        };
+
+        value = {
+          ...value,
+          qrCode: qrUrl,
+          instructions: formData.get('instructions'),
+          terms: formData.get('terms'),
+          rates: newRates,
+          countries: newCountries
+        };
+      }
 
       if (currentSettings) {
         await firebaseService.updateDocument('adminSettings', currentSettings.id, { value, updatedAt: new Date().toISOString() });
@@ -225,16 +270,35 @@ export default function AdminDeposits() {
 
       {/* Admin Settings Section */}
       <Card className="glass-dark border-white/5 rounded-[2.5rem] p-8">
-        <div className="flex items-center gap-3 mb-8">
-          <div className="w-10 h-10 bg-red-600/10 rounded-xl flex items-center justify-center text-red-500">
-            <Building2 className="w-5 h-5" />
+        <div className="flex items-center justify-between gap-3 mb-8">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-red-600/10 rounded-xl flex items-center justify-center text-red-500">
+              <Building2 className="w-5 h-5" />
+            </div>
+            <h3 className="text-xl font-display font-bold">
+              {activeTab === 'add_money' ? 'Add Money Setup (Vietnam)' : 'Cash In Setup (Multiple Countries)'}
+            </h3>
           </div>
-          <h3 className="text-xl font-display font-bold">
-            {activeTab === 'add_money' ? 'Add Money Setup (Vietnam)' : 'Cash In Setup (Bangladesh)'}
-          </h3>
+
+          {activeTab === 'cash_in' && (
+            <div className="flex gap-2 p-1 bg-white/5 rounded-xl border border-white/5">
+              {['BDT', 'INR', 'PKR', 'NPR'].map(curr => (
+                <button
+                  key={curr}
+                  onClick={() => setSelectedSetupCountry(curr)}
+                  className={cn(
+                    "px-4 py-1.5 rounded-lg text-xs font-bold transition-all",
+                    selectedSetupCountry === curr ? "bg-red-600 text-white" : "text-slate-400 hover:text-white"
+                  )}
+                >
+                  {curr}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         
-        <form key={`${activeTab}-${currentSettings?.id}`} onSubmit={handleUpdateSettings} className="grid md:grid-cols-4 gap-8">
+        <form key={`${activeTab}-${selectedSetupCountry}-${currentSettings?.id}`} onSubmit={handleUpdateSettings} className="grid md:grid-cols-4 gap-8">
           <div className="space-y-4">
             <Label className="flex items-center gap-2">
               <QrCode className="w-4 h-4 text-slate-500" />
@@ -283,36 +347,90 @@ export default function AdminDeposits() {
             </div>
           </div>
 
-          <div className="space-y-4 md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Bank Name</Label>
-              <Input 
-                name="bankName" 
-                defaultValue={currentSettings?.value?.bankName}
-                placeholder="Bank Name" 
-                className="bg-white/5 border-white/10 h-12 rounded-xl" 
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Account Holder</Label>
-              <Input 
-                name="accountHolder" 
-                defaultValue={currentSettings?.value?.accountHolder}
-                placeholder="Holder Name" 
-                className="bg-white/5 border-white/10 h-12 rounded-xl" 
-              />
-            </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label>Account Number</Label>
-              <Input 
-                name="accountNumber" 
-                defaultValue={currentSettings?.value?.accountNumber}
-                placeholder="0123456789" 
-                className="bg-white/5 border-white/10 h-12 rounded-xl" 
-              />
-            </div>
+          <div className="space-y-4 md:col-span-2">
+            {activeTab === 'add_money' ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Bank Name</Label>
+                  <Input 
+                    name="bankName" 
+                    defaultValue={currentSettings?.value?.bankName}
+                    placeholder="Bank Name" 
+                    className="bg-white/5 border-white/10 h-12 rounded-xl" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Account Holder</Label>
+                  <Input 
+                    name="accountHolder" 
+                    defaultValue={currentSettings?.value?.accountHolder}
+                    placeholder="Holder Name" 
+                    className="bg-white/5 border-white/10 h-12 rounded-xl" 
+                  />
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <Label>Account Number</Label>
+                  <Input 
+                    name="accountNumber" 
+                    defaultValue={currentSettings?.value?.accountNumber}
+                    placeholder="0123456789" 
+                    className="bg-white/5 border-white/10 h-12 rounded-xl" 
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                <div className="p-4 bg-red-500/5 border border-red-500/10 rounded-2xl">
+                  <Label className="text-[10px] uppercase text-red-400 font-bold tracking-widest block mb-2">Specific Cash In Rate for {selectedSetupCountry}</Label>
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 relative">
+                       <Input 
+                        name="rate" 
+                        type="number"
+                        step="0.00000001"
+                        defaultValue={currentSettings?.value?.rates?.[selectedSetupCountry]}
+                        placeholder="e.g. 0.0035" 
+                        className="bg-white/5 border-white/10 h-12 rounded-xl pl-10" 
+                      />
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-xs">1 {selectedSetupCountry} = ? VND</span>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-slate-500 mt-2">Admin panel e set kora ei rate user Cash In page e calculate korte parbe. (Default rates page er rate override korbe)</p>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4">
+                  {[1, 2].map(i => (
+                    <div key={i} className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-3">
+                      <div className="flex items-center justify-between">
+                         <Label className="text-xs font-bold text-slate-400">Account #{i}</Label>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <Input 
+                          name={`bankName${i}`} 
+                          defaultValue={currentSettings?.value?.countries?.[selectedSetupCountry]?.banks?.[i-1]?.bankName}
+                          placeholder="Bank/Wallet Name" 
+                          className="bg-white/5 border-white/10 h-10 rounded-lg text-xs" 
+                        />
+                        <Input 
+                          name={`accNum${i}`} 
+                          defaultValue={currentSettings?.value?.countries?.[selectedSetupCountry]?.banks?.[i-1]?.accountNumber}
+                          placeholder="Account Number" 
+                          className="bg-white/5 border-white/10 h-10 rounded-lg text-xs" 
+                        />
+                        <Input 
+                          name={`accHolder${i}`} 
+                          defaultValue={currentSettings?.value?.countries?.[selectedSetupCountry]?.banks?.[i-1]?.accountHolder}
+                          placeholder="Holder Name" 
+                          className="bg-white/5 border-white/10 h-10 rounded-lg text-xs" 
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             
-            <div className="space-y-2 md:col-span-2">
+            <div className="space-y-2 mt-4">
               <Label className="flex items-center gap-2">
                 <Info className="w-4 h-4 text-slate-500" />
                 Deposit Instructions
@@ -325,7 +443,7 @@ export default function AdminDeposits() {
               />
             </div>
 
-            <div className="space-y-2 md:col-span-2">
+            <div className="space-y-2">
               <Label className="flex items-center gap-2 text-red-400">
                 <Info className="w-4 h-4" />
                 Terms & Conditions
@@ -341,8 +459,9 @@ export default function AdminDeposits() {
 
           <div className="flex flex-col justify-end">
             <Button type="submit" variant="send" disabled={isUploading} className="w-full h-14 font-bold rounded-2xl">
-              {isUploading ? 'Uploading...' : 'Save Settings'}
+              {isUploading ? 'Uploading...' : 'Save All Settings'}
             </Button>
+            <p className="text-[10px] text-slate-500 mt-2 text-center">Settings globally updated for {activeTab === 'cash_in' ? selectedSetupCountry : 'Vietnam'}.</p>
           </div>
         </form>
       </Card>
@@ -406,7 +525,7 @@ export default function AdminDeposits() {
                       </td>
                       <td className="px-8 py-6">
                         <Badge variant="outline" className="border-white/10 bg-white/5 capitalize">
-                          {tx.method}
+                          {tx.method || tx.type || 'deposit'}
                         </Badge>
                       </td>
                       <td className="px-8 py-6">

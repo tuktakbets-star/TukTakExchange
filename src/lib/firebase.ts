@@ -1,15 +1,14 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
-import { initializeFirestore, memoryLocalCache } from 'firebase/firestore';
+import { initializeFirestore, memoryLocalCache } from 'firebase/firestore'; 
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
-// Initialize Firestore with memory cache to avoid IndexedDB persistence issues (Oops! error)
+// Use memory cache to avoid IndexedDB persistence issues in sandboxed environments
 export const db = initializeFirestore(app, {
   localCache: memoryLocalCache(),
-  experimentalForceLongPolling: true, // Helps with stability in some environments
 }, firebaseConfig.firestoreDatabaseId);
 
 export const googleProvider = new GoogleAuthProvider();

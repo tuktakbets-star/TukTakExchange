@@ -1,14 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { 
-  signInWithPopup, 
-  createUserWithEmailAndPassword, 
-  signInWithEmailAndPassword,
-  updateProfile
-} from 'firebase/auth';
-import { auth, googleProvider, db } from '../lib/firebase';
-import { firebaseService } from '../lib/firebaseService';
-import { doc, getDoc } from 'firebase/firestore';
+import { supabaseService, where } from '../lib/supabaseService';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Wallet, 
@@ -41,16 +33,13 @@ export default function Auth({ defaultAdminMode = false }: { defaultAdminMode?: 
 
   useEffect(() => {
     // If user is already logged in, redirect them based on the entry mode
-    // UNLESS the mode is explicitly 'register' AND we haven't just finished a successful registration
     const mode = searchParams.get('mode');
     if (user && mode !== 'register') {
       if (defaultAdminMode) {
-        // Only auto-redirect if they are an admin and entered via admin login path
-        if (isAdmin || ['tuktakbets@gmail.com', 'shohagrana284650@gmail.com', 'shohagrana28465@gmail.com', 'shohagrana84650@gmail.com', 'shohagrana4650@gmail.com', 'shohagrana650@gmail.com', 'shohagrana60@gmail.com'].includes(user.email || '')) {
+        if (isAdmin) {
           navigate('/admin-dashboard', { replace: true });
         }
       } else {
-        // Regular entry (from Landing/Overview) -> Always go to User Panel
         navigate('/dashboard', { replace: true });
       }
     }
@@ -92,10 +81,53 @@ export default function Auth({ defaultAdminMode = false }: { defaultAdminMode?: 
           return;
         }
 
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        await updateProfile(userCredential.user, {
-          displayName: fullName,
+        const cleanEmail = email.toLowerCase().trim();
+        const cleanPhone = phoneNumber.trim();
+        const cleanPassport = passportNumber.trim();
+
+        // 1. Check for uniqueness manually (or rely on Supabase uniqueness constraints if set up)
+        const checkEmail = await supabaseService.getCollection('users', [
+          where('email', '==', cleanEmail)
+        ]);
+        if (checkEmail.length > 0) {
+          toast.error('Email already in use');
+          setLoading(false);
+          return;
+        }
+
+        if (cleanPhone) {
+          const checkPhone = await supabaseService.getCollection('users', [
+            where('phoneNumber', '==', cleanPhone)
+          ]);
+          if (checkPhone.length > 0) {
+            toast.error('Phone number already associated with another account');
+            setLoading(false);
+            return;
+          }
+        }
+
+        if (cleanPassport) {
+          const checkPassport = await supabaseService.getCollection('users', [
+            where('passportNumber', '==', cleanPassport)
+          ]);
+          if (checkPassport.length > 0) {
+            toast.error('Passport number already associated with another account');
+            setLoading(false);
+            return;
+          }
+        }
+
+        // 2. Supabase Sign Up
+        const { data, error } = await supabaseService.signUp(email, password, {
+          data: {
+            full_name: fullName,
+          }
         });
+
+        if (error) throw error;
+        if (!data.user) throw new Error("Registration failed");
+
+        const sbUser = data.user;
 
         // Process files to Base64
         const [passportBase64, selfieBase64] = await Promise.all([
@@ -103,18 +135,18 @@ export default function Auth({ defaultAdminMode = false }: { defaultAdminMode?: 
           toBase64(selfie)
         ]);
         
-        // Save user data to Firestore
+        // Save user data to Supabase table
         const userProfile = {
-          uid: userCredential.user.uid,
-          email,
+          uid: sbUser.id,
+          email: cleanEmail,
           displayName: fullName,
-          phoneNumber,
-          accountNumber: phoneNumber, // Phone number is the account number
-          passportNumber,
-          referralCode,
+          phoneNumber: cleanPhone,
+          accountNumber: cleanPhone,
+          passportNumber: cleanPassport,
+          referralCode: referralCode.trim(),
           role: 'client',
-          status: 'pending',
-          kycStatus: 'pending',
+          status: 'active',
+          kycStatus: 'submitted',
           kycData: {
             passportUrl: passportBase64,
             selfieUrl: selfieBase64,
@@ -124,13 +156,25 @@ export default function Auth({ defaultAdminMode = false }: { defaultAdminMode?: 
           updatedAt: new Date().toISOString()
         };
 
-        await firebaseService.setDocument('users', userCredential.user.uid, userProfile);
+        await supabaseService.setDocument('users', sbUser.id, userProfile);
 
-        // Initialize wallets for different currencies
+        // KYC Tracking
+        await supabaseService.addDocument('kycSubmissions', {
+          uid: sbUser.id,
+          userEmail: cleanEmail,
+          userName: fullName,
+          passportNumber: cleanPassport,
+          passportUrl: passportBase64,
+          selfieUrl: selfieBase64,
+          status: 'pending',
+          submittedAt: new Date().toISOString()
+        });
+
+        // Initialize wallets
         const currencies = ['VND', 'BDT', 'USD'];
         await Promise.all(currencies.map(currency => 
-          firebaseService.setDocument('wallets', `${userCredential.user.uid}_${currency}`, {
-            uid: userCredential.user.uid,
+          supabaseService.setDocument('wallets', `${sbUser.id}_${currency}`, {
+            uid: sbUser.id,
             currency,
             balance: 0,
             updatedAt: new Date().toISOString()
@@ -138,8 +182,8 @@ export default function Auth({ defaultAdminMode = false }: { defaultAdminMode?: 
         ));
 
         // Create initial notification
-        await firebaseService.addDocument('notifications', {
-          uid: userCredential.user.uid,
+        await supabaseService.addDocument('notifications', {
+          uid: sbUser.id,
           title: 'Welcome to Tuktak Exchange',
           message: 'Your account has been created successfully. Your profile is currently pending verification.',
           type: 'system',
@@ -149,68 +193,125 @@ export default function Auth({ defaultAdminMode = false }: { defaultAdminMode?: 
         
         toast.success(t('register_success'));
       } else {
-        const userCredential = await signInWithEmailAndPassword(auth, email, password);
-        const user = userCredential.user;
+        // LOGIN MODE
+        const { data, error } = await supabaseService.signIn(email, password);
+        if (error) throw error;
         
-        // Fetch role for redirection
-        const userDoc = await getDoc(doc(db, 'users', user.uid));
-        const userData = userDoc.data();
+        const sbUser = data.user;
+        if (!sbUser) throw new Error("Login failed");
+
+        // Fetch profile to check session
+        const { data: userData } = await supabaseService.getDocument('users', sbUser.id);
+        
+        // --- Multi-device Session Management ---
+        const localSessionId = sessionStorage.getItem('sessionId');
+        
+        if (userData?.sessionStatus === 'active' && userData?.currentSessionId !== localSessionId) {
+          // Another session is active. Create a login request.
+          const requestId = await supabaseService.addDocument('login_requests', {
+            uid: sbUser.id,
+            email: sbUser.email,
+            device_info: {
+              userAgent: navigator.userAgent,
+              platform: navigator.platform,
+              timestamp: new Date().toISOString()
+            },
+            status: 'pending'
+          });
+
+          if (!requestId) throw new Error("Failed to create login request");
+
+          // Display "Waiting for approval" state
+          setLoading(true);
+          toast.info("Active session detected. Please approve this login from your other device.");
+          
+          // Poll for approval status
+          const checkApproval = setInterval(async () => {
+            const { data: req } = await supabaseService.getDocument('login_requests', requestId);
+            if (req?.status === 'approved') {
+              clearInterval(checkApproval);
+              
+              // Proceed with login
+              await supabaseService.updateDocument('users', sbUser.id, {
+                currentSessionId: localSessionId,
+                sessionStatus: 'active',
+                lastActiveAt: new Date().toISOString()
+              });
+              
+              toast.success(t('login_success'));
+              finalizeLogin(sbUser, userData);
+            } else if (req?.status === 'rejected') {
+              clearInterval(checkApproval);
+              setLoading(false);
+              toast.error("Login request rejected by the other device.");
+              await supabaseService.signOut();
+            }
+          }, 3000);
+
+          // Timeout after 2 minutes
+          setTimeout(() => {
+            clearInterval(checkApproval);
+            setLoading(false);
+            if (loading) toast.error("Login request timed out.");
+          }, 120000);
+
+          return;
+        }
+
+        // No active session or same session, just update and proceed
+        await supabaseService.updateDocument('users', sbUser.id, {
+          currentSessionId: localSessionId,
+          sessionStatus: 'active',
+          lastActiveAt: new Date().toISOString()
+        });
         
         toast.success(t('login_success'));
-        if (defaultAdminMode) {
-          if (userData?.role === 'admin' || 
-              ['tuktakbets@gmail.com', 'shohagrana284650@gmail.com', 'shohagrana28465@gmail.com', 'shohagrana84650@gmail.com', 'shohagrana4650@gmail.com', 'shohagrana650@gmail.com', 'shohagrana60@gmail.com'].includes(user.email || '')) {
-            navigate('/admin-dashboard', { replace: true });
-          } else {
-            toast.error(t('access_denied_admin'));
-            await auth.signOut();
-          }
-        } else {
-          navigate('/dashboard', { replace: true });
-        }
+        finalizeLogin(sbUser, userData);
         return;
       }
-      navigate('/dashboard', { replace: true });
+      // Remove redundant navigation if already handled
     } catch (error: any) {
       console.error(error);
-      if (error.code === 'auth/email-already-in-use') {
-        setAuthError(t('email_already_in_use'));
+      const msg = error.message || t('auth_failed');
+      if (msg.includes('already registered')) {
         toast.error(t('email_already_in_use'));
-      } else if (error.code === 'auth/operation-not-allowed') {
-        setAuthError(t('firebase_disabled_msg'));
-        toast.error(t('registration_disabled'), {
-          duration: 10000,
-        });
       } else {
-        toast.error(error.message || t('auth_failed'));
+        toast.error(msg);
       }
     } finally {
       setLoading(false);
     }
   };
 
+  const finalizeLogin = (sbUser: any, userData: any) => {
+    if (defaultAdminMode) {
+      const adminEmails = [
+        'tuktakbets@gmail.com', 
+        'shohagrana284650@gmail.com', 
+        'shohagrana28465@gmail.com',
+        'shohagrana84650@gmail.com', 
+        'shohagrana4650@gmail.com', 
+        'shohagrana650@gmail.com', 
+        'shohagrana60@gmail.com'
+      ];
+      if (userData?.role === 'admin' || adminEmails.includes(sbUser.email || '')) {
+        navigate('/admin-dashboard', { replace: true });
+      } else {
+        toast.error(t('access_denied_admin'));
+        supabaseService.signOut();
+      }
+    } else {
+      navigate('/dashboard', { replace: true });
+    }
+  };
+
   const handleGoogleSignIn = async () => {
     setLoading(true);
     try {
-      const result = await signInWithPopup(auth, googleProvider);
-      const user = result.user;
-      
-      // Fetch role for redirection
-      const userDoc = await getDoc(doc(db, 'users', user.uid));
-      const userData = userDoc.data();
-      
-      toast.success(t('google_signin_success'));
-      if (defaultAdminMode) {
-        if (userData?.role === 'admin' || ['tuktakbets@gmail.com', 'shohagrana284650@gmail.com', 'shohagrana28465@gmail.com'].includes(user.email || '')) {
-          navigate('/admin-dashboard', { replace: true });
-        } else {
-          toast.error(t('access_denied_admin'));
-          await auth.signOut();
-        }
-      } else {
-        navigate('/dashboard', { replace: true });
-      }
-    } catch (error) {
+      const { error } = await supabaseService.signInWithGoogle();
+      if (error) throw error;
+      // Redirect happens via Supabase
+    } catch (error: any) {
       console.error(error);
       toast.error(t('google_signin_failed'));
     } finally {

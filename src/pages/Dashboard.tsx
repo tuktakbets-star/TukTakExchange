@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { firebaseService } from '../lib/firebaseService';
-import { where, orderBy, limit } from 'firebase/firestore';
+import { firebaseService, where, orderBy, limit } from '../lib/firebaseService';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Wallet, 
@@ -129,7 +128,7 @@ export default function Dashboard() {
         handleTransactionClick(tx);
       } else {
         // Fetch tx if not in recent
-        const fetchedTx = await firebaseService.getDocument('transactions', notif.txId);
+        const { data: fetchedTx } = await firebaseService.getDocument('transactions', notif.txId);
         if (fetchedTx) handleTransactionClick({ id: notif.txId, ...fetchedTx });
       }
     }

@@ -110,7 +110,7 @@ export default function AdminRecharge() {
           });
 
           const walletId = `${tx.uid}_${tx.currency}`;
-          const walletDoc = await firebaseService.getDocument('wallets', walletId);
+          const { data: walletDoc } = await firebaseService.getDocument('wallets', walletId);
           if (walletDoc) {
             await firebaseService.updateDocument('wallets', walletId, {
               balance: (walletDoc.balance || 0) + tx.amount,

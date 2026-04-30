@@ -35,6 +35,8 @@ export default function Landing() {
   const [logoClicks, setLogoClicks] = useState(0);
   const [lastClickTime, setLastClickTime] = useState(0);
 
+  const [showRoleModal, setShowRoleModal] = useState(false);
+
   const handleLogoClick = (e: React.MouseEvent) => {
     const now = Date.now();
     
@@ -45,7 +47,7 @@ export default function Landing() {
       if (newCount >= 5) {
         setLogoClicks(0);
         e.preventDefault();
-        navigate('/secure-admin-login-987');
+        setShowRoleModal(true);
         return;
       } else {
         setLogoClicks(newCount);
@@ -385,6 +387,69 @@ export default function Landing() {
           </div>
         </div>
       </footer>
+
+      {/* Role Selection Modal */}
+      <AnimatePresence>
+        {showRoleModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowRoleModal(false)}
+              className="absolute inset-0 bg-slate-950/90 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-md bg-slate-900 border border-white/10 rounded-[2.5rem] p-8 shadow-2xl overflow-hidden"
+            >
+              <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-blue-600 via-purple-600 to-blue-600" />
+              
+              <div className="text-center mb-8">
+                <div className="w-16 h-16 bg-blue-500/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <Lock className="w-8 h-8 text-blue-500" />
+                </div>
+                <h2 className="text-2xl font-display font-black tracking-tight">🔐 TukTak Secure Access</h2>
+                <p className="text-slate-500 text-sm mt-1 uppercase tracking-widest font-bold">Authorized Personnel Only</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 mb-8">
+                <button 
+                  onClick={() => navigate('/secure-admin-login-987')}
+                  className="group relative flex flex-col items-center justify-center p-6 bg-white/5 border border-white/10 rounded-3xl hover:bg-blue-600/10 hover:border-blue-500/50 transition-all duration-300"
+                >
+                  <div className="w-12 h-12 bg-blue-600/20 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                    <span className="text-2xl">👑</span>
+                  </div>
+                  <span className="font-bold text-sm">Admin Panel</span>
+                  <div className="absolute inset-x-0 bottom-0 h-1 bg-blue-500 scale-x-0 group-hover:scale-x-100 transition-transform rounded-b-3xl" />
+                </button>
+
+                <button 
+                  onClick={() => navigate('/operator/login')}
+                  className="group relative flex flex-col items-center justify-center p-6 bg-white/5 border border-white/10 rounded-3xl hover:bg-purple-600/10 hover:border-purple-500/50 transition-all duration-300"
+                >
+                  <div className="w-12 h-12 bg-purple-600/20 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                    <span className="text-2xl">⚙️</span>
+                  </div>
+                  <span className="font-bold text-sm">Operator Panel</span>
+                  <div className="absolute inset-x-0 bottom-0 h-1 bg-purple-500 scale-x-0 group-hover:scale-x-100 transition-transform rounded-b-3xl" />
+                </button>
+              </div>
+
+              <Button 
+                variant="ghost" 
+                onClick={() => setShowRoleModal(false)}
+                className="w-full text-slate-500 hover:text-white"
+              >
+                ← Back to Site
+              </Button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

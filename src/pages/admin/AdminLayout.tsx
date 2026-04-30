@@ -19,11 +19,14 @@ import {
   Search,
   ChevronRight,
   RefreshCw,
+  ShieldCheck,
+  History,
   Settings as SettingsIcon
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { auth } from '../../lib/firebase';
+import { firebaseService } from '../../lib/firebaseService';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/lib/utils';
 
@@ -33,6 +36,14 @@ export default function AdminLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [pendingKYCCount, setPendingKYCCount] = useState(0);
+
+  React.useEffect(() => {
+    const unsub = firebaseService.subscribeToCollection('kycSubmissions', [], (data) => {
+      setPendingKYCCount(data.filter(k => k.status === 'pending').length);
+    });
+    return unsub;
+  }, []);
 
   const menuItems = [
     { id: 'dashboard', label: t('dashboard'), icon: LayoutDashboard, path: '/admin-dashboard' },
@@ -41,7 +52,9 @@ export default function AdminLayout() {
     { id: 'exchange', label: 'Exchanges', icon: RefreshCw, path: '/admin-dashboard/exchange' },
     { id: 'withdraw', label: t('withdraw'), icon: ArrowUpRight, path: '/admin-dashboard/withdraw' },
     { id: 'recharge', label: t('recharge'), icon: Zap, path: '/admin-dashboard/recharge' },
-    { id: 'users', label: t('users'), icon: Users, path: '/admin-dashboard/users' },
+    { id: 'sub-admins', label: 'Sub Admins', icon: ShieldCheck, path: '/admin-dashboard/sub-admins' },
+    { id: 'sub-admin-logs', label: 'Operator Logs', icon: History, path: '/admin-dashboard/sub-admin-logs' },
+    { id: 'users', label: t('users'), icon: Users, path: '/admin-dashboard/users', badge: pendingKYCCount > 0 ? pendingKYCCount : null },
     { id: 'rates', label: t('rates'), icon: TrendingUp, path: '/admin-dashboard/rates' },
     { id: 'notifications', label: t('notifications'), icon: Bell, path: '/admin-dashboard/notifications' },
     { id: 'messages', label: t('messages'), icon: MessageSquare, path: '/admin-dashboard/messages' },
@@ -104,6 +117,11 @@ export default function AdminLayout() {
                     >
                       {item.label}
                     </motion.span>
+                  )}
+                  {item.badge && isSidebarOpen && (
+                    <div className="ml-auto bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full border border-white/20">
+                      {item.badge}
+                    </div>
                   )}
                   {isActive && (
                     <motion.div 

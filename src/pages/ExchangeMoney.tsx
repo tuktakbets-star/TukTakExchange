@@ -3,8 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
-import { firebaseService } from '../lib/firebaseService';
-import { where } from 'firebase/firestore';
+import { firebaseService, where } from '../lib/firebaseService';
 import { 
   Send, 
   ArrowRight, 
@@ -47,6 +46,7 @@ export default function ExchangeMoney() {
   // Form states
   const [sourceCurrency, setSourceCurrency] = useState('VND');
   const [targetCurrency, setTargetCurrency] = useState('BDT');
+  const [accountType, setAccountType] = useState('bKash');
   const [amount, setAmount] = useState('');
   const [receiverCountry, setReceiverCountry] = useState('Bangladesh');
   const [receiverName, setReceiverName] = useState('');
@@ -80,10 +80,54 @@ export default function ExchangeMoney() {
     };
   }, [profile?.uid]);
 
-  // Fix: Use division as admins usually set "VND price per unit of target currency"
-  const currentRate = rates.find(r => r.target?.toUpperCase() === targetCurrency?.toUpperCase())?.rate;
-  const targetAmount = (amount && currentRate && currentRate > 0) ? (Number(amount) / currentRate).toFixed(2) : '0.00';
-  const fee = amount ? (Number(amount) * 0.01).toFixed(0) : '0'; // 1% fee
+  const countryToCurrency: Record<string, string> = {
+    'Bangladesh': 'BDT',
+    'India': 'INR',
+    'Pakistan': 'PKR',
+    'Nepal': 'NPR'
+  };
+
+  const accountTypesMap: Record<string, string[]> = {
+    'Bangladesh': ['bKash', 'Nagad', 'Bank Transfer', 'Rocket', 'upay'],
+    'India': ['UPI', 'IMPS', 'Digital eRupee', 'Paytm'],
+    'Pakistan': ['Easypaisa-PK Only', 'Meezan Bank', 'NayaPay', 'SadaPay'],
+    'Nepal': ['Esewa', 'Khalti', 'IME Pay']
+  };
+
+  useEffect(() => {
+    const curr = countryToCurrency[receiverCountry];
+    if (curr) {
+      setTargetCurrency(curr);
+      const types = accountTypesMap[receiverCountry] || [];
+      if (!types.includes(accountType)) {
+        setAccountType(types[0] || '');
+      }
+    }
+  }, [receiverCountry]);
+
+  // Updated: Use tiered rates based on the sending amount AND account type
+  const rateDoc = rates?.find(r => r.target?.toUpperCase() === targetCurrency?.toUpperCase());
+  
+  // Try to find tiered rates for the specific account type first
+  const accountData = rateDoc?.accountTypes?.[accountType];
+  const tieredRates = Array.isArray(accountData?.tieredRates) ? accountData.tieredRates : 
+                      (Array.isArray(rateDoc?.tieredRates) ? rateDoc.tieredRates : 
+                      (Array.isArray(rateDoc?.tiered_rates) ? rateDoc.tiered_rates : []));
+  
+  const amountNum = Number(amount) || 0;
+
+  // Find the applicable tier based on VND amount
+  const applicableTier = tieredRates.find((t: any) => {
+    const min = Number(t.min) || 0;
+    const max = Number(t.max) || 0;
+    return amountNum >= min && (max === 0 || amountNum <= max);
+  });
+
+  // Calculate Rate
+  const currentRate = applicableTier ? Number(applicableTier.rate) : (Number(rateDoc?.rate) || 0);
+
+  const targetAmount = (amount && currentRate && currentRate > 0) ? (amountNum / currentRate).toFixed(2) : '0.00';
+  const fee = amount ? (amountNum * 0.01).toFixed(0) : '0'; // 1% fee
 
   const handleNext = () => {
     if (step === 1) {
@@ -117,8 +161,21 @@ export default function ExchangeMoney() {
       return;
     }
     
+    if (!profile?.uid || !profile?.email) {
+      toast.error('You must be logged in to create a transaction.');
+      return;
+    }
+    
     setIsSubmitting(true);
     try {
+      // Verify Password first
+      const { error: authError } = await firebaseService.signIn(profile.email, password);
+      if (authError) {
+        toast.error('Incorrect password. Please try again.');
+        setIsSubmitting(false);
+        return;
+      }
+
       let qrUrl = null;
       if (receiverQrFile) {
         qrUrl = await firebaseService.uploadFile(receiverQrFile);
@@ -130,25 +187,34 @@ export default function ExchangeMoney() {
         status: 'pending',
         amount: Number(amount),
         currency: sourceCurrency,
-        targetAmount: Number(targetAmount),
-        targetCurrency: targetCurrency,
-        targetCountry: receiverCountry,
+        target_amount: Number(targetAmount),
+        target_currency: targetCurrency,
+        target_country: receiverCountry,
+        account_type: accountType,
         fee: Number(fee),
-        totalToDeduct: Number(amount) + Number(fee),
-        receiverInfo: {
+        total_to_deduct: Number(amount) + Number(fee),
+        receiver_info: {
           name: receiverName,
-          bankName: receiverBankName,
+          bankName: receiverBankName || accountType, // Fallback to account type if bank name empty
           accountNumber: receiverAccountNumber,
           branch: receiverBranch,
-          qrCode: qrUrl
+          qrCode: qrUrl,
+          accountType: accountType // Store account type explicitly
         },
         description: description || `Exchange to ${receiverName}`,
         createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        created_at: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       };
       
-      const docId = await firebaseService.addDocument('transactions', tx);
+      const response = await firebaseService.addDocument('transactions', tx);
+      const docId = typeof response === 'string' ? response : (response as any)?.id;
       
+      if (!docId) {
+        throw new Error('Database failed to create transaction record');
+      }
+
       // Lock balance immediately (Hidden deduction)
       const wallet = wallets.find(w => w.currency === sourceCurrency);
       if (wallet) {
@@ -205,6 +271,36 @@ export default function ExchangeMoney() {
                   className="space-y-6"
                 >
                   <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label className="text-slate-400 text-xs uppercase tracking-wider">Receiver Country</Label>
+                        <Select value={receiverCountry} onValueChange={setReceiverCountry}>
+                          <SelectTrigger className="bg-white/5 border-white/10 h-12 rounded-xl">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent className="bg-slate-900 border-slate-800 text-white">
+                            <SelectItem value="Bangladesh">Bangladesh</SelectItem>
+                            <SelectItem value="India">India</SelectItem>
+                            <SelectItem value="Pakistan">Pakistan</SelectItem>
+                            <SelectItem value="Nepal">Nepal</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-slate-400 text-xs uppercase tracking-wider">Account Type</Label>
+                        <Select value={accountType} onValueChange={setAccountType}>
+                          <SelectTrigger className="bg-white/5 border-white/10 h-12 rounded-xl">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent className="bg-slate-900 border-slate-800 text-white">
+                            {(accountTypesMap[receiverCountry] || []).map(type => (
+                              <SelectItem key={type} value={type}>{type}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
                     <div className="p-4 rounded-2xl bg-white/5 border border-white/5 space-y-2">
                       <Label className="text-slate-400 text-xs uppercase tracking-wider">{t('amount')} (VND)</Label>
                       <div className="flex gap-4">
@@ -241,8 +337,8 @@ export default function ExchangeMoney() {
                         <div className="flex-1 text-3xl font-display font-bold py-1">
                           {targetAmount}
                         </div>
-                        <Select value={targetCurrency} onValueChange={setTargetCurrency}>
-                          <SelectTrigger className="w-32 bg-slate-800 border-none rounded-xl h-12 font-bold">
+                        <Select value={targetCurrency} disabled>
+                          <SelectTrigger className="w-32 bg-slate-800 border-none rounded-xl h-12 font-bold opacity-50 cursor-not-allowed">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent className="bg-slate-900 border-slate-800 text-white">
@@ -413,12 +509,20 @@ export default function ExchangeMoney() {
                         <span className="font-bold">{receiverCountry}</span>
                       </div>
                       <div className="flex justify-between text-sm">
+                        <span className="text-slate-400">Account Type</span>
+                        <span className="font-bold text-brand-blue">{accountType}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
                         <span className="text-slate-400">Receiver Name</span>
                         <span className="font-bold">{receiverName}</span>
                       </div>
                       <div className="flex justify-between text-sm">
-                        <span className="text-slate-400">Bank Name</span>
-                        <span className="font-bold">{receiverBankName}</span>
+                        <span className="text-slate-400">Account Type</span>
+                        <span className="font-bold text-brand-blue">{accountType}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-slate-400">Bank / Wallet Name</span>
+                        <span className="font-bold">{receiverBankName || accountType}</span>
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-slate-400">Account Number</span>

@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { firebaseService } from '../lib/firebaseService';
-import { where } from 'firebase/firestore';
+import { firebaseService, where } from '../lib/firebaseService';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Plus, 
@@ -54,9 +53,13 @@ export default function CashIn() {
     });
 
     const unsubSettings = firebaseService.subscribeToCollection('adminSettings', [], (data) => {
-      const global = data.find(s => s.key === 'global_settings');
-      if (global?.value) {
-        setAdminSettings(global.value);
+      const ciSettings = data.find(s => s.key === 'cash_in_settings');
+      const globalSettings = data.find(s => s.key === 'global_settings');
+
+      if (ciSettings?.value) {
+        setAdminSettings(ciSettings.value);
+      } else if (globalSettings?.value) {
+        setAdminSettings(globalSettings.value);
       }
     });
 
@@ -74,18 +77,45 @@ export default function CashIn() {
   ];
 
   const currentCountry = countries.find(c => c.name === selectedCountry) || countries[0];
-  const countryRate = rates.find(r => r.target?.toUpperCase() === currentCountry.currency)?.rate || 0;
-  const receiveVND = (amountSource && countryRate > 0) ? (Number(amountSource) / countryRate).toFixed(0) : '0';
+  
+  // Use specific rate from adminSettings if available, else fallback to rates collection
+  const adminSetRate = adminSettings?.rates?.[currentCountry.currency];
+  const countryRate = adminSetRate || rates.find(r => r.target?.toUpperCase() === currentCountry.currency)?.rate || 0;
+  
+  const receiveVND = (amountSource && countryRate > 0) ? (Number(amountSource) * countryRate).toFixed(0) : '0';
 
   const getBanksForCountry = () => {
     if (!adminSettings) return [];
-    switch (selectedCountry) {
-      case 'Bangladesh': return adminSettings.bangladeshBanks || [];
-      case 'India': return adminSettings.indiaBanks || [];
-      case 'Pakistan': return adminSettings.pakistanBanks || [];
-      case 'Nepal': return adminSettings.nepalBanks || [];
-      default: return [];
+    
+    // 1. Check for specific country array format from global_settings (AdminSettings.tsx)
+    const countryToKey: Record<string, string> = {
+      'Bangladesh': 'bangladeshBanks',
+      'India': 'indiaBanks',
+      'Pakistan': 'pakistanBanks',
+      'Nepal': 'nepalBanks'
+    };
+    
+    const settingsKey = countryToKey[selectedCountry];
+    if (settingsKey && Array.isArray(adminSettings[settingsKey])) {
+      return adminSettings[settingsKey];
     }
+
+    // 2. Check for country-specific banks in adminSettings (AdminDeposits.tsx structure)
+    if (adminSettings.countries?.[currentCountry.currency]?.banks) {
+      return adminSettings.countries[currentCountry.currency].banks;
+    }
+    
+    // Fallback/Legacy: if it's Bangladesh and we have the old fields
+    if (selectedCountry === 'Bangladesh' && adminSettings.bankName) {
+      return [{
+        bankName: adminSettings.bankName,
+        accountNumber: adminSettings.accountNumber,
+        accountHolder: adminSettings.accountHolder,
+        type: 'PRIMARY'
+      }];
+    }
+    
+    return [];
   };
 
   const handleNext = () => {
@@ -112,15 +142,29 @@ export default function CashIn() {
       return;
     }
 
+    if (!profile?.uid || !profile?.email) {
+      toast.error('You must be logged in to create a transaction.');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
+      // 1. Verify Password first
+      const { error: authError } = await firebaseService.signIn(profile.email, password);
+      if (authError) {
+        toast.error('Incorrect password. Please try again.');
+        setIsSubmitting(false);
+        return;
+      }
+
       const realProofUrl = await firebaseService.uploadFile(proofFile);
       const tx = {
-        uid: profile?.uid,
+        uid: profile.uid,
         type: 'cash_in',
         status: 'pending',
         amount: Number(receiveVND),
         currency: 'VND',
+        method: 'CASH_IN',
         sourceAmount: Number(amountSource),
         sourceCurrency: currentCountry.currency,
         country: selectedCountry,
@@ -131,8 +175,12 @@ export default function CashIn() {
       };
 
       const docId = await firebaseService.addDocument('transactions', tx);
-      toast.success('Cash In request submitted!');
-      navigate(`/waiting/${docId}`);
+      if (docId) {
+        toast.success('Cash In request submitted!');
+        navigate(`/waiting/${docId}`);
+      } else {
+        toast.error('Failed to create transaction. Please check your connection or contact admin.');
+      }
     } catch (error) {
       console.error(error);
       toast.error('Failed to submit request');
@@ -273,12 +321,32 @@ export default function CashIn() {
                             <p className="text-white text-base font-bold">{bank.accountHolder}</p>
                           </div>
                         </div>
+                        {adminSettings.qrCode && idx === 0 && (
+                          <div className="pt-2">
+                             <div className="aspect-square max-w-[200px] mx-auto bg-slate-950 rounded-2xl border border-white/10 flex items-center justify-center overflow-hidden mb-2">
+                                <img src={adminSettings.qrCode} alt="QR" className="w-full h-full object-contain p-4" referrerPolicy="no-referrer" />
+                             </div>
+                             <p className="text-[10px] text-center text-slate-500 uppercase font-black">Scan to Pay (Primary Option)</p>
+                          </div>
+                        )}
                       </div>
                     ))
                   ) : (
                     <div className="p-8 text-center bg-white/5 border border-white/10 rounded-2xl">
                        <p className="text-slate-400">Admin has not configured bank accounts for {selectedCountry}.</p>
                        <p className="text-xs text-slate-500 mt-2">Please contact admin via chat.</p>
+                    </div>
+                  )}
+                  {adminSettings?.instructions && (
+                    <div className="p-4 rounded-xl bg-blue-500/5 border border-blue-500/10">
+                      <Label className="text-[10px] text-blue-400 uppercase font-bold tracking-widest block mb-1">Instructions</Label>
+                      <p className="text-xs text-slate-400 whitespace-pre-line">{adminSettings.instructions}</p>
+                    </div>
+                  )}
+                  {adminSettings?.terms && (
+                    <div className="p-4 rounded-xl bg-red-500/5 border border-red-500/10">
+                      <Label className="text-[10px] text-red-400 uppercase font-bold tracking-widest block mb-1">Terms & Conditions</Label>
+                      <p className="text-[10px] text-slate-500 italic whitespace-pre-line">{adminSettings.terms}</p>
                     </div>
                   )}
                 </div>

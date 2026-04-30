@@ -4,8 +4,7 @@ import { AuthProvider, useAuth } from './hooks/useAuth';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Toaster } from '@/components/ui/sonner';
 import SplashScreen from './components/SplashScreen';
-import { doc, getDocFromCache, getDocFromServer } from 'firebase/firestore';
-import { db } from './lib/firebase';
+import SessionRequestDialog from './components/SessionRequestDialog';
 import './lib/i18n';
 
 // Pages (to be created)
@@ -27,6 +26,7 @@ import WaitingPage from './pages/WaitingPage';
 import Recharge from './pages/Recharge';
 import AddMoney from './pages/AddMoney';
 import Appeal from './pages/Appeal';
+import DisputeChat from './pages/DisputeChat';
 import AdminPanel from './pages/AdminPanel';
 import AdminLayout from './pages/admin/AdminLayout';
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -41,10 +41,23 @@ import AdminNotifications from './pages/admin/AdminNotifications';
 import AdminMessages from './pages/admin/AdminMessages';
 import AdminDisputes from './pages/admin/AdminDisputes';
 import AdminSettings from './pages/admin/AdminSettings';
+import AdminSubAdmins from './pages/admin/AdminSubAdmins';
+import AdminSubAdminLogs from './pages/admin/AdminSubAdminLogs';
+// Operator Pages
+import OperatorLogin from './pages/operator/OperatorLogin';
+import OperatorLayout from './pages/operator/OperatorLayout';
+import OperatorDashboard from './pages/operator/OperatorDashboard';
+import OperatorAddMoney from './pages/operator/OperatorAddMoney';
+import OperatorExchange from './pages/operator/OperatorExchange';
+import OperatorMessages from './pages/operator/OperatorMessages';
+import OperatorHistory from './pages/operator/OperatorHistory';
+import OperatorWallet from './pages/operator/OperatorWallet';
+import OperatorProfile from './pages/operator/OperatorProfile';
 import Layout from './components/Layout';
 
-const ProtectedRoute = ({ children, adminOnly = false }: { children: React.ReactNode, adminOnly?: boolean }) => {
+const ProtectedRoute = ({ children, adminOnly = false, operatorOnly = false }: { children: React.ReactNode, adminOnly?: boolean, operatorOnly?: boolean }) => {
   const { user, isAdmin, loading } = useAuth();
+  const operatorSession = sessionStorage.getItem('operator_session');
 
   if (loading) {
     return (
@@ -53,6 +66,11 @@ const ProtectedRoute = ({ children, adminOnly = false }: { children: React.React
         <p className="text-blue-500/50 text-[10px] font-bold uppercase tracking-widest animate-pulse">Securing Connection</p>
       </div>
     );
+  }
+
+  if (operatorOnly) {
+    if (!operatorSession) return <Navigate to="/operator/login" />;
+    return <>{children}</>;
   }
 
   if (!user) {
@@ -72,7 +90,7 @@ export default function App() {
   React.useEffect(() => {
     const timer = setTimeout(() => {
       setShowSplash(false);
-    }, 1500);
+    }, 800); // Faster splash to reduce "black screen" feel
     return () => clearTimeout(timer);
   }, []);
 
@@ -84,6 +102,7 @@ export default function App() {
             <AnimatePresence>
               {showSplash && <SplashScreen />}
             </AnimatePresence>
+            <SessionRequestDialog />
             <Routes>
               <Route path="/" element={<Landing />} />
               <Route path="/overview" element={<Landing />} />
@@ -105,6 +124,7 @@ export default function App() {
                 <Route path="/recharge" element={<Recharge />} />
                 <Route path="/add-money" element={<AddMoney />} />
                 <Route path="/appeal/:txId" element={<Appeal />} />
+                <Route path="/dispute-chat/:txId" element={<DisputeChat />} />
                 <Route path="/waiting/:txId" element={<WaitingPage />} />
               </Route>
               
@@ -115,12 +135,30 @@ export default function App() {
                 <Route path="exchange" element={<AdminExchange />} />
                 <Route path="withdraw" element={<AdminWithdraw />} />
                 <Route path="recharge" element={<AdminRecharge />} />
+                <Route path="sub-admins" element={<AdminSubAdmins />} />
+                <Route path="sub-admin-logs" element={<AdminSubAdminLogs />} />
                 <Route path="users" element={<AdminUsers />} />
                 <Route path="rates" element={<AdminRates />} />
                 <Route path="notifications" element={<AdminNotifications />} />
                 <Route path="messages" element={<AdminMessages />} />
                 <Route path="disputes" element={<AdminDisputes />} />
                 <Route path="settings" element={<AdminSettings />} />
+              </Route>
+
+              {/* Operator Panel Routes */}
+              <Route path="/operator/login" element={<OperatorLogin />} />
+              <Route path="/operator" element={<ProtectedRoute operatorOnly><OperatorLayout /></ProtectedRoute>}>
+                <Route index element={<Navigate to="/operator/dashboard" />} />
+                <Route path="dashboard" element={<OperatorDashboard />} />
+                <Route path="orders/add-money" element={<OperatorAddMoney type="add_money" />} />
+                <Route path="orders/cash-in" element={<OperatorAddMoney type="cash_in" />} />
+                <Route path="orders/exchange" element={<OperatorExchange mode="exchange" />} />
+                <Route path="orders/withdraw" element={<OperatorExchange mode="withdraw" />} />
+                <Route path="orders/recharge" element={<OperatorExchange mode="recharge" />} />
+                <Route path="messages" element={<OperatorMessages />} />
+                <Route path="history" element={<OperatorHistory />} />
+                <Route path="wallet" element={<OperatorWallet />} />
+                <Route path="profile" element={<OperatorProfile />} />
               </Route>
               
               <Route path="*" element={<Navigate to="/" />} />

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { firebaseService } from '../../lib/firebaseService';
+import { firebaseService, collection, addDoc, serverTimestamp, db } from '../../lib/firebaseService';
 import { useTranslation } from 'react-i18next';
 import { 
   AlertTriangle, 
@@ -12,8 +12,6 @@ import {
   ShieldAlert,
   ArrowRight
 } from 'lucide-react';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';

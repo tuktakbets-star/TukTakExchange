@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { firebaseService } from '../lib/firebaseService';
-import { where } from 'firebase/firestore';
+import { firebaseService, where } from '../lib/firebaseService';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { 
@@ -83,6 +82,11 @@ export default function Recharge() {
       return;
     }
 
+    if (!profile?.uid || !profile?.email) {
+      toast.error('You must be logged in to create a transaction.');
+      return;
+    }
+
     const wallet = wallets.find(w => w.currency === 'VND');
     if (!wallet || wallet.balance < Number(amount)) {
       toast.error(t('insufficient_balance_vnd'));
@@ -91,6 +95,14 @@ export default function Recharge() {
 
     setIsSubmitting(true);
     try {
+      // 1. Verify Password first
+      const { error: authError } = await firebaseService.signIn(profile.email, password);
+      if (authError) {
+        toast.error('Incorrect password. Please try again.');
+        setIsSubmitting(false);
+        return;
+      }
+
       const tx = {
         uid: profile?.uid,
         type: 'recharge',
@@ -108,14 +120,18 @@ export default function Recharge() {
       
       const docId = await firebaseService.addDocument('transactions', tx);
       
-      // Deduct from wallet
-      await firebaseService.updateDocument('wallets', wallet.id, {
-        balance: wallet.balance - Number(amount),
-        updatedAt: new Date().toISOString()
-      });
+      if (docId) {
+        // Deduct from wallet
+        await firebaseService.updateDocument('wallets', wallet.id, {
+          balance: wallet.balance - Number(amount),
+          updatedAt: new Date().toISOString()
+        });
 
-      toast.success(t('recharge_submitted'));
-      navigate(`/waiting/${docId}`);
+        toast.success(t('recharge_submitted'));
+        navigate(`/waiting/${docId}`);
+      } else {
+        toast.error('Failed to create transaction. Please try again.');
+      }
     } catch (error) {
       console.error(error);
       toast.error(t('recharge_failed'));

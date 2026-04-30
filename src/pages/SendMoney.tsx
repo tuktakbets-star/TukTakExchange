@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { firebaseService } from '../lib/firebaseService';
-import { where, doc, runTransaction } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { firebaseService, where, doc, runTransaction, db } from '../lib/firebaseService';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Send, 
@@ -117,10 +115,20 @@ export default function SendMoney() {
       return;
     }
 
+    if (!profile?.uid || !profile?.email) {
+      toast.error('You must be logged in to create a transaction.');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
-      // Step 0: In a production app, we would re-authenticate here using the password.
-      // For this implementation, we proceed if receiver and wallet are valid.
+      // 0. Verify Password first
+      const { error: authError } = await firebaseService.signIn(profile.email, password);
+      if (authError) {
+        toast.error('Incorrect password. Please try again.');
+        setIsSubmitting(false);
+        return;
+      }
       
       const senderWalletRef = doc(db, 'wallets', wallet.id);
       

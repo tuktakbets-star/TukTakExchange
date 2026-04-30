@@ -5,10 +5,9 @@ import { Button } from '@/components/ui/button';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { firebaseService } from '../lib/firebaseService';
+import { firebaseService, query, collection, where, orderBy, onSnapshot, db } from '../lib/firebaseService';
 import { useAuth } from '../hooks/useAuth';
-import { query, collection, where, orderBy, onSnapshot } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { auth } from '../lib/firebase';
 import { toast } from 'sonner';
 
 export default function Notifications() {
