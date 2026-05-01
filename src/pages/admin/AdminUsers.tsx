@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { firebaseService } from '../../lib/firebaseService';
+import { firebaseService, where } from '../../lib/firebaseService';
 import { useTranslation } from 'react-i18next';
 import { Mail, Phone, Calendar, Shield, ShieldAlert, AlertTriangle, X, Search, UserPlus, Edit2, Ban, CheckCircle2, Wallet, MoreVertical, Users, Trash2, ShieldCheck } from 'lucide-react';
-import { where } from 'firebase/firestore';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { ConfirmModal } from '@/components/ConfirmModal';
@@ -10,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { 
   DropdownMenu, 

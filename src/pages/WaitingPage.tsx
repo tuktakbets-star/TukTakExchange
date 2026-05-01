@@ -4,7 +4,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { firebaseService } from '../lib/firebaseService';
-import { motion } from 'motion/react';
+import { motion } from 'framer-motion';
 import { 
   Clock, 
   CheckCircle2, 
@@ -35,6 +35,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { ImageViewer } from '@/components/ImageViewer';
+import { DisputeChat } from '@/components/DisputeChat';
 
 export default function WaitingPage() {
   const { t } = useTranslation();
@@ -55,11 +56,11 @@ export default function WaitingPage() {
   const status = tx?.status?.toLowerCase().trim();
   const isPending = status === 'pending';
   const isAccepted = status === 'accepted';
-  const isPaid = status === 'paid';
+  const isPaid = status === 'paid' || status === 'waiting_confirmation' || status === 'mark_as_paid';
   const isCompleted = status === 'completed';
   const isDisputed = status === 'disputed';
   const isCancelled = status === 'cancelled';
-  const isExchangeFlow = tx?.type === 'exchange' || tx?.type === 'cash_out' || tx?.type === 'recharge' || tx?.type === 'withdraw';
+  const isExchangeFlow = tx?.type === 'exchange' || tx?.type === 'withdraw' || tx?.type === 'recharge';
 
   const handleAppealClick = async () => {
     if (!txId) return;
@@ -113,6 +114,28 @@ export default function WaitingPage() {
         updatedAt: new Date().toISOString()
       });
 
+      // 3. Update Sub-Admin Wallet (Credit if exchange/withdraw/recharge)
+      if (tx.assigned_sub_admin_id && (tx.type === 'exchange' || tx.type === 'withdraw' || tx.type === 'recharge')) {
+        const { data: subAdmin } = await firebaseService.getDocument('sub_admins', tx.assigned_sub_admin_id);
+        if (subAdmin) {
+          const newSaBalance = (subAdmin.wallet_balance || 0) + tx.amount;
+          await firebaseService.updateDocument('sub_admins', tx.assigned_sub_admin_id, {
+            wallet_balance: newSaBalance,
+            updated_at: new Date().toISOString()
+          });
+          
+          await firebaseService.addDocument('sub_admin_wallet_transactions', {
+            sub_admin_id: tx.assigned_sub_admin_id,
+            type: 'credit',
+            amount: tx.amount,
+            reason: `Order #${txId} confirmed by user`,
+            order_id: txId,
+            balance_after: newSaBalance,
+            created_at: new Date().toISOString()
+          });
+        }
+      }
+
       setShowPasswordDialog(false);
       toast.success('Transaction completed successfully!');
       
@@ -132,23 +155,44 @@ export default function WaitingPage() {
     const unsub = firebaseService.subscribeToDocument('transactions', txId, (data) => {
       if (data) {
         setTx(data);
+        
+        const getSafeTime = (val: any) => {
+          if (!val) return null;
+          let d: Date;
+          if (typeof val === 'string') {
+            d = new Date(val);
+          } else if (typeof val === 'object' && val !== null) {
+            if (val.toDate && typeof val.toDate === 'function') d = val.toDate();
+            else if (val.seconds) d = new Date(val.seconds * 1000);
+            else d = new Date(val);
+          } else if (typeof val === 'number') {
+            d = new Date(val);
+          } else {
+            d = new Date(val);
+          }
+          return isNaN(d.getTime()) ? null : d.getTime();
+        };
+
+        const now = new Date().getTime();
+        
         // If transaction is already old, calculate remaining time
-        const createdAtStr = data.created_at || data.createdAt;
-        if (createdAtStr) {
-          const createdAt = new Date(createdAtStr).getTime();
-          const now = new Date().getTime();
+        const createdAt = getSafeTime(data.created_at || data.createdAt);
+        if (createdAt) {
           const elapsed = Math.floor((now - createdAt) / 1000);
           const remaining = Math.max(0, 1800 - elapsed);
-          setTimeLeft(remaining);
+          if (!isNaN(remaining)) setTimeLeft(remaining);
 
-          // Also set auto-complete timer if paid
-          if (data.status?.toLowerCase().trim() === 'paid') {
-            const paidAtStr = data.paid_at || data.paidAt;
-            const paidAt = paidAtStr ? new Date(paidAtStr).getTime() : now;
+          {/* Also set auto-complete timer if paid/waiting confirmation */}
+          const s = data.status?.toLowerCase().trim();
+          if (s === 'paid' || s === 'waiting_confirmation' || s === 'mark_as_paid') {
+            const paidAt = getSafeTime(data.paid_at || data.paidAt || data.sub_admin_actioned_at) || now;
             const paidElapsed = Math.floor((now - paidAt) / 1000);
             const paidRemaining = Math.max(0, 600 - paidElapsed); // 10 mins
-            setAutoCompleteTime(paidRemaining);
+            if (!isNaN(paidRemaining)) setAutoCompleteTime(paidRemaining);
           }
+        } else {
+          // Fallback if no creation time yet
+          setTimeLeft(1800);
         }
       }
       setLoading(false);
@@ -189,7 +233,8 @@ export default function WaitingPage() {
   }, [timeLeft, tx?.status, txId, isDisputed]);
 
   useEffect(() => {
-    if (tx?.status?.toLowerCase().trim() !== 'paid' || isDisputed) return;
+    const s = tx?.status?.toLowerCase().trim();
+    if ((s !== 'paid' && s !== 'waiting_confirmation' && s !== 'mark_as_paid') || isDisputed) return;
 
     const timer = setInterval(() => {
       setAutoCompleteTime((prev) => {
@@ -295,28 +340,26 @@ export default function WaitingPage() {
           </div>
           
           <div className="space-y-4">
-            <h1 className="text-4xl font-display font-black tracking-tight">
-              {isPending ? t('pending') :
-               isAccepted ? t('order_accepted_header', 'Order Received!') :
-               isPaid ? t('payment_sent_header', 'Money Sent!') :
-               isCompleted ? t('completed_header', 'Task Finished!') :
-               isDisputed ? t('disputed_header', 'Under Review') :
-               isCancelled ? t('cancelled_header', 'Cancelled') :
-               t('failed')}
-            </h1>
+              <h1 className="text-4xl font-display font-black tracking-tight">
+                {isPending ? t('pending') :
+                 isAccepted ? t('order_accepted_header', 'Order Received!') :
+                 (status === 'waiting_confirmation' || status === 'mark_as_paid' || isPaid) ? t('payment_sent_header', 'Money Sent!') :
+                 isCompleted ? t('completed_header', 'Task Finished!') :
+                 isDisputed ? t('disputed_header', 'Under Review') :
+                 isCancelled ? t('cancelled_header', 'Cancelled') :
+                 t('failed')}
+              </h1>
             
             {isDisputed ? (
-              <div className="p-8 bg-red-600/20 border-4 border-red-500 rounded-[3rem] animate-pulse shadow-[0_0_50px_rgba(239,68,68,0.3)] text-center space-y-4">
-                <AlertTriangle className="w-16 h-16 text-red-500 mx-auto" />
-                <div className="space-y-2">
-                  <h2 className="text-3xl font-black text-red-500 uppercase tracking-tighter">Appeal in Progress</h2>
-                  <p className="text-red-400 font-bold leading-tight">
-                    Our support team is investigating your claim. All timers are paused.
-                  </p>
-                </div>
-                <div className="flex items-center justify-center gap-2 text-red-500/60 font-black text-[10px] uppercase tracking-[0.3em] pt-4">
-                   <RefreshCw className="w-3 h-3 animate-spin" />
-                   Pending Admin Investigation
+              <div className="space-y-6">
+                <div className="p-8 bg-red-600/20 border-4 border-red-500 rounded-[3rem] animate-pulse shadow-[0_0_50px_rgba(239,68,68,0.3)] text-center space-y-4">
+                  <AlertTriangle className="w-16 h-16 text-red-500 mx-auto" />
+                  <div className="space-y-2">
+                    <h2 className="text-3xl font-black text-red-500 uppercase tracking-tighter">Appeal in Progress</h2>
+                    <p className="text-red-400 font-bold leading-tight">
+                      Our support team is investigating your claim. All timers are paused.
+                    </p>
+                  </div>
                 </div>
               </div>
             ) : (
@@ -432,18 +475,18 @@ export default function WaitingPage() {
                  </div>
               </div>
 
-              {tx.adminProof && (
+              {tx.adminProof || tx.admin_proof ? (
                 <div className="space-y-3">
                   <p className="text-xs font-bold text-slate-500 uppercase tracking-widest text-center">Payment Receipt</p>
                   <div 
                     className="aspect-video rounded-2xl bg-black/40 border border-white/5 overflow-hidden relative group cursor-pointer"
                     onClick={() => {
-                      setViewerSrc(tx.adminProof);
+                      setViewerSrc(tx.adminProof || tx.admin_proof);
                       setIsViewerOpen(true);
                     }}
                   >
                     <img 
-                      src={tx.adminProof} 
+                      src={tx.adminProof || tx.admin_proof} 
                       alt="Admin Proof" 
                       className="w-full h-full object-cover" 
                       referrerPolicy="no-referrer" 
@@ -456,7 +499,7 @@ export default function WaitingPage() {
                     </div>
                   </div>
                 </div>
-              )}
+              ) : null}
 
               <div className="flex flex-col gap-3">
                 <Button 
@@ -514,39 +557,14 @@ export default function WaitingPage() {
           </Card>
         )}
 
-        {tx.status === 'pending' && (
+        {/* Chat Section - Show for most active states */}
+        {(isPending || isAccepted || isPaid || isDisputed) && (
           <div className="space-y-4">
-            <h3 className="font-display font-bold text-xl flex items-center gap-2">
+             <h3 className="font-display font-bold text-xl flex items-center gap-2">
               <MessageSquare className="w-5 h-5 text-brand-blue" />
-              {t('chat_with_admin')}
+              {isDisputed ? 'Appeal Discussion' : t('chat_with_admin')}
             </h3>
-            <Card className="glass-dark border-white/5 rounded-3xl overflow-hidden">
-               <div className="h-[300px] overflow-y-auto p-4 space-y-4" id="chat-messages">
-                  <div className="flex justify-start">
-                    <div className="max-w-[80%] bg-white/10 rounded-2xl p-3 text-sm">
-                      Hello! I am reviewing your deposit. Please wait a moment.
-                    </div>
-                  </div>
-               </div>
-               <div className="p-4 border-t border-white/5 bg-white/5 flex gap-2">
-                  <Input 
-                    placeholder={t('type_message')} 
-                    className="bg-slate-900 border-white/10"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        const val = (e.target as HTMLInputElement).value;
-                        if (val) {
-                          toast.success(t('message_sent_to_admin'));
-                          (e.target as HTMLInputElement).value = '';
-                        }
-                      }
-                    }}
-                  />
-                  <Button size="icon" className="bg-brand-blue">
-                    <CheckCircle2 className="w-4 h-4" />
-                  </Button>
-               </div>
-            </Card>
+            <DisputeChat txId={txId!} subAdminId={tx.assigned_sub_admin_id} />
           </div>
         )}
 

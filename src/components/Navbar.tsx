@@ -6,7 +6,7 @@ import { firebaseService, where } from '../lib/firebaseService';
 import { useTranslation } from 'react-i18next';
 import AdminLoginModal from './AdminLoginModal';
 import BackButton from './BackButton';
-import { motion } from 'motion/react';
+import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { 
   Bell, 

@@ -24,7 +24,7 @@ import { toast } from 'sonner';
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { Badge } from '@/components/ui/badge';
 import { Eye } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function Profile() {
   const { t } = useTranslation();

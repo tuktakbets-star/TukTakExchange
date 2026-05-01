@@ -36,7 +36,7 @@ import {
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function AdminExchange() {
   const { t } = useTranslation();
@@ -87,32 +87,39 @@ export default function AdminExchange() {
       const normalizedCurrency = currency.toUpperCase();
       const existingRate = rates.find(r => r.target?.toUpperCase() === normalizedCurrency);
       
-      const updatedAccountTypes = existingRate?.accountTypes || {};
+      const updatedAccountTypes = { ...(existingRate?.accountTypes || {}) };
       updatedAccountTypes[accountType] = { tieredRates: tiers };
 
       const payload = {
         target: normalizedCurrency,
-        accountTypes: updatedAccountTypes,
+        account_types: updatedAccountTypes,
         updated_at: new Date().toISOString(),
-        // Keep tieredRates for backward compatibility (maybe use the first account type's tiers?)
         tiered_rates: tiers, 
         rate: tiers.length > 0 ? tiers[0].rate : 1
       };
 
       console.log('[AdminExchange] Saving rate payload:', payload);
 
+      let success = false;
       if (existingRate?.id) {
-        await firebaseService.updateDocument('rates', existingRate.id, payload);
+        const result = await firebaseService.updateDocument('rates', existingRate.id, payload);
+        success = result.success;
       } else {
-        await firebaseService.addDocument('rates', {
+        const docId = await firebaseService.addDocument('rates', {
           ...payload,
           base: 'VND'
         });
+        success = !!docId;
       }
-      toast.success(`${accountType} (${normalizedCurrency}) rates updated successfully`);
-    } catch (error) {
+
+      if (success) {
+        toast.success(`${accountType} (${normalizedCurrency}) rates updated successfully`, { id: 'rate-save' });
+      } else {
+        toast.error(`Database Error: Could not save ${accountType} rates. Check your Supabase Table permissions.`, { id: 'rate-save' });
+      }
+    } catch (error: any) {
       console.error('Error updating rates:', error);
-      toast.error(`Failed to update ${accountType} rates`);
+      toast.error(`Error: ${error.message || 'Failed to update rates'}`);
     }
   };
 

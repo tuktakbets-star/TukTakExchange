@@ -18,7 +18,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea.tsx';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
-import { motion } from 'motion/react';
+import { motion } from 'framer-motion';
 
 export default function Appeal() {
   const { t } = useTranslation();

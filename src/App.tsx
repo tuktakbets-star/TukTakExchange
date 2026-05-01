@@ -5,12 +5,10 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { Toaster } from '@/components/ui/sonner';
 import SplashScreen from './components/SplashScreen';
 import SessionRequestDialog from './components/SessionRequestDialog';
-import { doc, getDocFromCache, getDocFromServer } from './lib/firebaseService';
-import { db } from './lib/firebase';
 import './lib/i18n';
 
 // Pages (to be created)
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import Landing from './pages/Landing';
 import Auth from './pages/Auth';
 import Dashboard from './pages/Dashboard';
@@ -91,7 +89,7 @@ export default function App() {
   React.useEffect(() => {
     const timer = setTimeout(() => {
       setShowSplash(false);
-    }, 800); // Faster splash to reduce "black screen" feel
+    }, 400); // Faster splash to reduce "black screen" feel
     return () => clearTimeout(timer);
   }, []);
 

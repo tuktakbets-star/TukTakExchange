@@ -16,6 +16,29 @@ export enum OperationType {
 export const where = (column: string, operator: string, value: any) => ({ type: 'where', column, operator, value });
 export const orderBy = (column: string, direction: 'asc' | 'desc' = 'asc') => ({ type: 'orderBy', column, direction });
 export const limit = (count: number) => ({ type: 'limit', count });
+// Helper for Firebase compatibility
+const wrapData = (data: any) => {
+  if (!data) return data;
+  const wrapped = { ...data };
+  // Add toDate to timestamp strings if they look like dates
+  Object.keys(wrapped).forEach(key => {
+    const val = wrapped[key];
+    if (typeof val === 'string' && (key.toLowerCase().includes('at') || key.toLowerCase().includes('time') || key.toLowerCase().includes('date'))) {
+      const date = new Date(val);
+      if (!isNaN(date.getTime())) {
+        wrapped[key] = {
+          toDate: () => date,
+          seconds: Math.floor(date.getTime() / 1000),
+          nanoseconds: (date.getTime() % 1000) * 1e6,
+          toString: () => val,
+          valueOf: () => date.getTime()
+        };
+      }
+    }
+  });
+  return wrapped;
+};
+
 export const serverTimestamp = () => new Date().toISOString();
 
 // Utility to convert object keys
@@ -47,9 +70,16 @@ const camelToSnake = (obj: any): any => {
         snakeKey = 'selfie_image';
       } else if (key === 'kycData') {
         snakeKey = 'kyc_data';
+      } else if (key === 'effectiveDate') {
+        snakeKey = 'effective_date';
+      } else if (key === 'tieredRates') {
+        snakeKey = 'tiered_rates';
+      } else if (key === 'accountTypes') {
+        snakeKey = 'account_types';
       } else {
         snakeKey = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
       }
+      if (obj[key] === undefined) return acc;
       acc[snakeKey] = camelToSnake(obj[key]);
       return acc;
     }, {});
@@ -79,6 +109,12 @@ const snakeToCamel = (obj: any): any => {
         camelKey = 'passportNumber';
       } else if (key === 'referral_code') {
         camelKey = 'referralCode';
+      } else if (key === 'effective_date') {
+        camelKey = 'effectiveDate';
+      } else if (key === 'tiered_rates') {
+        camelKey = 'tieredRates';
+      } else if (key === 'account_types') {
+        camelKey = 'accountTypes';
       } else {
         camelKey = key.replace(/(_\w)/g, m => m[1].toUpperCase());
       }
@@ -90,10 +126,11 @@ const snakeToCamel = (obj: any): any => {
 };
 
 export const supabaseService = {
+  client: supabase,
   // Simple path to table mapper
   // "chats/123/messages" -> { table: "chats_messages", filter: "chatId=eq.123" }
   resolvePath(path: string) {
-    const parts = path.split('/');
+    const parts = path.split('/').filter(Boolean);
     let table = path;
     let parentFilter: { column: string; value: string } | null = null;
     let pkName = 'id';
@@ -101,22 +138,36 @@ export const supabaseService = {
     if (parts.length === 3) {
       const parentTable = parts[0];
       const parentId = parts[1];
-      // Map chats/UID/messages to chat_messages table with chat_id filter
-      table = `${parentTable.slice(0, -1)}_messages`;
-      parentFilter = { column: `${parentTable.slice(0, -1)}_id`, value: parentId };
+      const subCollection = parts[2];
+      
+      if (subCollection === 'messages' && parentTable === 'chats') {
+        table = 'chat_messages';
+        parentFilter = { column: 'chat_id', value: parentId };
+      } else if (subCollection === 'dispute_messages' && parentTable === 'transactions') {
+        table = 'dispute_messages';
+        parentFilter = { column: 'tx_id', value: parentId };
+      } else {
+        table = `${parentTable.slice(0, -1)}_${subCollection}`;
+        parentFilter = { column: `${parentTable.slice(0, -1)}_id`, value: parentId };
+      }
     }
 
     // Manual overrides for standard collections used in the app
     const overrides: Record<string, string> = {
-      'adminSettings': 'admin_settings',
       'chat_messages': 'chat_messages',
+      'dis_messages': 'dispute_messages',
       'transactions': 'transactions',
       'notifications': 'notifications',
       'wallets': 'wallets',
       'users': 'users',
       'kyc_requests': 'kyc_requests',
       'kycSubmissions': 'kyc_submissions',
-      'sub_admin_login_attempts': 'sub_admin_login_attempts'
+      'sub_admin_login_attempts': 'sub_admin_login_attempts',
+      'rates': 'rates',
+      'exchange_rates': 'rates',
+      'all_rates': 'rates',
+      'admin_settings': 'admin_settings',
+      'adminSettings': 'admin_settings'
     };
 
     if (overrides[table]) {
@@ -146,7 +197,8 @@ export const supabaseService = {
         .maybeSingle();
       
       if (error) throw error;
-      return { data: snakeToCamel(data), error: null };
+      const camelled = snakeToCamel(data);
+      return { data: Array.isArray(camelled) ? camelled.map(wrapData) : wrapData(camelled), error: null };
     } catch (error: any) {
       console.error(`Supabase Error [GET] ${path}/${id}:`, error);
       return { data: null, error };
@@ -184,8 +236,10 @@ export const supabaseService = {
         .eq(pkName, id);
       
       if (error) throw error;
-    } catch (error) {
+      return { success: true, error: null };
+    } catch (error: any) {
       console.error(`Supabase Error [UPDATE] ${path}/${id}:`, error);
+      return { success: false, error };
     }
   },
 
@@ -196,6 +250,10 @@ export const supabaseService = {
       if (parentFilter) {
         payload[parentFilter.column] = parentFilter.value;
       }
+      
+      // Auto-set id if not provided (for tables like dispute_messages where id is UUID)
+      // For chat_messages, chats/UID/messages -> chat_messages table.
+      // parentFilter is { column: 'chat_id', value: 'UID' }
       
       console.log(`[Supabase] Adding to ${table}:`, payload);
       
@@ -276,7 +334,8 @@ export const supabaseService = {
       const { data, error } = await queryBuilder;
       
       if (error) throw error;
-      return snakeToCamel(data) || [];
+      const camelled = snakeToCamel(data) || [];
+      return camelled.map(wrapData);
     } catch (error) {
       console.error(`Supabase Error [LIST] ${path}:`, error);
       return [];
@@ -291,7 +350,9 @@ export const supabaseService = {
         'postgres_changes',
         { event: '*', schema: 'public', table, filter: `${pkName}=eq.${id}` },
         (payload: any) => {
-          callback(snakeToCamel(payload.new));
+          if (payload.new) {
+            callback(wrapData(snakeToCamel(payload.new)));
+          }
         }
       )
       .subscribe();

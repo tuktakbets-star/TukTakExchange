@@ -1,14 +1,12 @@
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { X, Lock, Mail, ShieldAlert, Loader2, Chrome } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
-import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
-import { auth, googleProvider } from '../lib/firebase';
-import { doc, getDoc, db } from '../lib/firebaseService';
+import { supabaseService } from '../lib/supabaseService';
 import { useTranslation } from 'react-i18next';
 
 interface AdminLoginModalProps {
@@ -28,12 +26,13 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
     setLoading(true);
 
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
+      const { data, error } = await supabaseService.signIn(email, password);
+      if (error) throw error;
+      const user = data.user;
+      if (!user) throw new Error("Login failed");
 
-      // Check if user is admin in Firestore
-      const userDoc = await getDoc(doc(db, 'users', user.uid));
-      const userData = userDoc.data();
+      // Check if user is admin in Supabase
+      const { data: userData } = await supabaseService.getDocument('users', user.id);
 
       const adminEmails = ['tuktakbets@gmail.com', 'shohagrana284650@gmail.com', 'shohagrana28465@gmail.com', 'shohagrana84650@gmail.com', 'shohagrana4650@gmail.com', 'shohagrana650@gmail.com', 'shohagrana60@gmail.com'];
       if (userData?.role === 'admin' || adminEmails.includes(user.email || '')) {
@@ -42,7 +41,7 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
         onClose();
       } else {
         toast.error(t('access_denied_admin'));
-        await auth.signOut();
+        await supabaseService.signOut();
       }
     } catch (error: any) {
       console.error('Admin login error:', error);
@@ -148,20 +147,9 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
                 onClick={async () => {
                   setLoading(true);
                   try {
-                    const result = await signInWithPopup(auth, googleProvider);
-                    const user = result.user;
-                    const userDoc = await getDoc(doc(db, 'users', user.uid));
-                    const userData = userDoc.data();
-
-                    const adminEmails = ['tuktakbets@gmail.com', 'shohagrana284650@gmail.com', 'shohagrana28465@gmail.com', 'shohagrana84650@gmail.com', 'shohagrana4650@gmail.com', 'shohagrana650@gmail.com', 'shohagrana60@gmail.com'];
-                    if (userData?.role === 'admin' || adminEmails.includes(user.email || '')) {
-                      toast.success(t('welcomeMsg'));
-                      navigate('/admin-dashboard');
-                      onClose();
-                    } else {
-                      toast.error(t('access_denied_admin'));
-                      await auth.signOut();
-                    }
+                    const { error } = await supabaseService.signInWithGoogle();
+                    if (error) throw error;
+                    // Redirect will happen, user details will be handled by AuthProvider
                   } catch (error: any) {
                     toast.error(error.message || t('google_signin_failed'));
                   } finally {
@@ -184,8 +172,9 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
                       return;
                     }
                     try {
-                      const { sendPasswordResetEmail } = await import('firebase/auth');
-                      await sendPasswordResetEmail(auth, email);
+                      // Supabase password reset
+                      const { error } = await supabaseService.client.auth.resetPasswordForEmail(email);
+                      if (error) throw error;
                       toast.success(t('password_reset_sent'));
                     } catch (error: any) {
                       toast.error(error.message || t('reset_link_failed'));

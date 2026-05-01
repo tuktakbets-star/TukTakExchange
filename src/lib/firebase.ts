@@ -1,16 +1,12 @@
-import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider } from 'firebase/auth';
-import { initializeFirestore, memoryLocalCache } from 'firebase/firestore'; 
-import firebaseConfig from '../../firebase-applet-config.json';
+// Fake Firebase to avoid crashes after Supabase migration
+export const auth = {
+  currentUser: null,
+  onAuthStateChanged: () => () => {},
+  signInWithEmailAndPassword: async () => { throw new Error('Use Supabase instead'); },
+  signOut: async () => {},
+} as any;
 
-const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
-export const auth = getAuth(app);
+export const db = {} as any;
+export const googleProvider = {} as any;
 
-// Use memory cache to avoid IndexedDB persistence issues in sandboxed environments
-export const db = initializeFirestore(app, {
-  localCache: memoryLocalCache(),
-}, firebaseConfig.firestoreDatabaseId);
-
-export const googleProvider = new GoogleAuthProvider();
-
-export default app;
+export default {};

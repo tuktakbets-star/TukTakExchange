@@ -1,5 +1,5 @@
 import React from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { X, Download, ZoomIn, ZoomOut, RotateCw } from 'lucide-react';
 import { Button } from './ui/button';
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { firebaseService } from '../../lib/firebaseService';
+import { firebaseService, where, orderBy, onSnapshot, db, collection, query } from '../../lib/firebaseService';
 import { useTranslation } from 'react-i18next';
 import { 
   TrendingUp, 
@@ -19,7 +19,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { ConfirmModal } from '@/components/ConfirmModal';
 
 export default function AdminRates() {
@@ -34,11 +34,15 @@ export default function AdminRates() {
 
   useEffect(() => {
     const unsubRates = firebaseService.subscribeToCollection('rates', [], (data) => {
+      console.log('[AdminRates] Data received:', data);
       setRates(data);
+      setLoading(false);
     });
-    setLoading(false);
     return () => unsubRates();
   }, []);
+
+  const [tieredRates, setTieredRates] = useState<any[]>([{ min: 0, max: 0, rate: 0 }]);
+  const [selectedRateId, setSelectedRateId] = useState<string | null>(null);
 
   const handleUpdateRate = async (e: React.FormEvent<HTMLFormElement>, id?: string) => {
     e.preventDefault();
@@ -49,24 +53,46 @@ export default function AdminRates() {
 
     try {
       if (id) {
-        await firebaseService.updateDocument('rates', id, { 
+        const { success, error } = await firebaseService.updateDocument('rates', id, { 
           rate, 
           updatedAt: new Date().toISOString(),
-          effectiveDate: date
+          effectiveDate: date,
+          tieredRates: selectedRateId === id ? tieredRates : undefined
         });
+        if (!success) throw error;
         toast.success(t('rate_updated_success'));
       } else {
-        await firebaseService.addDocument('rates', {
+        const docId = await firebaseService.addDocument('rates', {
           base: 'VND',
           target,
           rate,
           effectiveDate: date,
-          updatedAt: new Date().toISOString()
+          updatedAt: new Date().toISOString(),
+          tieredRates: tieredRates
         });
+        if (!docId) throw new Error('Failed to add document');
         toast.success(t('new_rate_added'));
         (e.target as HTMLFormElement).reset();
+        setTieredRates([{ min: 0, max: 0, rate: 0 }]);
+      }
+
+      // Sync with adminSettings global_settings rates
+      const { data: currentSettingsList } = await firebaseService.getCollection('adminSettings', [
+        where('key', '==', 'global_settings')
+      ]);
+      
+      const globalSettings = currentSettingsList?.[0];
+      if (globalSettings) {
+        const updatedRates = { ...(globalSettings.value?.rates || {}) };
+        updatedRates[target] = rate;
+        
+        await firebaseService.updateDocument('adminSettings', globalSettings.id, {
+          value: { ...globalSettings.value, rates: updatedRates },
+          updatedAt: new Date().toISOString()
+        });
       }
     } catch (error) {
+      console.error('Rate save error:', error);
       toast.error(t('rate_save_failed'));
     }
   };
@@ -153,6 +179,24 @@ export default function AdminRates() {
                   />
                 </div>
                 <div className="flex gap-2">
+                  <Button 
+                    type="button" 
+                    variant="dark" 
+                    className={cn(
+                      "h-12 px-4 rounded-xl text-[10px] font-bold uppercase tracking-widest",
+                      selectedRateId === rate.id ? "bg-red-600/10 text-red-500" : "bg-white/5 text-slate-500"
+                    )}
+                    onClick={() => {
+                       if (selectedRateId === rate.id) {
+                         setSelectedRateId(null);
+                       } else {
+                         setSelectedRateId(rate.id);
+                         setTieredRates(rate.tieredRates || [{ min: 0, max: 0, rate: 0 }]);
+                       }
+                    }}
+                  >
+                    Tiered
+                  </Button>
                   <Button type="submit" className="flex-1 h-12 bg-red-600 hover:bg-red-500 rounded-xl">
                     <Save className="w-4 h-4" />
                   </Button>
@@ -165,6 +209,75 @@ export default function AdminRates() {
                     <Trash2 className="w-4 h-4" />
                   </Button>
                 </div>
+                {selectedRateId === rate.id && (
+                  <div className="col-span-full mt-4 p-4 bg-black/20 rounded-2xl space-y-4 border border-white/5">
+                    <div className="flex items-center justify-between">
+                       <h5 className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Rate Tiers for {rate.target}</h5>
+                       <Button 
+                        type="button" 
+                        size="sm" 
+                        variant="ghost" 
+                        onClick={() => setTieredRates([...tieredRates, { min: 0, max: 0, rate: 0 }])}
+                        className="h-7 text-[10px] font-bold uppercase"
+                       >
+                         + Add Tier
+                       </Button>
+                    </div>
+                    {tieredRates.map((tier, tidx) => (
+                      <div key={tidx} className="grid grid-cols-4 gap-2 items-end">
+                        <div className="space-y-1">
+                          <Label className="text-[8px] uppercase text-slate-600">Min VND</Label>
+                          <Input 
+                            type="number" 
+                            value={tier.min} 
+                            onChange={(e) => {
+                              const nt = [...tieredRates];
+                              nt[tidx].min = parseFloat(e.target.value);
+                              setTieredRates(nt);
+                            }}
+                            className="h-9 bg-white/5 border-white/5 text-xs" 
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[8px] uppercase text-slate-600">Max VND (0=∞)</Label>
+                          <Input 
+                            type="number" 
+                            value={tier.max} 
+                            onChange={(e) => {
+                              const nt = [...tieredRates];
+                              nt[tidx].max = parseFloat(e.target.value);
+                              setTieredRates(nt);
+                            }}
+                            className="h-9 bg-white/5 border-white/5 text-xs" 
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[8px] uppercase text-slate-600">Rate</Label>
+                          <Input 
+                            type="number" 
+                            step="any"
+                            value={tier.rate} 
+                            onChange={(e) => {
+                              const nt = [...tieredRates];
+                              nt[tidx].rate = parseFloat(e.target.value);
+                              setTieredRates(nt);
+                            }}
+                            className="h-9 bg-white/5 border-white/5 text-xs font-bold" 
+                          />
+                        </div>
+                        <Button 
+                          type="button" 
+                          variant="ghost" 
+                          size="icon" 
+                          onClick={() => setTieredRates(tieredRates.filter((_, i) => i !== tidx))}
+                          className="h-9 w-9 text-slate-500 hover:text-red-500"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </form>
             ))}
 

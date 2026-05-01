@@ -1,5 +1,5 @@
 import React from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { AlertCircle, X, Download, Upload, FileCheck } from 'lucide-react';
 import { Button } from './ui/button';
 import { useTranslation } from 'react-i18next';

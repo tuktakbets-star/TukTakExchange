@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { firebaseService, where } from '../lib/firebaseService';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Plus, 
   ArrowRight, 
@@ -78,9 +78,19 @@ export default function CashIn() {
 
   const currentCountry = countries.find(c => c.name === selectedCountry) || countries[0];
   
-  // Use specific rate from adminSettings if available, else fallback to rates collection
+  // Find rate from either general rate or specific account type tiers
+  const exchangeRateObj = rates.find(r => r.target?.toUpperCase() === currentCountry.currency);
+  const ratesCollRate = exchangeRateObj?.rate || 0;
+  
+  // Try to use tiered rate for 'Cash In' if defined in Admin Exchange Page
+  let finalRate = ratesCollRate;
+  if (exchangeRateObj?.account_types?.['Cash In']?.tieredRates) {
+    const tiers = exchangeRateObj.account_types['Cash In'].tieredRates;
+    if (tiers.length > 0) finalRate = tiers[0].rate;
+  }
+  
   const adminSetRate = adminSettings?.rates?.[currentCountry.currency];
-  const countryRate = adminSetRate || rates.find(r => r.target?.toUpperCase() === currentCountry.currency)?.rate || 0;
+  const countryRate = (adminSetRate !== undefined && adminSetRate !== null) ? adminSetRate : (finalRate || 0);
   
   const receiveVND = (amountSource && countryRate > 0) ? (Number(amountSource) * countryRate).toFixed(0) : '0';
 

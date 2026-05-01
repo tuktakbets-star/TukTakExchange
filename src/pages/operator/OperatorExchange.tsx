@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Search, 
   Filter, 
@@ -16,10 +16,12 @@ import {
   CreditCard,
   ArrowRightLeft,
   Smartphone,
-  Check
+  Check,
+  Upload
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { 
   Dialog, 
   DialogContent, 
@@ -40,6 +42,8 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
   const [rejectionReason, setRejectionReason] = useState('');
   const [isAcceptConfirmOpen, setIsAcceptConfirmOpen] = useState(false);
   const [isPaidConfirmOpen, setIsPaidConfirmOpen] = useState(false);
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [operator, setOperator] = useState<any>(null);
@@ -90,21 +94,23 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
   };
 
   const handleMarkAsPaid = async () => {
-    if (!selectedOrder || !operator) return;
-    toast.loading('Marking as paid...', { id: 'paid' });
+    if (!selectedOrder || !operator || !proofFile) {
+      toast.error('Please upload a payment proof screenshot');
+      return;
+    }
+    setIsSubmitting(true);
+    toast.loading('Uploading proof and marking as paid...', { id: 'paid' });
     
     try {
+      const proofUrl = await supabaseService.uploadFile(proofFile);
+      
       await supabaseService.updateDocument('transactions', selectedOrder.id, {
-        status: 'mark_as_paid',
+        status: 'waiting_confirmation',
+        admin_proof: proofUrl,
         sub_admin_action: 'mark_as_paid',
         sub_admin_actioned_at: new Date().toISOString()
       });
 
-      // For Exchange/Withdraw, the balance is added back to operator wallet?
-      // Actually, usually in these flows the sub-admin pays the user.
-      // So they get a "commission" or the admin refills them.
-      // For now, let's just log it.
-      
       await supabaseService.addDocument('sub_admin_logs', {
         sub_admin_id: operator.id,
         action_type: mode,
@@ -120,6 +126,8 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
       fetchData();
     } catch (error) {
       toast.error('Failed to mark as paid', { id: 'paid' });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -214,29 +222,57 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
                   </td>
                   <td className="px-6 py-5">
                     <div className="text-xs space-y-1">
-                      {order.bankDetails ? (
+                      {order.receiverInfo ? (
                         <>
-                          <p className="font-bold text-slate-200">{order.bankDetails.bankName}</p>
-                          <p className="text-slate-500">{order.bankDetails.accountNumber}</p>
+                          <p className="font-bold text-slate-200">{order.receiverInfo.name}</p>
+                          <p className="text-slate-400">Bank: {order.receiverInfo.bankName || order.accountType}</p>
+                          <p className="text-white font-mono">{order.receiverInfo.accountNumber}</p>
+                          {order.receiverInfo.branch && <p className="text-slate-500 italic">Branch: {order.receiverInfo.branch}</p>}
+                          {order.receiverInfo.qrCode && (
+                            <button 
+                              onClick={() => { setSelectedOrder({ ...order, proofUrl: order.receiverInfo.qrCode }); setIsDocModalOpen(true); }}
+                              className="text-blue-500 text-[10px] font-bold mt-1"
+                            >
+                              View Receiver QR
+                            </button>
+                          )}
+                        </>
+                      ) : order.bankInfo ? (
+                        <>
+                          <p className="font-bold text-slate-200">{order.bankInfo.bankName}</p>
+                          <p className="text-white font-mono">{order.bankInfo.accountNumber}</p>
+                          <p className="text-slate-500">{order.bankInfo.accountHolder}</p>
+                        </>
+                      ) : order.rechargeDetails ? (
+                        <>
+                          <p className="font-bold text-slate-200">{order.rechargeDetails.operator}</p>
+                          <p className="text-white font-mono">{order.rechargeDetails.phoneNumber || order.rechargeDetails.number}</p>
                         </>
                       ) : (
-                        <>
-                          <p className="font-bold text-slate-200">{order.rechargeDetails?.operator}</p>
-                          <p className="text-slate-500">{order.rechargeDetails?.number}</p>
-                        </>
+                        <p className="text-slate-500 italic">No details found</p>
                       )}
-                      <button 
-                        onClick={() => { setSelectedOrder(order); setIsDocModalOpen(true); }}
-                        className="text-blue-500 hover:underline text-[10px] font-black uppercase tracking-widest flex items-center gap-1 mt-2"
-                      >
-                         <FileImage className="w-3 h-3" /> View Doc
-                      </button>
+                      
+                      {order.proofUrl && (
+                        <button 
+                          onClick={() => { setSelectedOrder(order); setIsDocModalOpen(true); }}
+                          className="text-blue-500 hover:underline text-[10px] font-black uppercase tracking-widest flex items-center gap-1 mt-2"
+                        >
+                           <FileImage className="w-3 h-3" /> View User Proof
+                        </button>
+                      )}
                     </div>
                   </td>
                   <td className="px-6 py-5">
                     <div className="flex flex-col">
-                      <span className="font-black text-white text-lg">৳{order.amount}</span>
-                      {order.rate && <span className="text-[9px] font-bold text-slate-600">{order.rate}</span>}
+                      <span className="font-black text-white text-lg">
+                        {mode === 'exchange' ? `₫${order.amount}` : `৳${order.amount}`}
+                      </span>
+                      {mode === 'exchange' && (
+                        <span className="text-xs font-bold text-blue-400">
+                           → {order.targetAmount || order.target_amount} {order.targetCurrency || order.target_currency}
+                        </span>
+                      )}
+                      {order.rate && <span className="text-[9px] font-bold text-slate-600">Rate: {order.rate}</span>}
                     </div>
                   </td>
                   <td className="px-6 py-5">
@@ -244,7 +280,7 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
                         "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider inline-block",
                         order.status === 'pending' ? "bg-amber-500/10 text-amber-500" :
                         order.status === 'accepted' ? "bg-blue-500/10 text-blue-500" :
-                        order.status === 'mark_as_paid' ? "bg-cyan-500/10 text-cyan-500" :
+                        (order.status === 'mark_as_paid' || order.status === 'waiting_confirmation') ? "bg-cyan-500/10 text-cyan-500" :
                         order.status === 'completed' ? "bg-purple-500/10 text-purple-500" :
                         "bg-red-500/10 text-red-500"
                       )}>
@@ -262,8 +298,8 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
                        {order.status === 'accepted' && (
                          <Button onClick={() => { setSelectedOrder(order); setIsPaidConfirmOpen(true); }} className="h-9 px-4 bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white rounded-xl text-xs font-bold shadow-xl shadow-blue-600/20">Mark as Paid</Button>
                        )}
-                       {order.status === 'mark_as_paid' && (
-                         <span className="text-[10px] font-bold text-slate-500 italic uppercase">Awaiting Completion</span>
+                       {(order.status === 'mark_as_paid' || order.status === 'waiting_confirmation') && (
+                         <span className="text-[10px] font-bold text-slate-500 italic uppercase">Awaiting User Confirm</span>
                        )}
                        {order.status === 'completed' && (
                          <CheckCircle2 className="w-5 h-5 text-purple-500" />
@@ -285,7 +321,12 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
               <Button variant="ghost" onClick={() => setIsDocModalOpen(false)}>Close</Button>
            </div>
            <div className="p-4 bg-black/50 aspect-[4/3] flex items-center justify-center">
-              <img src={selectedOrder?.docUrl} alt="Document" className="max-h-full rounded-xl object-contain shadow-2xl" />
+              <img 
+                src={selectedOrder?.proofUrl || selectedOrder?.docUrl || (selectedOrder?.receiverInfo?.qrCode) || selectedOrder?.receiver_info?.qrCode} 
+                alt="Document" 
+                className="max-h-full rounded-xl object-contain shadow-2xl" 
+                referrerPolicy="no-referrer"
+              />
            </div>
         </DialogContent>
       </Dialog>
@@ -307,34 +348,68 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
         </DialogContent>
       </Dialog>
 
-      {/* Paid Confirm */}
       <Dialog open={isPaidConfirmOpen} onOpenChange={setIsPaidConfirmOpen}>
-        <DialogContent className="max-w-sm bg-slate-900 border-slate-800 text-white rounded-[2rem]">
-           <div className="text-center py-6">
+        <DialogContent className="max-w-md bg-slate-900 border-slate-800 text-white rounded-[2.5rem] p-8">
+           <div className="text-center">
               <div className="w-16 h-16 bg-gradient-to-r from-blue-600 to-cyan-500 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-blue-600/20">
                  <CreditCard className="w-8 h-8 text-white" />
               </div>
-              <h2 className="text-2xl font-display font-black tracking-tight tracking-tighter">Mark as Paid?</h2>
-              <div className="p-6 bg-white/5 rounded-3xl border border-white/10 space-y-4 text-left mt-6">
-                 <div className="flex justify-between items-center text-sm">
-                   <span className="text-slate-500 font-bold uppercase tracking-widest text-[10px]">Payment Sent:</span>
-                   <span className="text-white font-black text-lg">৳{selectedOrder?.amount}</span>
+              <DialogTitle className="text-2xl font-display font-black tracking-tight tracking-tighter">Confirm Payment Sent</DialogTitle>
+              
+              <div className="space-y-4 mt-6">
+                 <div className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-3">
+                    <Label className="text-xs text-slate-400 text-left block">Upload Payment Receipt (Required)</Label>
+                    <div 
+                      className={cn(
+                        "border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all",
+                        proofFile ? "border-blue-500 bg-blue-500/5" : "border-white/10 hover:border-blue-500/50"
+                      )}
+                      onClick={() => document.getElementById('admin-proof-upload')?.click()}
+                    >
+                      <input 
+                        id="admin-proof-upload"
+                        type="file" 
+                        className="hidden" 
+                        accept="image/*"
+                        onChange={(e) => setProofFile(e.target.files?.[0] || null)}
+                      />
+                      {proofFile ? (
+                        <div className="text-blue-400">
+                          <CheckCircle2 className="w-8 h-8 mx-auto mb-2" />
+                          <p className="text-xs font-bold">{proofFile.name}</p>
+                        </div>
+                      ) : (
+                        <div className="text-slate-500">
+                          <Upload className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                          <p className="text-xs font-bold">Click to upload transfer screenshot</p>
+                        </div>
+                      )}
+                    </div>
                  </div>
-                 <div className="flex justify-between items-center text-sm border-t border-white/5 pt-4">
-                   <span className="text-slate-500 font-bold uppercase tracking-widest text-[10px]">Wallet Load:</span>
-                   <span className="text-blue-400 font-black text-lg">+৳{selectedOrder?.amount}</span>
+
+                 <div className="p-4 bg-white/5 rounded-2xl border border-white/10 space-y-3">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-500 font-bold uppercase tracking-widest text-[10px]">Paying User:</span>
+                      <span className="text-white font-black">৳{selectedOrder?.amount}</span>
+                    </div>
                  </div>
               </div>
               
               <div className="mt-8 p-4 bg-blue-500/10 border border-blue-500/20 rounded-2xl flex gap-3 text-left">
                  <AlertTriangle className="w-5 h-5 text-blue-500 shrink-0" />
                  <p className="text-[10px] text-blue-500 leading-tight font-bold uppercase italic">
-                   Only confirm if you've already sent the funds to the user's provided bank/wallet account.
+                   The order status will change to "Waiting for Confirmation". User must click "Received" to complete the pool.
                  </p>
               </div>
            </div>
-           <DialogFooter className="flex flex-col gap-2">
-              <Button onClick={handleMarkAsPaid} className="w-full h-14 bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white rounded-2xl font-bold shadow-xl shadow-blue-600/30 text-lg">Confirm Sent Payment</Button>
+           <DialogFooter className="flex flex-col gap-2 mt-8">
+              <Button 
+                onClick={handleMarkAsPaid} 
+                disabled={isSubmitting || !proofFile}
+                className="w-full h-14 bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white rounded-2xl font-bold shadow-xl shadow-blue-600/30 text-lg"
+              >
+                {isSubmitting ? 'Uploading...' : 'Confirm & Notify User'}
+              </Button>
               <Button variant="ghost" onClick={() => setIsPaidConfirmOpen(false)} className="w-full h-12 rounded-xl text-slate-500">Cancel</Button>
            </DialogFooter>
         </DialogContent>

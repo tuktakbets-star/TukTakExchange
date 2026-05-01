@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { motion } from 'motion/react';
+import { motion } from 'framer-motion';
 import { Bell, CheckCircle2, AlertCircle, Info, ArrowUpRight, ArrowDownLeft, Trash2, Eye, Tag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useTranslation } from 'react-i18next';
