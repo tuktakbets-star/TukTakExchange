@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { firebaseService, collection, addDoc, serverTimestamp, db } from '../../lib/firebaseService';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { 
   AlertTriangle, 
   Search, 
@@ -10,7 +11,8 @@ import {
   MessageSquare,
   ExternalLink,
   ShieldAlert,
-  ArrowRight
+  ArrowRight,
+  Trash2
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -22,6 +24,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 export default function AdminDisputes() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [disputes, setDisputes] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [wallets, setWallets] = useState<any[]>([]);
@@ -110,10 +113,20 @@ export default function AdminDisputes() {
     }
   };
 
+  const handleDeleteTransaction = async (txId: string) => {
+    if (!confirm('Are you sure you want to delete this transaction record? This only removes the record from the history, it does not refund balance.')) return;
+    try {
+      await firebaseService.deleteDocument('transactions', txId);
+      toast.success('Transaction record deleted');
+    } catch (error) {
+      toast.error('Failed to delete transaction');
+    }
+  };
+
   const filteredDisputes = disputes.filter(d => {
     const user = users.find(u => u.uid === d.uid);
     return user?.displayName?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-           d.disputeReason?.toLowerCase().includes(searchQuery.toLowerCase());
+           (d.dispute_reason || d.disputeReason || '')?.toLowerCase().includes(searchQuery.toLowerCase());
   });
 
   return (
@@ -194,7 +207,7 @@ export default function AdminDisputes() {
                             <ShieldAlert className="w-3 h-3" />
                             <span className="text-[10px] font-bold uppercase tracking-widest">{t('complaint')}</span>
                           </div>
-                          <p className="text-xs text-slate-300 leading-relaxed italic">"{tx.disputeReason || t('no_reason_provided')}"</p>
+                          <p className="text-xs text-slate-300 leading-relaxed italic">"{tx.dispute_reason || tx.disputeReason || t('no_reason_provided')}"</p>
                         </div>
                       </td>
                       <td className="px-8 py-6">
@@ -215,7 +228,7 @@ export default function AdminDisputes() {
                             variant="outline" 
                             size="sm" 
                             className="bg-brand-blue/10 text-brand-blue border-brand-blue/20 h-9 px-4 rounded-xl"
-                            onClick={() => handleMessageUser(tx)}
+                            onClick={() => navigate(`/admin-dashboard/appeal/${tx.id}`)}
                           >
                             <MessageSquare className="w-4 h-4 mr-2" />
                             {t('message')}
@@ -228,6 +241,14 @@ export default function AdminDisputes() {
                           >
                             <RotateCcw className="w-4 h-4 mr-2" />
                             {t('reject')}
+                          </Button>
+                          <Button 
+                            size="icon" 
+                            variant="ghost" 
+                            className="text-slate-500 hover:text-red-500 hover:bg-red-500/10 h-9 w-9 rounded-xl"
+                            onClick={() => handleDeleteTransaction(tx.id)}
+                          >
+                            <Trash2 className="w-4 h-4" />
                           </Button>
                         </div>
                       </td>

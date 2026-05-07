@@ -377,6 +377,26 @@ export default function AdminUsers() {
                           )}
                         </div>
                       </td>
+                      <td className="px-8 py-6">
+                        <div className="flex items-center gap-3">
+                          <div className={cn(
+                            "w-8 h-8 rounded-full flex items-center justify-center",
+                            user.kycStatus === 'verified' ? "bg-green-500/10 text-green-500" : 
+                            user.kycStatus === 'pending' ? "bg-amber-500/10 text-amber-500" :
+                            "bg-red-500/10 text-red-500"
+                          )}>
+                            {user.kycStatus === 'verified' ? <ShieldCheck className="w-4 h-4" /> : <ShieldAlert className="w-4 h-4" />}
+                          </div>
+                          <span className={cn(
+                            "text-[10px] font-black uppercase tracking-widest",
+                            user.kycStatus === 'verified' ? "text-green-500" : 
+                            user.kycStatus === 'pending' ? "text-amber-500" :
+                            "text-slate-500"
+                          )}>
+                            {user.kycStatus || 'Not Started'}
+                          </span>
+                        </div>
+                      </td>
                       <td className="px-8 py-6 text-right">
                         <DropdownMenu>
                           <DropdownMenuTrigger

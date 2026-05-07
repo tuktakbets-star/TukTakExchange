@@ -103,8 +103,10 @@ export default function AddMoney() {
       }
 
       const realProofUrl = await firebaseService.uploadFile(proofFile);
-      const tx = {
+      const tx: any = {
         uid: profile.uid,
+        user_name: profile.full_name || profile.displayName || "Customer", // Added for trigger compatibility
+        full_name: profile.full_name || profile.displayName || "Customer",
         type: 'add_money',
         status: 'pending',
         amount: Number(amountSource),

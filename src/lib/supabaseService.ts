@@ -334,8 +334,13 @@ export const supabaseService = {
       const { data, error } = await queryBuilder;
       
       if (error) throw error;
-      const camelled = snakeToCamel(data) || [];
-      return camelled.map(wrapData);
+      const camelled = (snakeToCamel(data) || []).map(wrapData);
+      
+      if (path === 'transactions' && constraints.some(c => c.operator === 'in')) {
+        console.log(`[Supabase] Transaction Search Result:`, camelled.length, 'entries');
+      }
+      
+      return camelled;
     } catch (error) {
       console.error(`Supabase Error [LIST] ${path}:`, error);
       return [];

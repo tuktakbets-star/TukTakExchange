@@ -160,20 +160,11 @@ export default function AdminDeposits() {
       description: t('approve_deposit_confirm_msg'),
       onConfirm: async () => {
         try {
+          await firebaseService.updateWalletBalance(tx.uid, tx.currency, tx.amount, 0);
+
           await firebaseService.updateDocument('transactions', tx.id, { 
             status: 'completed', 
             updatedAt: new Date().toISOString() 
-          });
-          
-          const walletId = `${tx.uid}_${tx.currency}`;
-          const wallet = wallets.find(w => w.id === walletId);
-          const currentBalance = wallet?.balance || 0;
-          
-          await firebaseService.setDocument('wallets', walletId, {
-            uid: tx.uid,
-            currency: tx.currency,
-            balance: currentBalance + tx.amount,
-            updatedAt: new Date().toISOString()
           });
 
           await firebaseService.addDocument('notifications', {
@@ -483,7 +474,8 @@ export default function AdminDeposits() {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Desktop View */}
+        <div className="hidden lg:block overflow-x-auto">
           <table className="w-full text-left">
             <thead>
               <tr className="text-slate-500 text-[10px] uppercase tracking-[0.2em] border-b border-white/5">
@@ -524,7 +516,7 @@ export default function AdminDeposits() {
                         <p className="text-[10px] text-slate-500 uppercase tracking-widest">{tx.currency}</p>
                       </td>
                       <td className="px-8 py-6">
-                        <Badge variant="outline" className="border-white/10 bg-white/5 capitalize">
+                        <Badge variant="outline" className="border-white/10 bg-white/5 capitalize text-[10px]">
                           {tx.method || tx.type || 'deposit'}
                         </Badge>
                       </td>
@@ -591,6 +583,95 @@ export default function AdminDeposits() {
               </AnimatePresence>
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile View */}
+        <div className="lg:hidden p-4 space-y-4">
+          <AnimatePresence mode="popLayout">
+            {filteredRequests.map((tx) => {
+              const user = users.find(u => u.uid === tx.uid);
+              return (
+                <motion.div 
+                  key={tx.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className="bg-white/5 border border-white/10 rounded-3xl p-6 space-y-6"
+                >
+                  <div className="flex justify-between items-start">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center font-bold text-slate-400">
+                        {user?.displayName?.charAt(0)}
+                      </div>
+                      <div>
+                        <p className="font-bold text-sm tracking-tight">{user?.displayName || 'Unknown'}</p>
+                        <p className="text-[10px] text-slate-500 font-mono">#{tx.id.slice(0, 8)}</p>
+                      </div>
+                    </div>
+                    <Badge className={cn(
+                      "rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider",
+                      tx.status === 'completed' ? "bg-green-500/10 text-green-500" :
+                      tx.status === 'pending' ? "bg-yellow-500/10 text-yellow-500" :
+                      "bg-red-500/10 text-red-500"
+                    )}>
+                      {tx.status}
+                    </Badge>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 border-y border-white/5 py-4">
+                    <div>
+                      <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">Amount</p>
+                      <p className="text-lg font-bold">₫{tx.amount.toLocaleString()}</p>
+                      <p className="text-[10px] text-slate-500 uppercase">{tx.currency}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">Method</p>
+                      <Badge variant="outline" className="border-white/10 bg-white/5 capitalize text-[10px]">
+                        {tx.method || tx.type || 'deposit'}
+                      </Badge>
+                      <p className="text-[10px] text-slate-500 mt-2">{new Date(tx.createdAt).toLocaleDateString()}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    {tx.proofUrl ? (
+                      <Button 
+                        variant="ghost" 
+                        className="text-red-500 text-[10px] font-bold uppercase p-0 h-auto"
+                        onClick={() => {
+                          setSelectedProof(tx.proofUrl);
+                          setIsModalOpen(true);
+                        }}
+                      >
+                        <ExternalLink className="w-4 h-4 mr-2" />
+                        View Proof
+                      </Button>
+                    ) : (
+                      <span className="text-slate-600 text-[10px] italic">No proof</span>
+                    )}
+                  </div>
+
+                  {tx.status === 'pending' && (
+                    <div className="pt-2 flex gap-2">
+                      <Button 
+                        className="flex-1 bg-green-600 hover:bg-green-500 h-11 rounded-2xl font-bold text-xs"
+                        onClick={() => handleApprove(tx)}
+                      >
+                        Approve
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        className="flex-1 text-red-400 bg-red-500/5 hover:bg-red-500/10 h-11 rounded-2xl font-bold text-xs"
+                        onClick={() => handleReject(tx)}
+                      >
+                        Reject
+                      </Button>
+                    </div>
+                  )}
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
         </div>
       </Card>
 

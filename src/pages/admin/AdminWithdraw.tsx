@@ -10,7 +10,8 @@ import {
   Building2,
   User,
   QrCode,
-  Eye
+  Eye,
+  Trash2
 } from 'lucide-react';
 import { TransactionDetailsModal } from '@/components/TransactionDetailsModal';
 import { ImageViewer } from '@/components/ImageViewer';
@@ -75,8 +76,9 @@ export default function AdminWithdraw() {
             return;
           }
           await firebaseService.updateDocument('transactions', tx.id, { 
-            status: 'paid', 
+            status: 'waiting_confirmation', 
             paidAt: new Date().toISOString(),
+            paid_at: new Date().toISOString(),
             adminProof: proofUrl,
             updatedAt: new Date().toISOString() 
           });
@@ -108,6 +110,35 @@ export default function AdminWithdraw() {
       onConfirm: async (data: any) => {
         try {
           const proofUrl = data?.proofUrl || 'https://picsum.photos/seed/proof/800/600';
+          
+          // 1. Finalize Balance Deduction (Move from pendingLocked to real deduction)
+          const amount = tx.amount || 0;
+          const totalToDeduct = tx.total_to_deduct || tx.totalToDeduct || amount;
+          await firebaseService.updateWalletBalance(tx.uid, tx.currency, -totalToDeduct, -totalToDeduct);
+
+          // 2. CRITICAL: Update sub-admin balance if assigned
+          if (tx.assigned_sub_admin_id) {
+            const { data: subAdmin } = await firebaseService.getDocument('sub_admins', tx.assigned_sub_admin_id);
+            if (subAdmin) {
+              const newSaBalance = (subAdmin.wallet_balance || 0) + totalToDeduct;
+              
+              await firebaseService.updateDocument('sub_admins', tx.assigned_sub_admin_id, {
+                wallet_balance: newSaBalance,
+                updated_at: new Date().toISOString()
+              });
+              
+              await firebaseService.addDocument('sub_admin_wallet_transactions', {
+                sub_admin_id: tx.assigned_sub_admin_id,
+                type: 'credit',
+                amount: totalToDeduct,
+                reason: `Withdrawal #${tx.id} completed by admin`,
+                order_id: tx.id,
+                balance_after: newSaBalance,
+                created_at: new Date().toISOString()
+              });
+            }
+          }
+
           await firebaseService.updateDocument('transactions', tx.id, { 
             status: 'completed', 
             adminProof: proofUrl,
@@ -141,14 +172,17 @@ export default function AdminWithdraw() {
       onConfirm: async () => {
         try {
           const reason = 'Invalid bank details';
+          const amount = tx.amount || 0;
+          const totalToDeduct = tx.total_to_deduct || tx.totalToDeduct || amount;
+
+          // 1. Refund Locked Balance
+          await firebaseService.updateWalletBalance(tx.uid, tx.currency, 0, -totalToDeduct);
+
           await firebaseService.updateDocument('transactions', tx.id, { 
             status: 'failed', 
             rejectionReason: reason,
             updatedAt: new Date().toISOString() 
           });
-
-          // 1. Refund Locked Balance
-          await firebaseService.updateWalletBalance(tx.uid, tx.currency, 0, -tx.amount);
 
           await firebaseService.addDocument('notifications', {
             uid: tx.uid,
@@ -167,6 +201,16 @@ export default function AdminWithdraw() {
       }
     });
     setIsConfirmOpen(true);
+  };
+
+  const handleDeleteTransaction = async (txId: string) => {
+    if (!confirm('Are you sure you want to delete this transaction record? This only removes the record from the history, it does not refund balance.')) return;
+    try {
+      await firebaseService.deleteDocument('transactions', txId);
+      toast.success('Transaction record deleted');
+    } catch (error) {
+      toast.error('Failed to delete transaction');
+    }
   };
 
   const filteredRequests = requests.filter(req => {
@@ -198,7 +242,8 @@ export default function AdminWithdraw() {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Desktop View */}
+        <div className="hidden lg:block overflow-x-auto">
           <table className="w-full text-left">
             <thead>
               <tr className="text-slate-500 text-[10px] uppercase tracking-[0.2em] border-b border-white/5">
@@ -263,14 +308,15 @@ export default function AdminWithdraw() {
                         )}
                       </td>
                       <td className="px-8 py-6">
-                        <Badge className={cn(
-                          "rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider",
-                          tx.status === 'completed' ? "bg-green-500/10 text-green-500 border border-green-500/20" :
-                          tx.status === 'pending' ? "bg-yellow-500/10 text-yellow-500 border border-yellow-500/20" :
-                          "bg-red-500/10 text-red-500 border border-red-500/20"
-                        )}>
-                          {tx.status}
-                        </Badge>
+                      <Badge className={cn(
+                        "rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider",
+                        tx.status === 'completed' ? "bg-green-500/10 text-green-500 border border-green-500/20" :
+                        (tx.status === 'pending' || tx.status === 'accepted') ? "bg-yellow-500/10 text-yellow-500 border border-yellow-500/20" :
+                        (tx.status === 'waiting_confirmation' || tx.status === 'paid' || tx.status === 'mark_as_paid') ? "bg-purple-500/10 text-purple-500 border border-purple-500/20" :
+                        "bg-red-500/10 text-red-500 border border-red-500/20"
+                      )}>
+                        {tx.status === 'waiting_confirmation' ? 'Waiting User' : tx.status}
+                      </Badge>
                       </td>
                       <td className="px-8 py-6 text-right">
                         <div className="flex justify-end gap-2">
@@ -313,8 +359,14 @@ export default function AdminWithdraw() {
                               {t('mark_as_paid')}
                             </Button>
                           )}
-                          {tx.status === 'paid' && (
-                            <span className="text-blue-400 text-xs italic">Waiting for User Confirmation</span>
+                          {(tx.status === 'waiting_confirmation' || tx.status === 'paid' || tx.status === 'mark_as_paid') && (
+                            <Button 
+                              size="sm" 
+                              className="bg-green-600 hover:bg-green-500 h-9 px-4 rounded-xl font-bold"
+                              onClick={() => handleConfirmPayment(tx)}
+                            >
+                              Complete
+                            </Button>
                           )}
                           {tx.status === 'completed' && (
                             <div className="flex flex-col items-end">
@@ -339,6 +391,14 @@ export default function AdminWithdraw() {
                               {tx.status === 'cancelled' ? 'User Cancelled' : t('failed')}
                             </span>
                           )}
+                          <Button 
+                            size="icon" 
+                            variant="ghost" 
+                            className="text-slate-500 hover:text-red-500 hover:bg-red-500/10 h-9 w-9 rounded-xl"
+                            onClick={() => handleDeleteTransaction(tx.id)}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
                         </div>
                       </td>
                     </motion.tr>
@@ -347,6 +407,110 @@ export default function AdminWithdraw() {
               </AnimatePresence>
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile View */}
+        <div className="lg:hidden p-4 space-y-4">
+          <AnimatePresence mode="popLayout">
+            {filteredRequests.map((tx) => {
+              const user = users.find(u => u.uid === tx.uid);
+              return (
+                <motion.div 
+                  key={tx.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className="bg-white/5 border border-white/10 rounded-3xl p-6 space-y-6"
+                >
+                  <div className="flex justify-between items-start">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-orange-500/10 flex items-center justify-center font-bold text-orange-500">
+                        {user?.displayName?.charAt(0)}
+                      </div>
+                      <div>
+                        <p className="font-bold text-sm">{user?.displayName || t('unknown')}</p>
+                        <p className="text-[10px] text-slate-500 tracking-tighter">{tx.id.slice(0,8)}</p>
+                      </div>
+                    </div>
+                    <Badge className={cn(
+                      "rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider",
+                      tx.status === 'completed' ? "bg-green-500/10 text-green-500" :
+                      (tx.status === 'pending' || tx.status === 'accepted') ? "bg-yellow-500/10 text-yellow-500" :
+                      (tx.status === 'waiting_confirmation' || tx.status === 'paid' || tx.status === 'mark_as_paid') ? "bg-purple-500/10 text-purple-500" :
+                      "bg-red-500/10 text-red-500"
+                    )}>
+                      {tx.status === 'waiting_confirmation' ? 'Waiting User' : tx.status}
+                    </Badge>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 border-y border-white/5 py-4">
+                    <div>
+                      <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">Amount</p>
+                      <p className="text-lg font-bold">₫{tx.amount.toLocaleString()}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">Bank</p>
+                      <p className="text-xs font-bold leading-tight">{tx.bankInfo?.bankName}</p>
+                      <p className="text-[9px] text-slate-400 font-mono mt-1">{tx.bankInfo?.accountNumber}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-blue-400 text-[10px] uppercase font-bold tracking-widest"
+                      onClick={() => {
+                        setSelectedTx(tx);
+                        setIsDetailModalOpen(true);
+                      }}
+                    >
+                      <Eye className="w-4 h-4 mr-2" />
+                      View Details
+                    </Button>
+                    {tx.bankInfo?.qrCode && (
+                       <a href={tx.bankInfo.qrCode} target="_blank" rel="noreferrer" className="text-red-500 font-bold text-[10px] uppercase flex items-center">
+                         <QrCode className="w-4 h-4 mr-1" /> QR CODE
+                       </a>
+                    )}
+                  </div>
+
+                  <div className="pt-2 flex gap-2">
+                    {tx.status === 'pending' && (
+                      <>
+                        <Button 
+                          className="flex-1 bg-blue-600 hover:bg-blue-500 h-11 rounded-2xl text-xs font-bold"
+                          onClick={() => handleAccept(tx)}
+                        >
+                          Accept
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          className="flex-1 text-red-400 bg-red-500/5 hover:bg-red-500/10 h-11 rounded-2xl text-xs font-bold"
+                          onClick={() => handleReject(tx)}
+                        >
+                          Reject
+                        </Button>
+                      </>
+                    )}
+                    {tx.status === 'accepted' && (
+                       <Button 
+                          className="w-full bg-purple-600 hover:bg-purple-500 h-11 rounded-2xl text-xs font-bold"
+                          onClick={() => handlePaid(tx)}
+                        >
+                          Mark as Paid
+                        </Button>
+                    )}
+                    {tx.status === 'paid' && (
+                      <div className="w-full h-11 flex items-center justify-center bg-blue-500/5 rounded-2xl border border-blue-500/20 font-bold text-[10px] text-blue-400 uppercase">
+                        Waiting for User Confirmation
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
         </div>
       </Card>
 

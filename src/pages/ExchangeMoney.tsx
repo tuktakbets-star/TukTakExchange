@@ -109,10 +109,10 @@ export default function ExchangeMoney() {
   const rateDoc = rates?.find(r => r.target?.toUpperCase() === targetCurrency?.toUpperCase());
   
   // Try to find tiered rates for the specific account type first
-  const accountData = rateDoc?.accountTypes?.[accountType];
+  const accountData = rateDoc?.account_types?.[accountType] || rateDoc?.accountTypes?.[accountType];
   const tieredRates = Array.isArray(accountData?.tieredRates) ? accountData.tieredRates : 
-                      (Array.isArray(rateDoc?.tieredRates) ? rateDoc.tieredRates : 
-                      (Array.isArray(rateDoc?.tiered_rates) ? rateDoc.tiered_rates : []));
+                      (Array.isArray(rateDoc?.tiered_rates) ? rateDoc.tiered_rates : 
+                      (Array.isArray(rateDoc?.tieredRates) ? rateDoc.tieredRates : []));
   
   const amountNum = Number(amount) || 0;
 
@@ -131,8 +131,11 @@ export default function ExchangeMoney() {
 
   const handleNext = () => {
     if (step === 1) {
-      if (!amount || Number(amount) < 200000) {
-        toast.error('Minimum Exchange amount is 200,000 VND');
+      const minAmount = (accountType === 'Bank Transfer') ? 5000000 : 200000;
+      const amountNum = Number(amount);
+      
+      if (!amount || amountNum < minAmount) {
+        toast.error(`Minimum Exchange amount for ${accountType} is ${minAmount.toLocaleString()} VND`);
         return;
       }
       if (!currentRate || currentRate <= 0) {
@@ -181,8 +184,10 @@ export default function ExchangeMoney() {
         qrUrl = await firebaseService.uploadFile(receiverQrFile);
       }
 
-      const tx = {
+      const tx: any = {
         uid: profile?.uid,
+        user_name: profile?.full_name || profile?.displayName || "Customer",
+        full_name: profile?.full_name || profile?.displayName || "Customer",
         type: 'exchange',
         status: 'pending',
         amount: Number(amount),

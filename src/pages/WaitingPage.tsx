@@ -3,8 +3,8 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
-import { firebaseService } from '../lib/firebaseService';
-import { motion } from 'framer-motion';
+import { supabaseService } from '../lib/supabaseService';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Clock, 
   CheckCircle2, 
@@ -14,12 +14,15 @@ import {
   Copy,
   ExternalLink,
   ShieldCheck,
+  ShieldAlert,
   Trash2,
   Trophy,
   AlertTriangle,
+  Loader2,
+  Smartphone,
   Download,
   Eye,
-  RefreshCw
+  RefreshCw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -51,22 +54,27 @@ export default function WaitingPage() {
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [isChatOpen, setIsChatOpen] = useState(false);
   const { profile } = useAuth();
 
   const status = tx?.status?.toLowerCase().trim();
-  const isPending = status === 'pending';
+  const isAssigned = !!(tx?.assigned_sub_admin_id || tx?.assignedSubAdminId);
+  const isPurePending = status === 'pending' && !isAssigned;
+  const isClaimedPending = status === 'pending' && isAssigned;
   const isAccepted = status === 'accepted';
+  const isProcessing = status === 'processing';
+  const isAnyProcessing = isAccepted || isProcessing;
   const isPaid = status === 'paid' || status === 'waiting_confirmation' || status === 'mark_as_paid';
-  const isCompleted = status === 'completed';
+  const isCompleted = status === 'completed' || status === 'approved';
   const isDisputed = status === 'disputed';
-  const isCancelled = status === 'cancelled';
+  const isCancelled = status === 'cancelled' || status === 'rejected' || status === 'failed';
   const isExchangeFlow = tx?.type === 'exchange' || tx?.type === 'withdraw' || tx?.type === 'recharge';
 
   const handleAppealClick = async () => {
     if (!txId) return;
     try {
       // Immediately set status to disputed to stop all timers
-      await firebaseService.updateDocument('transactions', txId, {
+      await supabaseService.updateDocument('transactions', txId, {
         status: 'disputed',
         updated_at: new Date().toISOString(),
         updatedAt: new Date().toISOString()
@@ -78,23 +86,10 @@ export default function WaitingPage() {
   };
 
   const handleConfirmReceipt = async () => {
-    if (!txId || !tx || !profile?.email) return;
-    
-    if (!confirmPassword) {
-      toast.error('Please enter your password to confirm receipt');
-      return;
-    }
+    if (!txId || !tx) return;
 
     setIsConfirming(true);
     try {
-      // Verify Password first
-      const { error: authError } = await firebaseService.signIn(profile.email, confirmPassword);
-      if (authError) {
-        toast.error('Incorrect password. Please try again.');
-        setIsConfirming(false);
-        return;
-      }
-
       const status = tx.status?.toLowerCase().trim();
       // Avoid double confirmation
       if (status === 'completed') {
@@ -103,38 +98,71 @@ export default function WaitingPage() {
         return;
       }
 
-      // 1. Finalize Balance Deduction (Move from pendingLocked to real deduction)
-      const amountToDeduct = tx.total_to_deduct || tx.totalToDeduct || tx.amount;
-      await firebaseService.updateWalletBalance(tx.uid, tx.currency, -amountToDeduct, -amountToDeduct);
+      const isAddMoney = tx.type === 'add_money' || tx.type === 'cash_in';
+      const amount = tx.amount || 0;
+      const totalToDeduct = tx.total_to_deduct || tx.totalToDeduct || amount;
 
-      // 2. Update transaction status
-      await firebaseService.updateDocument('transactions', txId, { 
-        status: 'completed',
-        updated_at: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      });
+      if (isAddMoney) {
+        // ADD MONEY: User gets balance, Sub-Admin loses balance
+        // 1. Update user balance (Increase)
+        await supabaseService.updateWalletBalance(tx.uid, tx.currency, amount, 0);
+      } else {
+        // WITHDRAW/EXCHANGE/RECHARGE: User lost balance (was locked), Sub-Admin gains balance
+        // 1. Finalize Balance Deduction (Unlock and finalize)
+        await supabaseService.updateWalletBalance(tx.uid, tx.currency, -totalToDeduct, -totalToDeduct);
+      }
 
-      // 3. Update Sub-Admin Wallet (Credit if exchange/withdraw/recharge)
-      if (tx.assigned_sub_admin_id && (tx.type === 'exchange' || tx.type === 'withdraw' || tx.type === 'recharge')) {
-        const { data: subAdmin } = await firebaseService.getDocument('sub_admins', tx.assigned_sub_admin_id);
+      // 2. Update Sub-Admin Wallet Balance (If not already updated by operator panel)
+      const saId = tx.assigned_sub_admin_id || tx.assignedSubAdminId;
+      if (saId && tx.sub_admin_action !== 'finalize_completed') {
+        const { data: subAdmin } = await supabaseService.getDocument('sub_admins', saId);
         if (subAdmin) {
-          const newSaBalance = (subAdmin.wallet_balance || 0) + tx.amount;
-          await firebaseService.updateDocument('sub_admins', tx.assigned_sub_admin_id, {
+          const currentBal = Number(subAdmin.wallet_balance || 0);
+          
+          // Determine if this should be a credit or debit for the sub-admin
+          // For Add Money/Cash In: Admin sends money to user (DEBIT)
+          // For Exchange/Withdraw/Recharge: Admin sends money to user (DEBIT)
+          // Basically, in almost all flows where sub-admin acts as agent, they are providing funds.
+          const isDebit = true; 
+          
+          // Detect VND amount specifically
+          const bdtAmount = tx.amount || 0;
+          const targetAmount = tx.target_amount || tx.targetAmount || 0;
+          
+          // If transaction is VND based on either side, use that. 
+          // If it's a VND withdrawal/exchange, the VND amount is usually what the agent "hands over" (or settles).
+          let impactAmount = 0;
+          if (tx.currency === 'VND') impactAmount = bdtAmount;
+          else if (tx.target_currency === 'VND') impactAmount = targetAmount;
+          else impactAmount = bdtAmount; // Fallback
+
+          const delta = isDebit ? -impactAmount : impactAmount;
+          const newSaBalance = currentBal + delta;
+          
+          await supabaseService.updateDocument('sub_admins', saId, {
             wallet_balance: newSaBalance,
+            last_order_id: txId,
             updated_at: new Date().toISOString()
           });
           
-          await firebaseService.addDocument('sub_admin_wallet_transactions', {
-            sub_admin_id: tx.assigned_sub_admin_id,
-            type: 'credit',
-            amount: tx.amount,
-            reason: `Order #${txId} confirmed by user`,
+          await supabaseService.addDocument('sub_admin_wallet_transactions', {
+            sub_admin_id: saId,
+            type: isDebit ? 'debit' : 'credit',
+            amount: Math.abs(delta),
+            reason: `Order #${txId} completed (Auto Balance Update)`,
             order_id: txId,
             balance_after: newSaBalance,
             created_at: new Date().toISOString()
           });
         }
       }
+
+      // Finalize transaction status
+      await supabaseService.updateDocument('transactions', txId, { 
+        status: 'completed',
+        updated_at: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
 
       setShowPasswordDialog(false);
       toast.success('Transaction completed successfully!');
@@ -152,7 +180,19 @@ export default function WaitingPage() {
   useEffect(() => {
     if (!txId) return;
 
-    const unsub = firebaseService.subscribeToDocument('transactions', txId, (data) => {
+    // Standard fetch + setup re-fetch interval as fallback for realtime
+    const fetchData = async () => {
+      const { data } = await supabaseService.getDocument('transactions', txId);
+      if (data) {
+        setTx(data);
+        setLoading(false);
+      }
+    };
+    
+    fetchData();
+    const interval = setInterval(fetchData, 15000); // Pulse every 15s
+
+    const unsub = supabaseService.subscribeToDocument('transactions', txId, (data) => {
       if (data) {
         setTx(data);
         
@@ -185,10 +225,15 @@ export default function WaitingPage() {
           {/* Also set auto-complete timer if paid/waiting confirmation */}
           const s = data.status?.toLowerCase().trim();
           if (s === 'paid' || s === 'waiting_confirmation' || s === 'mark_as_paid') {
-            const paidAt = getSafeTime(data.paid_at || data.paidAt || data.sub_admin_actioned_at) || now;
-            const paidElapsed = Math.floor((now - paidAt) / 1000);
-            const paidRemaining = Math.max(0, 600 - paidElapsed); // 10 mins
-            if (!isNaN(paidRemaining)) setAutoCompleteTime(paidRemaining);
+            const paidAtStr = data.paid_at || data.paidAt;
+            if (paidAtStr) {
+              const paidAt = getSafeTime(paidAtStr);
+              const paidElapsed = Math.floor((now - paidAt) / 1000);
+              const paidRemaining = Math.max(0, 600 - paidElapsed); // 10 mins
+              if (!isNaN(paidRemaining)) setAutoCompleteTime(paidRemaining);
+            } else {
+              setAutoCompleteTime(600);
+            }
           }
         } else {
           // Fallback if no creation time yet
@@ -198,13 +243,22 @@ export default function WaitingPage() {
       setLoading(false);
     });
 
-    return () => unsub();
+    return () => {
+      clearInterval(interval);
+      unsub();
+    };
   }, [txId]);
 
   useEffect(() => {
     // Auto-redirect to wallet after 5 seconds if transaction is in a terminal state
-    const terminalStates = ['completed', 'cancelled', 'rejected', 'expired'];
-    if (tx?.status && terminalStates.includes(tx.status?.toLowerCase())) {
+    const s = tx?.status?.toLowerCase().trim();
+    // 'completed' and 'approved' are terminal states that trigger auto-redirect to wallet
+    const terminalStates = ['completed', 'approved', 'cancelled', 'rejected', 'expired', 'failed'];
+    
+    // Safety check: if it's still waiting for user confirmation, DO NOT redirect
+    if (isPaid) return;
+    
+    if (s && terminalStates.includes(s)) {
       const timer = setTimeout(() => {
         navigate('/wallet');
       }, 5000);
@@ -282,11 +336,13 @@ export default function WaitingPage() {
       const needsRefund = tx.type === 'withdraw' || tx.type === 'exchange' || tx.type === 'recharge' || tx.type === 'cash_out';
       
       if (needsRefund) {
-        await firebaseService.updateWalletBalance(tx.uid, tx.currency, 0, -(tx.totalToDeduct || tx.amount));
+        const amount = tx.amount || 0;
+        const totalToDeduct = tx.total_to_deduct || tx.totalToDeduct || amount;
+        await supabaseService.updateWalletBalance(tx.uid, tx.currency, 0, -totalToDeduct);
       }
 
       // Update status to cancelled instead of deleting (so it shows in history)
-      await firebaseService.updateDocument('transactions', txId, {
+      await supabaseService.updateDocument('transactions', txId, {
         status: 'cancelled',
         updatedAt: new Date().toISOString()
       });
@@ -318,17 +374,17 @@ export default function WaitingPage() {
           <div className="relative inline-block">
             <div className={cn(
               "w-28 h-28 rounded-full flex items-center justify-center mx-auto mb-2 relative z-10",
-              (isPending || isAccepted || isPaid) ? "bg-blue-500/10 text-blue-500" :
+              (isPurePending || isClaimedPending || isAnyProcessing || isPaid) ? "bg-blue-500/10 text-blue-500" :
               isCompleted ? "bg-green-500/20 text-green-500" :
               (isDisputed || isCancelled) ? "bg-red-500/20 text-red-500" :
               "bg-red-500/10 text-red-500"
             )}>
-              {(isPending || isAccepted || isPaid) ? <Clock className="w-14 h-14 animate-pulse" /> :
+              {(isPurePending || isClaimedPending || isAnyProcessing || isPaid) ? <Clock className="w-14 h-14 animate-pulse" /> :
                isCompleted ? <Trophy className="w-14 h-14" /> :
                (isDisputed || isCancelled) ? <AlertTriangle className="w-14 h-14" /> :
                <XCircle className="w-14 h-14" />}
             </div>
-            {(isPending || isAccepted || isPaid) && (
+            {(isPurePending || isClaimedPending || isAnyProcessing || isPaid) && (
               <div className="absolute inset-0 bg-blue-500/20 blur-3xl rounded-full animate-pulse"></div>
             )}
             {isCompleted && (
@@ -340,15 +396,17 @@ export default function WaitingPage() {
           </div>
           
           <div className="space-y-4">
-              <h1 className="text-4xl font-display font-black tracking-tight">
-                {isPending ? t('pending') :
-                 isAccepted ? t('order_accepted_header', 'Order Received!') :
-                 (status === 'waiting_confirmation' || status === 'mark_as_paid' || isPaid) ? t('payment_sent_header', 'Money Sent!') :
-                 isCompleted ? t('completed_header', 'Task Finished!') :
-                 isDisputed ? t('disputed_header', 'Under Review') :
-                 isCancelled ? t('cancelled_header', 'Cancelled') :
-                 t('failed')}
-              </h1>
+                <h1 className="text-4xl font-display font-black tracking-tight">
+                  {isPurePending ? t('pending') :
+                   isClaimedPending ? t('agent_found_awaiting_accept') :
+                   isAccepted ? t('agent_accepted_processing') :
+                   isProcessing ? t('processing_payment') :
+                   isPaid ? t('paid_wait') :
+                   isCompleted ? t('completed_header', 'Task Finished!') :
+                   isDisputed ? t('disputed_header', 'Under Review') :
+                   isCancelled ? t('cancelled_header', 'Cancelled') :
+                   t('failed')}
+                </h1>
             
             {isDisputed ? (
               <div className="space-y-6">
@@ -360,6 +418,19 @@ export default function WaitingPage() {
                       Our support team is investigating your claim. All timers are paused.
                     </p>
                   </div>
+                </div>
+                
+                <div className="p-6 glass-dark border border-white/5 rounded-3xl space-y-4">
+                  <p className="text-sm text-center text-slate-400">
+                    If the problem has been resolved and you have received your payment, you can confirm it below to release the order.
+                  </p>
+                  <Button 
+                    className="w-full h-16 bg-green-600 hover:bg-green-500 text-white rounded-2xl font-bold flex items-center justify-center gap-2"
+                    onClick={handleConfirmReceipt}
+                  >
+                    <CheckCircle2 className="w-6 h-6" />
+                    I HAVE RECEIVED MY MONEY
+                  </Button>
                 </div>
               </div>
             ) : (
@@ -380,25 +451,27 @@ export default function WaitingPage() {
 
                   <p className={cn(
                       "font-black leading-tight tracking-tight text-center uppercase mb-2 text-xs opacity-50",
-                      (isAccepted || isPaid) ? "text-white" : "text-slate-500"
+                      (isAnyProcessing || isPaid) ? "text-white" : "text-slate-500"
                   )}>
                     Current Status Info
                   </p>
 
                   <p className={cn(
                       "font-black leading-tight tracking-tight text-center",
-                      (isAccepted || isPaid) ? "text-3xl sm:text-4xl text-white" : "text-xl text-slate-400"
+                      (isAnyProcessing || isPaid || isClaimedPending) ? "text-3xl sm:text-4xl text-white" : "text-xl text-slate-400"
                   )}>
-                    {isPending ? t('pending_desc') :
-                     isAccepted ? t('accepted_desc') :
-                     isPaid ? t('paid_desc') :
+                    {isPurePending ? t('pending_desc') :
+                     isClaimedPending ? t('claimed_pending_desc') :
+                     isAccepted ? t('accepted_status_desc') :
+                     isProcessing ? t('processing_status_desc') :
+                     isPaid ? t('paid_status_desc') :
                      isCompleted ? t('completed_desc') :
                      isDisputed ? t('disputed_desc') :
                      isCancelled ? t('cancelled_desc') :
                      t('failed')}
                   </p>
                   
-                  {(isAccepted || isPaid) && (
+                  {(isAnyProcessing || isPaid || isClaimedPending) && (
                       <div className="mt-6 flex items-center justify-center gap-2">
                           <div className="flex gap-1">
                               <span className="w-1.5 h-1.5 bg-brand-blue rounded-full animate-bounce [animation-delay:-0.3s]"></span>
@@ -406,7 +479,10 @@ export default function WaitingPage() {
                               <span className="w-1.5 h-1.5 bg-brand-blue rounded-full animate-bounce"></span>
                           </div>
                           <p className="text-xs uppercase tracking-[0.3em] font-black text-slate-500">
-                              {isAccepted ? 'Processing Payment' : 'Confirmation Required'}
+                              {isClaimedPending ? 'Agent Assigning' : 
+                               isAccepted ? 'Accepting Order' : 
+                               isProcessing ? 'Processing Order' :
+                               'Confirmation Required'}
                           </p>
                       </div>
                   )}
@@ -415,7 +491,7 @@ export default function WaitingPage() {
           </div>
         </div>
 
-        {isAccepted && (
+        {isAnyProcessing && (
           <Card className="bg-blue-500/5 border border-blue-500/20 rounded-3xl p-6 text-center">
             <p className="text-sm font-medium text-blue-400 animate-pulse">
               Admin will pay you within 15 minutes. Please wait.
@@ -423,18 +499,20 @@ export default function WaitingPage() {
           </Card>
         )}
 
-        {isPaid && isExchangeFlow && (
+        {isPaid && (
            <Card className="glass-dark border-brand-blue/40 rounded-[2rem] overflow-hidden shadow-2xl shadow-blue-600/10">
             <CardContent className="p-8 space-y-6">
               <div className="text-center space-y-2">
                 <CheckCircle2 className="w-12 h-12 text-green-500 mx-auto mb-2" />
-                <h3 className="text-xl font-bold">{t('payment_sent_header', 'Money Sent!')}</h3>
+                <h3 className="text-xl font-bold">
+                  {isExchangeFlow ? t('payment_sent_header', 'Money Sent!') : 'Balance Ready!'}
+                </h3>
                 <p className="text-sm text-slate-400">
-                  {t('check_bank_for_amount', { 
+                  {isExchangeFlow ? t('check_bank_for_amount', { 
                     bank: (tx.receiver_info?.bankName || tx.receiverInfo?.bankName), 
                     amount: (tx.target_amount || tx.targetAmount), 
                     currency: (tx.target_currency || tx.targetCurrency) 
-                  })}
+                  }) : 'Admin has processed your request. Please check your wallet balance and confirm.'}
                 </p>
                  <div className={cn(
                    "mt-4 p-8 rounded-[2.5rem] transition-all duration-500 flex flex-col items-center justify-center space-y-4",
@@ -507,7 +585,7 @@ export default function WaitingPage() {
                     "w-full h-20 rounded-3xl font-black text-xl transition-all duration-500",
                     isConfirming ? "bg-slate-800 text-slate-500" : "bg-green-600 hover:bg-green-500 text-white shadow-[0_20px_50px_rgba(34,197,94,0.3)] hover:scale-[1.02] active:scale-95"
                   )}
-                  onClick={() => setShowPasswordDialog(true)}
+                  onClick={handleConfirmReceipt}
                   disabled={isConfirming}
                 >
                   {isConfirming ? (
@@ -536,7 +614,7 @@ export default function WaitingPage() {
           </Card>
         )}
 
-        {isPending && (
+        {isPurePending && (
           <Card className="glass-dark border-brand-blue/20 rounded-[2rem] overflow-hidden">
             <CardContent className="p-8 text-center space-y-6">
               <div className="space-y-1">
@@ -557,15 +635,53 @@ export default function WaitingPage() {
           </Card>
         )}
 
-        {/* Chat Section - Show for most active states */}
-        {(isPending || isAccepted || isPaid || isDisputed) && (
+        {/* Chat Section - Collapsible to avoid blocking the view */}
+        {(isAnyProcessing || isPaid) && !isDisputed && (
           <div className="space-y-4">
-             <h3 className="font-display font-bold text-xl flex items-center gap-2">
-              <MessageSquare className="w-5 h-5 text-brand-blue" />
-              {isDisputed ? 'Appeal Discussion' : t('chat_with_admin')}
-            </h3>
-            <DisputeChat txId={txId!} subAdminId={tx.assigned_sub_admin_id} />
+             <Button 
+                variant="ghost" 
+                onClick={() => setIsChatOpen(!isChatOpen)}
+                className="w-full h-14 bg-blue-500/10 border border-blue-500/20 rounded-2xl flex items-center justify-between px-6 hover:bg-blue-500/20"
+              >
+                <div className="flex items-center gap-3">
+                  <MessageSquare className="w-5 h-5 text-brand-blue" />
+                  <span className="font-bold text-sm">Direct Support Chat</span>
+                </div>
+                <Badge variant="outline" className="text-[10px] uppercase font-black border-blue-500/30 text-blue-500">
+                  {isChatOpen ? 'Close Chat' : 'Open Chat'}
+                </Badge>
+             </Button>
+
+             <AnimatePresence>
+               {isChatOpen && (
+                 <motion.div 
+                   initial={{ opacity: 0, height: 0 }}
+                   animate={{ opacity: 1, height: 'auto' }}
+                   exit={{ opacity: 0, height: 0 }}
+                   className="rounded-[2.5rem] overflow-hidden border border-white/5 glass-dark shadow-2xl h-[500px] relative"
+                 >
+                    <DisputeChat 
+                      txId={txId!} 
+                      subAdminId={tx.assigned_sub_admin_id} 
+                      title="Direct Support Chat" 
+                    />
+                 </motion.div>
+               )}
+             </AnimatePresence>
           </div>
+        )}
+
+        {/* Pending state notice */}
+        {isPurePending && !isCancelled && (
+           <div className="p-8 bg-amber-500/5 border border-amber-500/10 rounded-[2rem] text-center space-y-4">
+              <div className="w-16 h-16 bg-amber-500/10 rounded-full flex items-center justify-center mx-auto">
+                 <Loader2 className="w-8 h-8 text-amber-500 animate-spin" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-amber-500 uppercase tracking-tight">Order Awaiting Staff</h3>
+                <p className="text-slate-400 text-sm max-w-xs mx-auto">Once an official support agent accepts your order, the direct chat will open here.</p>
+              </div>
+           </div>
         )}
 
         <div className="grid md:grid-cols-2 gap-6">
@@ -588,21 +704,23 @@ export default function WaitingPage() {
                 <span className="text-slate-500 text-sm">{t('status')}</span>
                 <Badge className={cn(
                   "capitalize rounded-full px-3 py-1 font-bold",
-                  tx.status?.toLowerCase().trim() === 'completed' ? "bg-green-500/20 text-green-500" :
-                  tx.status?.toLowerCase().trim() === 'pending' ? "bg-yellow-500/20 text-yellow-500" :
-                  tx.status?.toLowerCase().trim() === 'accepted' ? "bg-blue-500/20 text-blue-500" :
-                  tx.status?.toLowerCase().trim() === 'paid' ? "bg-indigo-500/20 text-indigo-500" :
+                  isCompleted ? "bg-green-500/20 text-green-500" :
+                  isPurePending ? "bg-yellow-500/20 text-yellow-500" :
+                  isClaimedPending ? "bg-orange-500/20 text-orange-500" :
+                  isAnyProcessing ? "bg-blue-500/20 text-blue-500" :
+                  isPaid ? "bg-green-600/20 text-green-400 animate-pulse border border-green-500/30" :
+                  isDisputed ? "bg-red-500/20 text-red-500" :
                   "bg-red-500/20 text-red-500"
                 )}>
-                  {tx.status}
+                  {isClaimedPending ? 'Assigned' : isPaid ? 'Paid' : tx.status}
                 </Badge>
               </div>
             </div>
           </Card>
 
           <Card className="glass-dark border-white/5 rounded-3xl p-6 space-y-4">
-            <h3 className="font-bold text-slate-400 text-sm uppercase tracking-wider">{t('need_help')}</h3>
-            <p className="text-xs text-slate-500">{t('need_help_desc')}</p>
+            <h3 className="font-bold text-slate-400 text-sm uppercase tracking-wider">ORDER SUPPORT</h3>
+            <p className="text-xs text-slate-500">Need help with your transaction?</p>
             <div className="space-y-4">
               {tx.adminProof && (
                 <Button 
@@ -617,14 +735,25 @@ export default function WaitingPage() {
                   {t('view_payment_receipt')}
                 </Button>
               )}
-              <Button 
-                variant="outline" 
-                className="w-full border-white/10 bg-white/5 hover:bg-white/10 text-white rounded-xl h-12 font-bold"
-                onClick={() => navigate('/messages')}
-              >
-                <MessageSquare className="w-4 h-4 mr-2" />
-                {t('live_chat_support')}
-              </Button>
+              {isDisputed ? (
+                <Button 
+                  className="w-full bg-red-600 hover:bg-red-500 text-white rounded-xl h-14 font-bold flex flex-col justify-center gap-0.5"
+                  onClick={() => navigate(`/appeal/${txId}`)}
+                >
+                  <ShieldAlert className="w-4 h-4 mr-2" />
+                  <span>GO TO DISPUTE PAGE</span>
+                </Button>
+              ) : (
+                <Button 
+                  variant="outline" 
+                  className="w-full border-brand-blue/30 bg-brand-blue/5 hover:bg-brand-blue/10 text-brand-blue rounded-xl h-14 font-bold"
+                  onClick={() => navigate('/messages')}
+                >
+                  <MessageSquare className="w-5 h-5 mr-3" />
+                  LIVE ADMIN SUPPORT
+                </Button>
+              )}
+
               
               {(tx.status?.toLowerCase().trim() === 'pending' || tx.status?.toLowerCase().trim() === 'disputed') && (
                 <div className="space-y-4">

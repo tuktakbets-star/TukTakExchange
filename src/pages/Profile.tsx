@@ -208,21 +208,6 @@ export default function Profile() {
         <Card className="glass-dark border-white/5 rounded-3xl">
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-xl font-display font-bold">{t('personal_info')}</CardTitle>
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              className="text-brand-blue"
-              onClick={() => {
-                if (isEditing) {
-                  setIsConfirmOpen(true);
-                } else {
-                  setIsEditing(true);
-                }
-              }}
-              disabled={isSubmitting}
-            >
-              {isEditing ? t('save') : t('edit_profile')}
-            </Button>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-2">
@@ -231,8 +216,7 @@ export default function Profile() {
                 <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
                 <Input 
                   value={displayName} 
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  disabled={!isEditing}
+                  disabled
                   className="bg-white/5 border-white/10 h-12 pl-12 rounded-xl disabled:opacity-100 disabled:cursor-default"
                 />
               </div>
@@ -243,8 +227,7 @@ export default function Profile() {
                 <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
                 <Input 
                   value={accountNumber} 
-                  onChange={(e) => setAccountNumber(e.target.value)}
-                  disabled={!isEditing}
+                  disabled
                   placeholder="+84..."
                   className="bg-white/5 border-white/10 h-12 pl-12 rounded-xl disabled:opacity-100 disabled:cursor-default"
                 />

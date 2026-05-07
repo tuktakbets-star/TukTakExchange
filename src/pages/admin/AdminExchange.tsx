@@ -251,6 +251,30 @@ export default function AdminExchange() {
         try {
           const amountToDeduct = tx.total_to_deduct || tx.totalToDeduct || tx.amount;
           
+          // CRITICAL: Update sub-admin balance if assigned
+          if (tx.assigned_sub_admin_id) {
+            const { data: subAdmin } = await firebaseService.getDocument('sub_admins', tx.assigned_sub_admin_id);
+            if (subAdmin) {
+              const newSaBalance = (subAdmin.wallet_balance || subAdmin.vnd_balance || 0) + amountToDeduct;
+              
+              await firebaseService.updateDocument('sub_admins', tx.assigned_sub_admin_id, {
+                wallet_balance: newSaBalance,
+                vnd_balance: newSaBalance,
+                updated_at: new Date().toISOString()
+              });
+              
+              await firebaseService.addDocument('sub_admin_wallet_transactions', {
+                sub_admin_id: tx.assigned_sub_admin_id,
+                type: 'credit',
+                amount: amountToDeduct,
+                reason: `Exchange #${tx.id} completed by admin`,
+                order_id: tx.id,
+                balance_after: newSaBalance,
+                created_at: new Date().toISOString()
+              });
+            }
+          }
+
           // 1. Finalize Balance Deduction (Move from pendingLocked to real deduction)
           await firebaseService.updateWalletBalance(tx.uid, tx.currency, -amountToDeduct, -amountToDeduct);
 
@@ -289,6 +313,16 @@ export default function AdminExchange() {
       }
     });
     setIsConfirmOpen(true);
+  };
+
+  const handleDeleteTransaction = async (txId: string) => {
+    if (!confirm('Are you sure you want to delete this transaction record? This only removes the record from the history, it does not refund balance.')) return;
+    try {
+      await firebaseService.deleteDocument('transactions', txId);
+      toast.success('Transaction record deleted');
+    } catch (error) {
+      toast.error('Failed to delete transaction');
+    }
   };
 
   const filteredRequests = requests.filter(req => {
@@ -396,7 +430,8 @@ export default function AdminExchange() {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Desktop View */}
+        <div className="hidden lg:block overflow-x-auto">
           <table className="w-full text-left">
             <thead>
               <tr className="text-slate-500 text-[10px] uppercase tracking-[0.2em] border-b border-white/5">
@@ -461,10 +496,10 @@ export default function AdminExchange() {
                           tx.status?.toLowerCase().trim() === 'completed' ? "bg-green-500/10 text-green-500" :
                           tx.status?.toLowerCase().trim() === 'pending' ? "bg-yellow-500/10 text-yellow-500" :
                           tx.status?.toLowerCase().trim() === 'accepted' ? "bg-blue-500/10 text-blue-500" :
-                          tx.status?.toLowerCase().trim() === 'paid' ? "bg-indigo-500/10 text-indigo-500" :
+                          (tx.status?.toLowerCase().trim() === 'paid' || tx.status?.toLowerCase().trim() === 'waiting_confirmation' || tx.status?.toLowerCase().trim() === 'mark_as_paid') ? "bg-indigo-500/10 text-indigo-500" :
                           "bg-red-500/10 text-red-500"
                         )}>
-                          {tx.status}
+                          {(tx.status?.toLowerCase().trim() === 'paid' || tx.status?.toLowerCase().trim() === 'waiting_confirmation' || tx.status?.toLowerCase().trim() === 'mark_as_paid') ? 'WAITING USER' : tx.status}
                         </Badge>
                       </td>
                       <td className="px-8 py-6 text-right">
@@ -500,7 +535,7 @@ export default function AdminExchange() {
                               {isProcessing[tx.id] ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Mark as Paid'}
                             </Button>
                           )}
-                          {(tx.status?.toLowerCase().trim() === 'paid' || tx.status?.toLowerCase().trim() === 'disputed') && (
+                          {(tx.status?.toLowerCase().trim() === 'paid' || tx.status?.toLowerCase().trim() === 'waiting_confirmation' || tx.status?.toLowerCase().trim() === 'mark_as_paid' || tx.status?.toLowerCase().trim() === 'disputed') && (
                             <Button 
                               size="sm" 
                               className="bg-green-600 hover:bg-green-500 h-10 px-6 rounded-xl font-bold shadow-lg shadow-green-600/30"
@@ -520,7 +555,7 @@ export default function AdminExchange() {
                               Reject
                             </Button>
                           )}
-                          {tx.status?.toLowerCase().trim() === 'paid' && (
+                          {(tx.status?.toLowerCase().trim() === 'paid' || tx.status?.toLowerCase().trim() === 'waiting_confirmation' || tx.status?.toLowerCase().trim() === 'mark_as_paid') && (
                             <div className="flex items-center gap-2 text-slate-500 ml-2">
                               <RefreshCw className="w-3 h-3 animate-spin" />
                               <span className="text-[10px] font-bold uppercase tracking-wider">User confirming...</span>
@@ -532,6 +567,14 @@ export default function AdminExchange() {
                               <span className="text-[10px] font-bold uppercase tracking-wider">Done</span>
                             </div>
                           )}
+                          <Button 
+                            size="icon" 
+                            variant="ghost" 
+                            className="text-slate-500 hover:text-red-500 hover:bg-red-500/10 h-9 w-9 rounded-xl"
+                            onClick={() => handleDeleteTransaction(tx.id)}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
                         </div>
                       </td>
                     </motion.tr>
@@ -540,6 +583,136 @@ export default function AdminExchange() {
               </AnimatePresence>
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile View */}
+        <div className="lg:hidden p-4 space-y-4">
+          <AnimatePresence mode="popLayout">
+            {filteredRequests.map((tx) => {
+              const user = users.find(u => u.uid === tx.uid);
+              const status = tx.status?.toLowerCase().trim();
+              return (
+                <motion.div 
+                  key={tx.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className="bg-white/5 border border-white/10 rounded-3xl p-6 space-y-6"
+                >
+                  <div className="flex justify-between items-start">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center font-bold text-blue-500">
+                        {user?.displayName?.charAt(0)}
+                      </div>
+                      <div>
+                        <p className="font-bold text-sm tracking-tight">{user?.displayName || 'Unknown'}</p>
+                        <p className="text-[10px] text-slate-500 font-mono">#{tx.id.slice(0, 8)}</p>
+                      </div>
+                    </div>
+                    <Badge className={cn(
+                      "rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider",
+                      status === 'completed' ? "bg-green-500/10 text-green-500" :
+                      status === 'pending' ? "bg-yellow-500/10 text-yellow-500" :
+                      status === 'accepted' ? "bg-blue-500/10 text-blue-500" :
+                      (status === 'paid' || status === 'waiting_confirmation' || status === 'mark_as_paid') ? "bg-indigo-500/10 text-indigo-500" :
+                      "bg-red-500/10 text-red-500"
+                    )}>
+                      {(status === 'paid' || status === 'waiting_confirmation' || status === 'mark_as_paid') ? 'WAITING USER' : tx.status}
+                    </Badge>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 border-y border-white/5 py-4">
+                    <div>
+                      <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">Exchange</p>
+                      <p className="text-sm font-bold flex items-center gap-2">
+                        {tx.amount?.toLocaleString()} {tx.currency}
+                        <ArrowRight className="w-3 h-3" />
+                      </p>
+                      <p className="text-lg font-black text-brand-blue">{(tx.target_amount || tx.targetAmount)} {(tx.target_currency || tx.targetCurrency)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">Receiver</p>
+                      <p className="text-sm font-bold truncate">{(tx.receiver_info?.name || tx.receiverInfo?.name)}</p>
+                      <p className="text-[10px] text-slate-400">{(tx.receiver_info?.bankName || tx.receiverInfo?.bankName)}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-blue-400 text-[10px] uppercase font-bold tracking-widest p-0 h-auto"
+                      onClick={() => {
+                        setSelectedTx(tx);
+                        setIsDetailModalOpen(true);
+                      }}
+                    >
+                      <Eye className="w-4 h-4 mr-2" />
+                      Details
+                    </Button>
+                    {(tx.receiver_info?.qrCode || tx.receiverInfo?.qrCode) && (
+                       <button 
+                         onClick={() => {
+                           setViewerSrc(tx.receiver_info?.qrCode || tx.receiverInfo?.qrCode);
+                           setIsViewerOpen(true);
+                         }}
+                         className="flex items-center gap-1.5 text-red-500 text-[10px] font-bold uppercase"
+                       >
+                         <QrCode className="w-4 h-4" /> QR
+                       </button>
+                    )}
+                  </div>
+
+                  <div className="pt-2">
+                    <div className="flex gap-2">
+                      {(status === 'pending' || !status || status === '') && (
+                        <Button 
+                          className="flex-1 bg-brand-blue hover:bg-blue-500 h-11 rounded-2xl font-bold text-xs"
+                          onClick={() => handleAcceptOrder(tx)}
+                          disabled={isProcessing[tx.id]}
+                        >
+                          {isProcessing[tx.id] ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Accept Order'}
+                        </Button>
+                      )}
+                      {status === 'accepted' && (
+                        <Button 
+                          className="flex-1 bg-green-600 hover:bg-green-500 h-11 rounded-2xl font-bold text-xs animate-pulse"
+                          onClick={() => handleConfirmPaid(tx)}
+                          disabled={isProcessing[tx.id]}
+                        >
+                          Mark Paid
+                        </Button>
+                      )}
+                      {(status === 'paid' || status === 'waiting_confirmation' || status === 'mark_as_paid' || status === 'disputed') && (
+                        <Button 
+                          className="flex-1 bg-green-600 hover:bg-green-500 h-11 rounded-2xl font-bold text-xs"
+                          onClick={() => handleCompleteOrder(tx)}
+                          disabled={isProcessing[tx.id]}
+                        >
+                          Complete
+                        </Button>
+                      )}
+                      {(status === 'pending' || status === 'accepted' || status === 'disputed' || !status || status === '') && (
+                        <Button 
+                          variant="ghost" 
+                          className="flex-1 text-red-400 bg-red-500/5 hover:bg-red-500/10 h-11 rounded-2xl font-bold text-xs"
+                          onClick={() => handleReject(tx)}
+                        >
+                          Reject
+                        </Button>
+                      )}
+                    </div>
+                    {(status === 'paid' || status === 'waiting_confirmation' || status === 'mark_as_paid') && (
+                      <div className="mt-4 flex items-center justify-center gap-2 text-slate-500 bg-white/5 py-3 rounded-xl border border-white/5">
+                        <RefreshCw className="w-3 h-3 animate-spin" />
+                        <span className="text-[10px] font-bold uppercase tracking-wider">User confirming receipt...</span>
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
         </div>
       </Card>
 

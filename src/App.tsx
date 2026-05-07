@@ -140,6 +140,7 @@ export default function App() {
                 <Route path="notifications" element={<AdminNotifications />} />
                 <Route path="messages" element={<AdminMessages />} />
                 <Route path="disputes" element={<AdminDisputes />} />
+                <Route path="appeal/:txId" element={<Appeal />} />
                 <Route path="settings" element={<AdminSettings />} />
               </Route>
 
@@ -156,6 +157,7 @@ export default function App() {
                 <Route path="messages" element={<OperatorMessages />} />
                 <Route path="history" element={<OperatorHistory />} />
                 <Route path="wallet" element={<OperatorWallet />} />
+                <Route path="appeal/:txId" element={<Appeal />} />
                 <Route path="profile" element={<OperatorProfile />} />
               </Route>
               

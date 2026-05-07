@@ -79,6 +79,25 @@ export default function Dashboard() {
   useEffect(() => {
     if (!profile?.uid) return;
 
+    const fetchData = async () => {
+      const activeData = await firebaseService.getCollection('transactions', [
+        where('uid', '==', profile.uid),
+        where('status', 'in', ['pending', 'accepted', 'processing', 'paid', 'waiting_confirmation', 'mark_as_paid', 'disputed']),
+        orderBy('createdAt', 'desc')
+      ]);
+      setActiveTransactions(activeData || []);
+      
+      const txData = await firebaseService.getCollection('transactions', [
+        where('uid', '==', profile.uid),
+        orderBy('createdAt', 'desc'),
+        limit(5)
+      ]);
+      setTransactions(txData || []);
+    };
+
+    fetchData();
+    const interval = setInterval(fetchData, 30000); // 30s pulse
+
     const unsubWallets = firebaseService.subscribeToCollection(
       'wallets',
       [where('uid', '==', profile.uid)],
@@ -93,7 +112,11 @@ export default function Dashboard() {
 
     const unsubActive = firebaseService.subscribeToCollection(
       'transactions',
-      [where('uid', '==', profile.uid), where('status', 'in', ['pending', 'accepted', 'paid', 'disputed'])],
+      [
+        where('uid', '==', profile.uid), 
+        where('status', 'in', ['pending', 'accepted', 'processing', 'paid', 'waiting_confirmation', 'mark_as_paid', 'disputed']),
+        orderBy('createdAt', 'desc')
+      ],
       (data) => setActiveTransactions(data)
     );
 
@@ -109,6 +132,7 @@ export default function Dashboard() {
 
     setLoading(false);
     return () => {
+      clearInterval(interval);
       unsubWallets();
       unsubTransactions();
       unsubActive();
@@ -144,7 +168,7 @@ export default function Dashboard() {
   const totalBalanceVND = wallets.reduce((acc, curr) => acc + curr.balance, 0);
 
   const handleTransactionClick = (tx: any) => {
-    const activeStatuses = ['pending', 'accepted', 'paid', 'disputed'];
+    const activeStatuses = ['pending', 'accepted', 'processing', 'paid', 'waiting_confirmation', 'mark_as_paid', 'disputed'];
     if (activeStatuses.includes(tx.status)) {
       navigate(`/waiting/${tx.id}`);
     } else {
@@ -241,8 +265,9 @@ export default function Dashboard() {
                       <div>
                         <p className="text-sm font-bold">{tx.type === 'exchange' ? 'Currency Exchange' : tx.type.toUpperCase()}</p>
                         <p className="text-[10px] text-slate-400">
-                          {tx.status === 'paid' ? 'Action Required: Confirm Receipt' : 
-                           tx.status === 'accepted' ? 'Order Received - Processing' : 'Awaiting Review'}
+                          {(tx.status === 'paid' || tx.status === 'waiting_confirmation' || tx.status === 'mark_as_paid') ? 'Action Required: Confirm Receipt' : 
+                           (tx.status === 'accepted' || tx.status === 'processing') ? 'Agent Assigned - Processing' : 
+                           tx.status === 'disputed' ? 'Appeal Under Investigation' : 'Awaiting Agent Assignment'}
                         </p>
                       </div>
                     </div>
@@ -510,10 +535,14 @@ export default function Dashboard() {
                 </div>
                 <Badge variant="outline" className={cn(
                   "text-[10px] h-6 px-3 rounded-full",
-                  tx.status === 'completed' ? "border-green-500/50 text-green-500 bg-green-500/5" : 
+                  tx.status === 'completed' || tx.status === 'approved' ? "border-green-500/50 text-green-500 bg-green-500/5" : 
+                  (tx.status === 'accepted' || tx.status === 'processing') ? "border-blue-500/50 text-blue-500 bg-blue-500/5" :
+                  (tx.status === 'waiting_confirmation' || tx.status === 'mark_as_paid') ? "border-purple-500/50 text-purple-500 bg-purple-500/5" :
                   tx.status === 'pending' ? "border-yellow-500/50 text-yellow-500 bg-yellow-500/5" : "border-red-500/50 text-red-500 bg-red-500/5"
                 )}>
-                  {tx.status}
+                  {tx.status === 'accepted' || tx.status === 'processing' ? 'Agent Assigned' :
+                   (tx.status === 'waiting_confirmation' || tx.status === 'mark_as_paid') ? 'Agent Paid' :
+                   tx.status?.toUpperCase().replace('_', ' ')}
                 </Badge>
               </div>
             </motion.div>

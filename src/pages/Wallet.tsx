@@ -116,7 +116,10 @@ export default function Wallet() {
 
     const unsubActive = firebaseService.subscribeToCollection(
       'transactions',
-      [where('uid', '==', profile.uid), where('status', 'in', ['pending', 'accepted', 'paid', 'disputed'])],
+      [
+        where('uid', '==', profile.uid), 
+        where('status', 'in', ['pending', 'accepted', 'processing', 'paid', 'waiting_confirmation', 'mark_as_paid', 'disputed'])
+      ],
       (data) => setActiveTransactions(data)
     );
 
@@ -326,7 +329,7 @@ export default function Wallet() {
   };
 
   const handleTransactionClick = (tx: any) => {
-    const activeStatuses = ['pending', 'accepted', 'paid', 'disputed'];
+    const activeStatuses = ['pending', 'accepted', 'paid', 'disputed', 'waiting_confirmation', 'mark_as_paid'];
     if (activeStatuses.includes(tx.status)) {
       navigate(`/waiting/${tx.id}`);
     } else {
@@ -529,7 +532,7 @@ export default function Wallet() {
                         <SelectValue placeholder="Select currency" />
                       </SelectTrigger>
                       <SelectContent className="bg-slate-900 border-slate-800 text-white">
-                        {wallets.map(w => (
+                        {wallets.filter(w => w.currency === 'VND').map(w => (
                           <SelectItem key={w.currency} value={w.currency}>
                             {w.currency} (Balance: {w.balance.toLocaleString()})
                           </SelectItem>
@@ -582,18 +585,13 @@ export default function Wallet() {
                            <SelectValue />
                          </SelectTrigger>
                          <SelectContent className="bg-slate-900 border-slate-800 text-white">
-                           <SelectItem value="Bangladesh">Bangladesh</SelectItem>
-                           <SelectItem value="Vietnam">Vietnam</SelectItem>
-                           <SelectItem value="India">India</SelectItem>
-                           <SelectItem value="Pakistan">Pakistan</SelectItem>
-                           <SelectItem value="Nepal">Nepal</SelectItem>
-                           <SelectItem value="USA">USA</SelectItem>
+                           <SelectItem value="Vietnam">Vietnam Only</SelectItem>
                          </SelectContent>
                        </Select>
                     </div>
 
                     <div className="space-y-2">
-                       <Label className="text-xs text-slate-500 uppercase tracking-widest font-bold">Bank Name</Label>
+                       <Label className="text-xs text-slate-500 uppercase tracking-widest font-bold">Bank Name (Vietnam Banks)</Label>
                        <div className="relative">
                          <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                          <Input 
@@ -718,8 +716,8 @@ export default function Wallet() {
                     <div>
                       <p className="font-bold">{tx.type === 'exchange' ? 'Currency Exchange' : tx.type.toUpperCase()}</p>
                       <p className="text-sm text-slate-400">
-                        {tx.status === 'paid' ? 'Action Required: Confirm Receipt' : 
-                         tx.status === 'accepted' ? 'Order Received - Admin Processing' : 'Awaiting Review'}
+                        {(tx.status === 'paid' || tx.status === 'waiting_confirmation' || tx.status === 'mark_as_paid') ? 'Action Required: Confirm Receipt' : 
+                         (tx.status === 'accepted' || tx.status === 'processing') ? 'Order Received - Admin Processing' : 'Awaiting Review'}
                       </p>
                     </div>
                   </div>

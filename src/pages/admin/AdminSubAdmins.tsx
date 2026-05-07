@@ -42,7 +42,11 @@ export default function AdminSubAdmins() {
     username: '',
     password: '',
     email: '',
-    phone: ''
+    phone: '',
+    passportPhoto: '',
+    currentCountry: '',
+    balanceType: 'VND', // Default
+    allowedServices: ['add_money', 'cash_in', 'exchange', 'withdraw', 'recharge']
   });
   const [loading, setLoading] = useState(false);
   const [subAdmins, setSubAdmins] = useState<any[]>([]);
@@ -69,10 +73,14 @@ export default function AdminSubAdmins() {
       
       const payload = {
         full_name: newSubAdmin.fullName,
-        username: newSubAdmin.username,
+        username: newSubAdmin.username.toLowerCase().trim(),
         password: hashedPassword,
         email: newSubAdmin.email,
         phone: newSubAdmin.phone,
+        passport_photo: newSubAdmin.passportPhoto,
+        current_country: newSubAdmin.currentCountry,
+        balance_type: newSubAdmin.balanceType,
+        allowed_services: newSubAdmin.allowedServices,
         wallet_balance: 0,
         status: 'active',
         is_online: false,
@@ -82,9 +90,19 @@ export default function AdminSubAdmins() {
       const id = await supabaseService.addDocument('sub_admins', payload);
       
       if (id) {
-        toast.success('Sub Admin created successfully');
+        toast.success(`Sub Admin ${newSubAdmin.fullName} created successfully`);
         setIsAddModalOpen(false);
-        setNewSubAdmin({ fullName: '', username: '', password: '', email: '', phone: '' });
+        setNewSubAdmin({ 
+          fullName: '', 
+          username: '', 
+          password: '', 
+          email: '', 
+          phone: '', 
+          passportPhoto: '', 
+          currentCountry: '', 
+          balanceType: 'VND',
+          allowedServices: ['add_money', 'cash_in', 'exchange', 'withdraw', 'recharge']
+        });
         fetchSubAdmins();
       }
     } catch (error) {
@@ -92,6 +110,17 @@ export default function AdminSubAdmins() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleToggleService = (service: string) => {
+    setNewSubAdmin(prev => {
+      const allowed = [...prev.allowedServices];
+      if (allowed.includes(service)) {
+        return { ...prev, allowedServices: allowed.filter(s => s !== service) };
+      } else {
+        return { ...prev, allowedServices: [...allowed, service] };
+      }
+    });
   };
 
   const handleDeposit = async () => {
@@ -334,6 +363,67 @@ export default function AdminSubAdmins() {
                       onChange={(e) => setNewSubAdmin({...newSubAdmin, phone: e.target.value})}
                       className="bg-white/5 border-white/10 h-12 rounded-2xl px-5 text-sm font-medium focus:ring-red-500 transition-all"
                     />
+                 </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-6">
+                 <div className="space-y-2">
+                    <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Passport Photo URL</Label>
+                    <Input 
+                      placeholder="https://..."
+                      value={newSubAdmin.passportPhoto}
+                      onChange={(e) => setNewSubAdmin({...newSubAdmin, passportPhoto: e.target.value})}
+                      className="bg-white/5 border-white/10 h-12 rounded-2xl px-5 text-sm font-medium focus:ring-red-500 transition-all px-5"
+                    />
+                 </div>
+                 <div className="space-y-2">
+                    <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Current Country</Label>
+                    <Input 
+                      placeholder="e.g. Bangladesh"
+                      value={newSubAdmin.currentCountry}
+                      onChange={(e) => setNewSubAdmin({...newSubAdmin, currentCountry: e.target.value})}
+                      className="bg-white/5 border-white/10 h-12 rounded-2xl px-5 text-sm font-medium focus:ring-red-500 transition-all"
+                    />
+                 </div>
+              </div>
+
+              <div className="space-y-2">
+                 <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Balance Type</Label>
+                 <select 
+                   value={newSubAdmin.balanceType}
+                   onChange={(e) => setNewSubAdmin({...newSubAdmin, balanceType: e.target.value})}
+                   className="w-full bg-white/5 border border-white/10 h-12 rounded-2xl px-5 text-sm font-medium focus:ring-red-500 transition-all appearance-none"
+                 >
+                   <option value="VND">Digital VND (Main)</option>
+                   <option value="BDT">BDT Balance</option>
+                   <option value="USDT">USDT Asset</option>
+                 </select>
+              </div>
+
+              <div className="space-y-4 pt-2">
+                 <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Allowed Services (Service Limitations)</Label>
+                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                   {[
+                     { id: 'add_money', label: 'Add Money' },
+                     { id: 'cash_in', label: 'Cash In' },
+                     { id: 'exchange', label: 'Exchange' },
+                     { id: 'withdraw', label: 'Withdraw' },
+                     { id: 'recharge', label: 'Recharge' }
+                   ].map((service) => (
+                     <button
+                       key={service.id}
+                       type="button"
+                       onClick={() => handleToggleService(service.id)}
+                       className={cn(
+                         "px-4 py-3 rounded-xl border text-[10px] font-bold uppercase tracking-widest transition-all",
+                         newSubAdmin.allowedServices.includes(service.id)
+                           ? "bg-blue-600/20 border-blue-500 text-blue-400 shadow-[0_0_20px_rgba(59,130,246,0.1)]"
+                           : "bg-white/5 border-white/10 text-slate-500 hover:border-white/20 whitespace-nowrap"
+                       )}
+                     >
+                       {service.label}
+                     </button>
+                   ))}
                  </div>
               </div>
 

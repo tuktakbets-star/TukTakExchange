@@ -73,18 +73,20 @@ export default function AdminPanel() {
 
   const handleApproveTransaction = async (tx: any) => {
     try {
-      await firebaseService.updateDocument('transactions', tx.id, { status: 'completed', updatedAt: new Date().toISOString() });
-      if (tx.type === 'deposit') {
-        const walletId = `${tx.uid}_${tx.currency}`;
-        const wallet = wallets.find(w => w.id === walletId);
-        const currentBalance = wallet?.balance || 0;
-        await firebaseService.setDocument('wallets', walletId, {
-          uid: tx.uid,
-          currency: tx.currency,
-          balance: currentBalance + tx.amount,
-          updatedAt: new Date().toISOString()
-        });
+      const amount = tx.amount || 0;
+      const totalToDeduct = tx.total_to_deduct || tx.totalToDeduct || amount;
+      const isAddMoney = tx.type === 'deposit' || tx.type === 'add_money' || tx.type === 'cash_in';
+
+      // 1. Update User Wallet
+      if (isAddMoney) {
+        await firebaseService.updateWalletBalance(tx.uid, tx.currency, amount, 0);
+      } else {
+        await firebaseService.updateWalletBalance(tx.uid, tx.currency, -totalToDeduct, -totalToDeduct);
       }
+
+      // 2. Update Transaction status
+      await firebaseService.updateDocument('transactions', tx.id, { status: 'completed', updatedAt: new Date().toISOString() });
+      
       toast.success('Transaction approved');
     } catch (error) {
       toast.error('Failed to approve');
@@ -94,11 +96,11 @@ export default function AdminPanel() {
   const handleMarkAsPaid = async (tx: any) => {
     try {
       await firebaseService.updateDocument('transactions', tx.id, { 
-        status: 'completed', 
+        status: 'waiting_confirmation', 
         adminProof: 'https://picsum.photos/seed/proof/400/300',
         updatedAt: new Date().toISOString() 
       });
-      toast.success('Marked as paid and proof uploaded');
+      toast.success('Marked as paid. Waiting for user confirmation.');
     } catch (error) {
       toast.error('Failed to update');
     }
@@ -106,19 +108,20 @@ export default function AdminPanel() {
 
   const handleRefund = async (tx: any) => {
     try {
+      const amount = tx.amount || 0;
+      const totalToDeduct = tx.total_to_deduct || tx.totalToDeduct || amount;
+      const needsLockedRefund = tx.type === 'send' || tx.type === 'withdraw' || tx.type === 'recharge' || tx.type === 'exchange';
+
+      if (needsLockedRefund) {
+        // Release locked balance
+        await firebaseService.updateWalletBalance(tx.uid, tx.currency, 0, -totalToDeduct);
+      }
+
       await firebaseService.updateDocument('transactions', tx.id, { 
         status: 'failed', 
         updatedAt: new Date().toISOString() 
       });
-      // Logic to return balance if it was deducted
-      if (tx.type === 'send' || tx.type === 'withdraw' || tx.type === 'recharge') {
-        const walletId = `${tx.uid}_${tx.currency}`;
-        const wallet = wallets.find(w => w.id === walletId);
-        await firebaseService.updateDocument('wallets', walletId, {
-          balance: (wallet?.balance || 0) + tx.amount,
-          updatedAt: new Date().toISOString()
-        });
-      }
+      
       toast.success('Transaction refunded');
     } catch (error) {
       toast.error('Failed to refund');

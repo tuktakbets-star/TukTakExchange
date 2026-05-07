@@ -193,7 +193,15 @@ export default function AdminNotifications() {
                   exit={{ opacity: 0, x: -20 }}
                   transition={{ delay: idx * 0.05 }}
                 >
-                  <Card className="glass-dark border-white/5 rounded-3xl p-6 group">
+                  <Card className="glass-dark border-white/5 rounded-3xl p-6 group relative">
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="absolute top-4 right-4 text-slate-600 hover:text-red-500 hover:bg-red-500/10 rounded-xl opacity-0 group-hover:opacity-100 transition-all z-10"
+                      onClick={() => handleDelete(notif.id)}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
                     <div className="flex justify-between items-start mb-4">
                       <div className="flex items-center gap-3">
                         <div className={cn(
@@ -216,14 +224,6 @@ export default function AdminNotifications() {
                           </div>
                         </div>
                       </div>
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="text-slate-600 hover:text-red-500 hover:bg-red-500/10 rounded-xl opacity-0 group-hover:opacity-100 transition-all"
-                        onClick={() => handleDelete(notif.id)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
                     </div>
                     <p className="text-slate-400 text-sm leading-relaxed bg-white/5 p-4 rounded-2xl border border-white/5">
                       {notif.message}

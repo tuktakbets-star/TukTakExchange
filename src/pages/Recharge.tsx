@@ -121,11 +121,8 @@ export default function Recharge() {
       const docId = await firebaseService.addDocument('transactions', tx);
       
       if (docId) {
-        // Deduct from wallet
-        await firebaseService.updateDocument('wallets', wallet.id, {
-          balance: wallet.balance - Number(amount),
-          updatedAt: new Date().toISOString()
-        });
+        // Lock balance instead of direct deduction
+        await firebaseService.updateWalletBalance(profile?.uid!, 'VND', 0, Number(amount));
 
         toast.success(t('recharge_submitted'));
         navigate(`/waiting/${docId}`);

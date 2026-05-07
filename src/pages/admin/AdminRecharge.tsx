@@ -8,7 +8,8 @@ import {
   XCircle, 
   Smartphone,
   Globe,
-  Phone
+  Phone,
+  Trash2
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -57,6 +58,8 @@ export default function AdminRecharge() {
     try {
       await firebaseService.updateDocument('transactions', tx.id, { 
         status: 'paid', 
+        paidAt: new Date().toISOString(),
+        paid_at: new Date().toISOString(),
         updatedAt: new Date().toISOString() 
       });
       toast.success('Marked as Paid');
@@ -71,6 +74,38 @@ export default function AdminRecharge() {
       description: t('complete_recharge_msg'),
       onConfirm: async () => {
         try {
+          const amount = tx.amount || 0;
+          const totalToDeduct = tx.total_to_deduct || tx.totalToDeduct || amount;
+
+          // 1. Finalize Balance Deduction (Move from pendingLocked to real deduction)
+          await firebaseService.updateWalletBalance(tx.uid, tx.currency, -totalToDeduct, -totalToDeduct);
+
+          // 2. CRITICAL: Update sub-admin balance if assigned
+          if (tx.assigned_sub_admin_id) {
+            const { data: subAdmin } = await firebaseService.getDocument('sub_admins', tx.assigned_sub_admin_id);
+            if (subAdmin) {
+              const amount = tx.amount || 0;
+              const totalToDeduct = tx.total_to_deduct || tx.totalToDeduct || amount;
+              const newSaBalance = (subAdmin.wallet_balance || subAdmin.vnd_balance || 0) + totalToDeduct;
+              
+              await firebaseService.updateDocument('sub_admins', tx.assigned_sub_admin_id, {
+                wallet_balance: newSaBalance,
+                vnd_balance: newSaBalance,
+                updated_at: new Date().toISOString()
+              });
+              
+              await firebaseService.addDocument('sub_admin_wallet_transactions', {
+                sub_admin_id: tx.assigned_sub_admin_id,
+                type: 'credit',
+                amount: totalToDeduct,
+                reason: `Recharge #${tx.id} completed by admin`,
+                order_id: tx.id,
+                balance_after: newSaBalance,
+                created_at: new Date().toISOString()
+              });
+            }
+          }
+
           await firebaseService.updateDocument('transactions', tx.id, { 
             status: 'completed', 
             updatedAt: new Date().toISOString() 
@@ -103,20 +138,17 @@ export default function AdminRecharge() {
       onConfirm: async () => {
         try {
           const reason = 'Invalid phone number or operator';
+          const amount = tx.amount || 0;
+          const totalToDeduct = tx.total_to_deduct || tx.totalToDeduct || amount;
+
+          // 1. Refund Locked Balance
+          await firebaseService.updateWalletBalance(tx.uid, tx.currency, 0, -totalToDeduct);
+
           await firebaseService.updateDocument('transactions', tx.id, { 
             status: 'failed', 
             rejectionReason: reason,
             updatedAt: new Date().toISOString() 
           });
-
-          const walletId = `${tx.uid}_${tx.currency}`;
-          const { data: walletDoc } = await firebaseService.getDocument('wallets', walletId);
-          if (walletDoc) {
-            await firebaseService.updateDocument('wallets', walletId, {
-              balance: (walletDoc.balance || 0) + tx.amount,
-              updatedAt: new Date().toISOString()
-            });
-          }
 
           await firebaseService.addDocument('notifications', {
             uid: tx.uid,
@@ -135,6 +167,16 @@ export default function AdminRecharge() {
       }
     });
     setIsConfirmOpen(true);
+  };
+
+  const handleDeleteTransaction = async (txId: string) => {
+    if (!confirm('Are you sure you want to delete this transaction record? This only removes the record from the history, it does not refund balance.')) return;
+    try {
+      await firebaseService.deleteDocument('transactions', txId);
+      toast.success('Transaction record deleted');
+    } catch (error) {
+      toast.error('Failed to delete transaction');
+    }
   };
 
   const filteredRequests = requests.filter(req => {
@@ -257,8 +299,14 @@ export default function AdminRecharge() {
                               {t('mark_as_paid')}
                             </Button>
                           )}
-                          {tx.status === 'paid' && (
-                            <span className="text-blue-400 text-xs italic">Waiting for User Confirmation</span>
+                          {(tx.status === 'paid' || tx.status === 'mark_as_paid' || tx.status === 'waiting_confirmation') && (
+                            <Button 
+                              size="sm" 
+                              className="bg-green-600 hover:bg-green-500 h-9 px-4 rounded-xl font-bold"
+                              onClick={() => handleComplete(tx)}
+                            >
+                              Complete
+                            </Button>
                           )}
                           {tx.status === 'completed' && (
                             <span className="text-green-500 text-xs font-bold flex items-center gap-1 justify-end">
@@ -269,6 +317,14 @@ export default function AdminRecharge() {
                           {(tx.status === 'failed' || tx.status === 'rejected' || tx.status === 'cancelled') && (
                             <span className="text-red-500 text-xs italic">{tx.status === 'cancelled' ? 'User Cancelled' : t('failed')}</span>
                           )}
+                          <Button 
+                            size="icon" 
+                            variant="ghost" 
+                            className="text-slate-500 hover:text-red-500 hover:bg-red-500/10 h-9 w-9 rounded-xl"
+                            onClick={() => handleDeleteTransaction(tx.id)}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
                         </div>
                       </td>
                     </motion.tr>
