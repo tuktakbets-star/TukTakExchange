@@ -15,7 +15,9 @@ import {
   X,
   Globe,
   CircleDollarSign,
-  UserCircle
+  UserCircle,
+  Camera,
+  Eye
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -25,7 +27,12 @@ import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 
+import { ImageViewer } from '@/components/ImageViewer';
+
+import { useNavigate } from 'react-router-dom';
+
 export default function OperatorWallet() {
+  const navigate = useNavigate();
   const [operator, setOperator] = useState<any>(null);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,13 +43,29 @@ export default function OperatorWallet() {
     balanceType: 'VND',
     accountType: 'Bkash',
     withdrawalAccountName: '',
-    withdrawalAccountNumber: ''
+    withdrawalAccountNumber: '',
+    tx_id: ''
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [step, setStep] = useState(1);
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [password, setPassword] = useState('');
+  const [adminBanks, setAdminBanks] = useState<any[]>([]);
 
   useEffect(() => {
     fetchData();
+    fetchAdminBanks();
   }, []);
+
+  const [isViewerOpen, setIsViewerOpen] = useState(false);
+  const [viewerSrc, setViewerSrc] = useState<string | null>(null);
+  const [selectedTx, setSelectedTx] = useState<any>(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
+
+  const fetchAdminBanks = async () => {
+    const data = await supabaseService.getCollection('admin_banks', [where('status', '==', 'active')]);
+    if (data) setAdminBanks(data);
+  };
 
   const fetchData = async () => {
     const sessionStr = sessionStorage.getItem('operator_session');
@@ -56,11 +79,76 @@ export default function OperatorWallet() {
 
     // Fetch wallet transactions
     supabaseService.subscribeToCollection('sub_admin_wallet_transactions', [
-      where('sub_admin_id', '==', session.id)
+      where('sub_admin_id', '==', session.id && !isNaN(Number(session.id)) ? Number(session.id) : session.id),
+      orderBy('created_at', 'desc')
     ], (updated) => setTransactions(updated));
     
     setLoading(false);
   };
+
+  const getTodayFlow = () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const todayTxs = transactions.filter(tx => new Date(tx.created_at) >= today);
+    const credit = todayTxs.filter(tx => tx.type === 'credit').reduce((acc, tx) => acc + Number(tx.amount), 0);
+    const debit = todayTxs.filter(tx => tx.type === 'debit').reduce((acc, tx) => acc + Number(tx.amount), 0);
+    
+    return { credit, debit };
+  };
+
+  const handleFinalSubmit = async () => {
+    if (!password) {
+      toast.error('Please enter your password');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      if (!operator?.id) {
+        toast.error('Session error. Please login again.');
+        return;
+      }
+
+      const numAmount = Number(requestForm.amount);
+      
+      let proofUrl = '';
+      if (proofFile) {
+        proofUrl = await supabaseService.uploadFile(proofFile);
+      }
+
+      const requestPayload = {
+        sub_admin_id: Number(operator.id),
+        username: operator.username,
+        type: requestDialog.type,
+        amount: numAmount,
+        country: requestForm.country,
+        balance_type: requestForm.balanceType,
+        account_type: requestForm.accountType,
+        withdrawal_account_name: requestForm.withdrawalAccountName,
+        withdrawal_account_number: requestForm.withdrawalAccountNumber,
+        proof_url: proofUrl,
+        tx_id: requestForm.tx_id || '',
+        admin_bank_info: adminBanks[0] || null,
+        status: 'pending',
+        created_at: new Date().toISOString()
+      };
+
+      await supabaseService.addDocument('operator_balance_requests', requestPayload);
+      
+      toast.success('Request sent successfully!');
+      setRequestDialog(prev => ({ ...prev, open: false }));
+      
+      // Navigate using the saved state or params
+      navigate(`/operator/status?id=${operator.id}&type=${requestDialog.type}&amount=${numAmount}&currency=${requestForm.balanceType}`);
+    } catch (e) {
+      toast.error('Failed to send request');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const flow = getTodayFlow();
 
   if (loading) {
     return <div className="min-h-[400px] flex items-center justify-center">
@@ -96,7 +184,7 @@ export default function OperatorWallet() {
                       <span className="text-[10px] sm:text-xs font-black text-slate-500 uppercase tracking-[0.2em] sm:tracking-[0.3em]">Current Working Balance</span>
                    </div>
                    <div className="flex items-baseline gap-2">
-                     <span className="text-3xl sm:text-6xl font-black text-white tracking-tighter shadow-blue-500/20">₫{(operator?.wallet_balance || 0).toLocaleString()}</span>
+                     <span className="text-3xl sm:text-6xl font-black text-white tracking-tighter shadow-blue-500/20">{operator?.balance_type === 'BDT' ? '৳' : operator?.balance_type === 'USDT' ? '$' : '₫'}{(operator?.wallet_balance || 0).toLocaleString()}</span>
                    </div>
                    <div className="inline-flex items-center gap-2 px-3 py-1 bg-green-500/10 border border-green-500/20 rounded-full">
                       <ShieldCheck className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-green-500" />
@@ -146,11 +234,11 @@ export default function OperatorWallet() {
                  <div className="space-y-2">
                     <div className="flex justify-between items-center">
                        <span className="text-white/60 text-[10px] sm:text-xs font-bold tracking-tight">Total Credit (+)</span>
-                       <span className="text-base sm:text-lg font-black text-white">+৳2,400</span>
+                       <span className="text-base sm:text-lg font-black text-white">+{operator?.balance_type || '₫'}{flow.credit.toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between items-center pt-2 border-t border-white/10">
                        <span className="text-white/60 text-[10px] sm:text-xs font-bold tracking-tight">Total Debit (-)</span>
-                       <span className="text-base sm:text-lg font-black text-white">-৳1,800</span>
+                       <span className="text-base sm:text-lg font-black text-white">-{operator?.balance_type || '₫'}{flow.debit.toLocaleString()}</span>
                     </div>
                  </div>
               </div>
@@ -190,6 +278,7 @@ export default function OperatorWallet() {
                       <th className="px-6 py-4 text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">Type</th>
                       <th className="px-6 py-4 text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">Amount</th>
                       <th className="px-6 py-4 text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">Reason / Order</th>
+                      <th className="px-6 py-4 text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap text-center">Proof</th>
                       <th className="px-6 py-4 text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right whitespace-nowrap">Balance</th>
                    </tr>
                  </thead>
@@ -211,17 +300,34 @@ export default function OperatorWallet() {
                             <span className={cn(
                               tx.type === 'credit' ? "text-green-500" : "text-red-500"
                             )}>
-                               {tx.type === 'credit' ? '+' : '-'}৳{tx.amount}
+                               {tx.type === 'credit' ? '+' : '-'}{operator?.balance_type === 'BDT' ? '৳' : operator?.balance_type === 'USDT' ? '$' : '₫'}{Number(tx.amount || 0).toLocaleString()}
                             </span>
                          </td>
                          <td className="px-6 py-4">
-                            <div className="flex flex-col">
+                            <div 
+                                className="flex flex-col cursor-pointer hover:opacity-80 transition-opacity"
+                                onClick={() => { setSelectedTx(tx); setIsDetailOpen(true); }}
+                             >
                                <span className="text-slate-200 font-bold truncate max-w-[120px]">{tx.reason}</span>
-                               <span className="text-[9px] font-bold text-blue-500 mt-0.5">#{tx.order_id?.slice(0, 8)}</span>
+                               <span className="text-[9px] font-bold text-blue-500 mt-0.5">#{String(tx.order_id || tx.id || '').slice(0, 8)}</span>
                             </div>
                          </td>
+                         <td className="px-6 py-4 text-center">
+                            {(tx.proof_url || tx.metadata?.proof_url) ? (
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="w-8 h-8 text-slate-500 hover:text-blue-500 rounded-full"
+                                onClick={() => { setViewerSrc(tx.proof_url || tx.metadata?.proof_url); setIsViewerOpen(true); }}
+                              >
+                                <Eye className="w-4 h-4" />
+                              </Button>
+                            ) : (
+                              <span className="text-[10px] text-slate-600 italic">None</span>
+                            )}
+                         </td>
                          <td className="px-6 py-4 text-right">
-                             <span className="font-black text-white">৳{(tx.balance_after || 0).toLocaleString()}</span>
+                             <span className="font-black text-white">{operator?.balance_type === 'BDT' ? '৳' : operator?.balance_type === 'USDT' ? '$' : '₫'}{(tx.balance_after || 0).toLocaleString()}</span>
                          </td>
                       </tr>
                     ))}
@@ -231,9 +337,25 @@ export default function OperatorWallet() {
         </div>
       </div>
 
-      <Dialog open={requestDialog.open} onOpenChange={(open) => !isSubmitting && setRequestDialog(prev => ({ ...prev, open }))}>
+      <Dialog open={requestDialog.open} onOpenChange={(open) => {
+        if (!isSubmitting) {
+          setRequestDialog(prev => ({ ...prev, open }));
+          setStep(1);
+          setProofFile(null);
+          setPassword('');
+          setRequestForm({
+            amount: '',
+            country: 'Bangladesh',
+            balanceType: 'VND',
+            accountType: 'Bkash',
+            withdrawalAccountName: '',
+            withdrawalAccountNumber: '',
+            tx_id: ''
+          });
+        }
+      }}>
         <DialogContent className="max-w-md bg-[#0d1117] border-white/5 text-white p-0 overflow-hidden rounded-[2.5rem]">
-          <div className="p-8 space-y-8">
+          <div className="p-8 space-y-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <div className={cn(
@@ -244,7 +366,7 @@ export default function OperatorWallet() {
                 </div>
                 <div>
                   <h3 className="text-xl font-display font-bold capitalize">{requestDialog.type} Balance</h3>
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest italic">Submit for Admin Approval</p>
+                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest italic">Step {step} of {requestDialog.type === 'refill' ? '3' : '2'}</p>
                 </div>
               </div>
               <Button 
@@ -257,31 +379,28 @@ export default function OperatorWallet() {
               </Button>
             </div>
 
-            <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Country</Label>
-                  <div className="relative">
-                    <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
+            {/* STEP 1: Basic Info */}
+            {step === 1 && (
+              <div className="space-y-6">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Country</Label>
                     <select 
                       value={requestForm.country}
                       onChange={(e) => setRequestForm(prev => ({ ...prev, country: e.target.value }))}
-                      className="w-full h-12 bg-white/5 border-white/10 pl-10 pr-4 rounded-xl text-xs font-bold appearance-none transition-all focus:ring-blue-500"
+                      className="w-full h-12 bg-white/5 border-white/10 px-4 rounded-xl text-xs font-bold appearance-none transition-all focus:ring-blue-500"
                     >
                       <option value="Bangladesh">Bangladesh</option>
                       <option value="Vietnam">Vietnam</option>
                       <option value="India">India</option>
                     </select>
                   </div>
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Balance Type</Label>
-                  <div className="relative">
-                    <CircleDollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Wallet Type</Label>
                     <select 
                       value={requestForm.balanceType}
                       onChange={(e) => setRequestForm(prev => ({ ...prev, balanceType: e.target.value }))}
-                      className="w-full h-12 bg-white/5 border-white/10 pl-10 pr-4 rounded-xl text-xs font-bold appearance-none transition-all focus:ring-blue-500"
+                      className="w-full h-12 bg-white/5 border-white/10 px-4 rounded-xl text-xs font-bold appearance-none transition-all focus:ring-blue-500"
                     >
                       <option value="VND">VND Wallet</option>
                       <option value="BDT">BDT Wallet</option>
@@ -289,119 +408,251 @@ export default function OperatorWallet() {
                     </select>
                   </div>
                 </div>
-              </div>
 
-              <div className="space-y-2">
-                <Label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Account / Method</Label>
-                <div className="relative">
-                  <UserCircle className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
-                  <select 
-                    value={requestForm.accountType}
-                    onChange={(e) => setRequestForm(prev => ({ ...prev, accountType: e.target.value }))}
-                    className="w-full h-12 bg-white/5 border-white/10 pl-10 pr-4 rounded-xl text-xs font-bold appearance-none transition-all focus:ring-blue-500"
-                  >
-                    <option value="Bkash">Bkash Personal</option>
-                    <option value="Nagad">Nagad Personal</option>
-                    <option value="Rocket">Rocket Personal</option>
-                    <option value="Momo">Momo (VND)</option>
-                    <option value="ZaloPay">ZaloPay (VND)</option>
-                    <option value="Bank">Direct Bank Transfer</option>
-                  </select>
-                </div>
-              </div>
-
-              {requestDialog.type === 'withdraw' && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Holder Name</Label>
-                    <Input 
-                      placeholder="Account holder..."
-                      value={requestForm.withdrawalAccountName}
-                      onChange={(e) => setRequestForm(prev => ({ ...prev, withdrawalAccountName: e.target.value }))}
-                      className="h-12 bg-white/5 border-white/10 rounded-xl text-xs font-bold px-4"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Account / Phone No</Label>
-                    <Input 
-                      placeholder="Account number..."
-                      value={requestForm.withdrawalAccountNumber}
-                      onChange={(e) => setRequestForm(prev => ({ ...prev, withdrawalAccountNumber: e.target.value }))}
-                      className="h-12 bg-white/5 border-white/10 rounded-xl text-xs font-bold px-4"
-                    />
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-2">
-                <Label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Amount</Label>
-                <div className="relative">
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Amount ({requestForm.balanceType})</Label>
                   <Input 
                     type="number"
-                    placeholder="Enter amount..."
+                    placeholder="0.00"
                     value={requestForm.amount}
                     onChange={(e) => setRequestForm(prev => ({ ...prev, amount: e.target.value }))}
                     className="h-14 bg-white/5 border-white/10 rounded-2xl text-xl font-display font-bold text-white px-6 transition-all focus:border-blue-500"
                   />
-                  <div className="absolute right-4 top-1/2 -translate-y-1/2 px-3 py-1 bg-white/10 rounded-lg text-[10px] font-black text-blue-400">
-                    {requestForm.balanceType === 'BDT' ? '৳' : '₫'}
+                </div>
+
+                {requestDialog.type === 'withdraw' && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Account Holder</Label>
+                        <Input 
+                          value={requestForm.withdrawalAccountName}
+                          onChange={(e) => setRequestForm(prev => ({ ...prev, withdrawalAccountName: e.target.value }))}
+                          className="h-12 bg-white/5 border-white/10 rounded-xl text-xs font-bold"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Account No</Label>
+                        <Input 
+                          value={requestForm.withdrawalAccountNumber}
+                          onChange={(e) => setRequestForm(prev => ({ ...prev, withdrawalAccountNumber: e.target.value }))}
+                          className="h-12 bg-white/5 border-white/10 rounded-xl text-xs font-bold"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <Button 
+                  onClick={() => setStep(2)}
+                  disabled={!requestForm.amount || Number(requestForm.amount) <= 0}
+                  className="w-full h-14 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black uppercase tracking-widest"
+                >
+                  Continue to Step 2
+                </Button>
+              </div>
+            )}
+
+            {/* STEP 2: Payment Info / Bank Detail */}
+            {step === 2 && (
+              <div className="space-y-6">
+                {requestDialog.type === 'refill' ? (
+                  <div className="space-y-4">
+                    <Label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Send funds to Admin</Label>
+                    <div className="p-4 bg-white/5 border border-white/5 rounded-3xl space-y-3">
+                      {adminBanks.length > 0 ? (
+                        <div className="space-y-4">
+                          <img src={adminBanks[0].qrCode || adminBanks[0].photo} className="w-full aspect-video object-contain bg-black/40 rounded-2xl" />
+                          <div className="space-y-1">
+                            <p className="text-xs font-bold text-slate-400 capitalize">{adminBanks[0].bankName}</p>
+                            <p className="text-sm font-black text-white">{adminBanks[0].accountNumber}</p>
+                            <p className="text-[10px] text-slate-500 italic">Holder: {adminBanks[0].accountHolder}</p>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-500 italic p-4 text-center">No admin account information available.</p>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <Label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Upload Photo & Confirm</Label>
+                    <div className="space-y-4">
+                      <div className="relative aspect-video rounded-3xl border-2 border-dashed border-white/10 bg-white/5 flex items-center justify-center overflow-hidden cursor-pointer hover:border-blue-500/50 transition-all">
+                        <input 
+                          type="file" 
+                          className="absolute inset-0 opacity-0 cursor-pointer" 
+                          onChange={(e) => setProofFile(e.target.files?.[0] || null)}
+                        />
+                        {proofFile ? (
+                          <img src={URL.createObjectURL(proofFile)} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="flex flex-col items-center gap-2">
+                             <Camera className="w-8 h-8 text-slate-600" />
+                             <p className="text-[10px] font-bold text-slate-500 uppercase">Upload Withdrawal Method Photo</p>
+                          </div>
+                        )}
+                      </div>
+                      <div className="p-6 bg-red-500/5 border border-red-500/10 rounded-3xl space-y-4">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-slate-500 font-bold">Withdraw Amount</span>
+                          <span className="text-white font-black">{Number(requestForm.amount).toLocaleString()} {requestForm.balanceType}</span>
+                        </div>
+                        <Input 
+                          type="password"
+                          placeholder="Enter login password to confirm"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          className="h-12 bg-black/40 border-white/10 rounded-xl"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                <div className="flex gap-3">
+                  <Button variant="ghost" onClick={() => setStep(1)} className="flex-1 h-12 bg-white/5 font-bold">Back</Button>
+                  <Button 
+                    onClick={() => requestDialog.type === 'refill' ? setStep(3) : handleFinalSubmit()}
+                    disabled={requestDialog.type === 'withdraw' && !password}
+                    className={cn(
+                      "flex-[2] h-12 font-black uppercase tracking-widest",
+                      requestDialog.type === 'withdraw' ? "bg-red-600 hover:bg-red-500" : "bg-blue-600 hover:bg-blue-500"
+                    )}
+                  >
+                    {requestDialog.type === 'refill' ? 'Next: Upload Proof' : 'Confirm Withdrawal'}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 3 (Refill Only): Upload Proof */}
+            {step === 3 && (
+              <div className="space-y-6">
+                <div className="space-y-4">
+                  <Label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Transaction Proof</Label>
+                  <div className="grid grid-cols-1 gap-4">
+                    <div className="relative aspect-video rounded-3xl border-2 border-dashed border-white/10 bg-white/5 flex items-center justify-center overflow-hidden cursor-pointer hover:border-blue-500/50 transition-all">
+                      <input 
+                        type="file" 
+                        className="absolute inset-0 opacity-0 cursor-pointer" 
+                        onChange={(e) => setProofFile(e.target.files?.[0] || null)}
+                      />
+                      {proofFile ? (
+                        <img src={URL.createObjectURL(proofFile)} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="flex flex-col items-center gap-2">
+                           <Camera className="w-8 h-8 text-slate-600" />
+                           <p className="text-[10px] font-bold text-slate-500 uppercase">Upload Payment Screenshot</p>
+                        </div>
+                      )}
+                    </div>
+                    <Input 
+                      placeholder="Transaction ID (Optional)"
+                      className="h-12 bg-white/5 border-white/10 rounded-xl"
+                      value={requestForm.tx_id || ''}
+                      onChange={(e) => setRequestForm(prev => ({ ...prev, tx_id: e.target.value }))}
+                    />
+                    <Input 
+                      type="password"
+                      placeholder="Confirm with Password"
+                      className="h-12 bg-white/5 border-white/10 rounded-xl"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                    />
                   </div>
                 </div>
-              </div>
 
-              <div className="p-4 bg-amber-500/5 border border-amber-500/10 rounded-2xl">
                 <div className="flex gap-3">
-                  <Info className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-                  <p className="text-[10px] font-bold text-slate-500 italic leading-tight">
-                    Your request will be sent to the administrator panel for verification. Please wait for the confirmation.
-                  </p>
+                  <Button variant="ghost" onClick={() => setStep(2)} className="flex-1 h-12 bg-white/5 font-bold">Back</Button>
+                  <Button 
+                    onClick={handleFinalSubmit}
+                    disabled={isSubmitting || !proofFile || !password}
+                    className="flex-[2] h-12 bg-green-600 hover:bg-green-500 font-black uppercase tracking-widest"
+                  >
+                    {isSubmitting ? 'Submitting...' : 'Submit Request'}
+                  </Button>
                 </div>
               </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+      
+      <ImageViewer 
+        isOpen={isViewerOpen}
+        onClose={() => setIsViewerOpen(false)}
+        src={viewerSrc || ''}
+      />
+
+      <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
+        <DialogContent className="max-w-md bg-[#0d1117] border-white/5 text-white p-0 overflow-hidden rounded-[2.5rem]">
+          <div className="p-8 space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-display font-black uppercase italic tracking-widest text-blue-500">Transaction Details</h2>
+              <Button variant="ghost" size="icon" onClick={() => setIsDetailOpen(false)} className="rounded-full bg-white/5">
+                <X className="w-4 h-4" />
+              </Button>
             </div>
 
-            <Button 
-              disabled={isSubmitting || !requestForm.amount || Number(requestForm.amount) <= 0}
-              onClick={async () => {
-                setIsSubmitting(true);
-                try {
-                  const numAmount = Number(requestForm.amount);
-                  if (requestDialog.type === 'withdraw' && numAmount > (operator?.wallet_balance || 0)) {
-                    toast.error('Insufficient balance');
-                    setIsSubmitting(false);
-                    return;
-                  }
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 bg-white/5 border border-white/5 rounded-2xl">
+                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 italic">Type</p>
+                  <p className={cn(
+                    "text-xs font-black uppercase tracking-widest italic",
+                    selectedTx?.type === 'credit' ? "text-green-500" : "text-red-500"
+                  )}>{selectedTx?.type}</p>
+                </div>
+                <div className="p-4 bg-white/5 border border-white/5 rounded-2xl">
+                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 italic">Amount</p>
+                  <p className="text-sm font-black text-white italic">{operator?.balance_type === 'BDT' ? '৳' : operator?.balance_type === 'USDT' ? '$' : '₫'}{Number(selectedTx?.amount || 0).toLocaleString()}</p>
+                </div>
+              </div>
 
-                  await supabaseService.addDocument('operator_balance_requests', {
-                    sub_admin_id: operator.id,
-                    username: operator.username,
-                    type: requestDialog.type,
-                    amount: numAmount,
-                    country: requestForm.country,
-                    balance_type: requestForm.balanceType,
-                    account_type: requestForm.accountType,
-                    withdrawal_account_name: requestForm.withdrawalAccountName,
-                    withdrawal_account_number: requestForm.withdrawalAccountNumber,
-                    status: 'pending',
-                    created_at: new Date().toISOString()
-                  });
-                  
-                  toast.success(`${requestDialog.type === 'refill' ? 'Refill' : 'Withdrawal'} request sent successfully!`);
-                  setRequestDialog(prev => ({ ...prev, open: false }));
-                } catch (e) {
-                  toast.error('Failed to send request');
-                } finally {
-                  setIsSubmitting(false);
-                }
-              }}
-              className={cn(
-                "w-full h-16 rounded-3xl font-black uppercase tracking-[0.2em] transition-all",
-                requestDialog.type === 'refill' 
-                  ? "bg-green-600 hover:bg-green-500 text-white shadow-lg shadow-green-600/20" 
-                  : "bg-white text-slate-950 hover:bg-slate-200"
+              <div className="p-4 bg-white/5 border border-white/5 rounded-2xl space-y-2">
+                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest italic">Reason / Info</p>
+                <p className="text-xs font-bold text-slate-200 leading-relaxed italic">{selectedTx?.reason}</p>
+              </div>
+
+              {selectedTx?.metadata && (
+                <div className="p-6 bg-blue-600/5 border border-blue-600/10 rounded-2xl space-y-4">
+                  <h4 className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-2 italic border-b border-blue-500/10 pb-2">Full Information</h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    {Object.entries(selectedTx.metadata).map(([key, value]) => (
+                      <div key={key}>
+                        <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest italic capitalize">{key.replace('_', ' ')}</p>
+                        <p className="text-[11px] font-bold text-white truncate italic">{String(value || 'N/A')}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
-            >
-              {isSubmitting ? 'Processing...' : `Submit ${requestDialog.type} Request`}
-            </Button>
+
+              {(() => {
+                const proof = selectedTx?.proof_url || selectedTx?.metadata?.proof_url;
+                if (!proof) return null;
+                return (
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest italic ml-1">Payment Proof</p>
+                    <div 
+                      className="relative aspect-video rounded-2xl overflow-hidden border border-white/10 cursor-pointer group"
+                      onClick={() => { setViewerSrc(proof); setIsViewerOpen(true); }}
+                    >
+                      <img src={proof} alt="Proof" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Eye className="w-8 h-8 text-white" />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <div className="flex justify-between items-center px-2 py-1">
+                <span className="text-[10px] font-bold text-slate-600 italic uppercase">Transaction Time</span>
+                <span className="text-[10px] font-black text-slate-400 italic">{selectedTx?.created_at && new Date(selectedTx.created_at).toLocaleString()}</span>
+              </div>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

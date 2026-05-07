@@ -119,11 +119,9 @@ export default function WaitingPage() {
         if (subAdmin) {
           const currentBal = Number(subAdmin.wallet_balance || 0);
           
-          // Determine if this should be a credit or debit for the sub-admin
-          // For Add Money/Cash In: Admin sends money to user (DEBIT)
-          // For Exchange/Withdraw/Recharge: Admin sends money to user (DEBIT)
-          // Basically, in almost all flows where sub-admin acts as agent, they are providing funds.
-          const isDebit = true; 
+          // Logic: Add Money/Cash In = Debit (Decrease), Exchange/Withdraw/Recharge = Credit (Increase)
+          const isAddMoney = tx.type === 'add_money' || tx.type === 'cash_in';
+          const isDebit = isAddMoney; 
           
           // Detect VND amount specifically
           const bdtAmount = tx.amount || 0;

@@ -168,7 +168,7 @@ export default function OperatorAddMoney({ type = 'add_money' }: { type?: 'add_m
       await supabaseService.updateDocument('transactions', selectedOrder.id, {
         status: 'completed',
         admin_proof: proofUrl,
-        sub_admin_action: 'completed',
+        sub_admin_action: 'finalize_completed',
         sub_admin_actioned_at: new Date().toISOString(),
         paid_at: new Date().toISOString(),
         updated_at: new Date().toISOString()

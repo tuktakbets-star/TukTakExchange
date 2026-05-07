@@ -916,23 +916,51 @@ export default function Wallet() {
                                   <span className="text-slate-500">Type</span>
                                   <span className="capitalize">{tx.type}</span>
                                 </div>
-                                {tx.receiverInfo && (
-                                  <div className="flex justify-between text-sm">
-                                    <span className="text-slate-500">Receiver</span>
-                                    <span>{tx.receiverInfo.name}</span>
-                                  </div>
-                                )}
+                                {(() => {
+                                  const info = tx.receiverInfo || tx.receiver_info || tx.bankInfo || tx.bank_info || tx;
+                                  if (!info || (!info.name && !info.accountName && !info.bankName && !info.method && !info.accountNumber && !info.number && !info.account)) return null;
+                                  return (
+                                    <>
+                                      <div className="flex justify-between text-sm">
+                                        <span className="text-slate-500">Receiver</span>
+                                        <span>{info.name || info.accountName || info.withdrawal_account_name || 'N/A'}</span>
+                                      </div>
+                                      <div className="flex justify-between text-sm">
+                                        <span className="text-slate-500">Destination</span>
+                                        <span className="text-blue-400">{info.bankName || info.method || info.accountType || tx.account_type || tx.accountType || 'N/A'}</span>
+                                      </div>
+                                      <div className="flex justify-between text-sm">
+                                        <span className="text-slate-500">Account</span>
+                                        <span className="font-mono">{info.accountNumber || info.number || info.account || info.withdrawal_account_number || 'N/A'}</span>
+                                      </div>
+                                    </>
+                                  );
+                                })()}
                               </div>
 
-                              {tx.proofUrl && (
+                              {(tx.proofUrl || tx.proof_url || tx.admin_proof || tx.adminProof || tx.metadata?.proof_url) && (
                                 <div className="space-y-2">
-                                  <p className="text-xs text-slate-500 uppercase font-bold tracking-widest">Payment Proof</p>
+                                  <p className="text-xs text-slate-500 uppercase font-bold tracking-widest">
+                                    {(tx.admin_proof || tx.adminProof) ? 'Payment Receipt (Admin)' : 'Payment Proof (Sender)'}
+                                  </p>
                                   <div className="aspect-video rounded-xl bg-black/40 border border-white/5 flex items-center justify-center overflow-hidden relative group">
-                                    <img src={tx.proofUrl} alt="Proof" className="w-full h-full object-cover opacity-50 group-hover:opacity-100 transition-opacity" />
-                                    <Button variant="secondary" size="sm" className="absolute bg-slate-900/80 backdrop-blur-md border-white/10">
-                                      <Download className="w-4 h-4 mr-2" />
-                                      Download
-                                    </Button>
+                                    <img 
+                                      src={tx.admin_proof || tx.adminProof || tx.proofUrl || tx.proof_url || tx.metadata?.proof_url} 
+                                      alt="Proof" 
+                                      className="w-full h-full object-cover opacity-50 group-hover:opacity-100 transition-opacity" 
+                                      referrerPolicy="no-referrer"
+                                    />
+                                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                       <Button 
+                                         variant="secondary" 
+                                         size="sm" 
+                                         className="bg-slate-900/80 backdrop-blur-md border-white/10"
+                                         onClick={() => window.open(tx.admin_proof || tx.adminProof || tx.proofUrl || tx.proof_url, '_blank')}
+                                       >
+                                         <Eye className="w-4 h-4 mr-2" />
+                                         View Full
+                                       </Button>
+                                    </div>
                                   </div>
                                 </div>
                               )}

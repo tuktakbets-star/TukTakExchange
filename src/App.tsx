@@ -52,13 +52,14 @@ import OperatorMessages from './pages/operator/OperatorMessages';
 import OperatorHistory from './pages/operator/OperatorHistory';
 import OperatorWallet from './pages/operator/OperatorWallet';
 import OperatorProfile from './pages/operator/OperatorProfile';
+import OperatorStatus from './pages/operator/OperatorStatus';
 import Layout from './components/Layout';
 
 const ProtectedRoute = ({ children, adminOnly = false, operatorOnly = false }: { children: React.ReactNode, adminOnly?: boolean, operatorOnly?: boolean }) => {
   const { user, isAdmin, loading } = useAuth();
   const operatorSession = sessionStorage.getItem('operator_session');
 
-  if (loading) {
+  if (loading && !operatorSession) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-950 flex-col gap-4">
         <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
@@ -159,6 +160,7 @@ export default function App() {
                 <Route path="wallet" element={<OperatorWallet />} />
                 <Route path="appeal/:txId" element={<Appeal />} />
                 <Route path="profile" element={<OperatorProfile />} />
+                <Route path="status" element={<OperatorStatus />} />
               </Route>
               
               <Route path="*" element={<Navigate to="/" />} />

@@ -332,24 +332,41 @@ export default function OperatorHistory() {
                     </div>
                     <div className="flex justify-between items-center text-sm">
                       <span className="text-slate-500 font-bold">Method / Bank</span>
-                      <span className="text-white font-bold">{selectedOrder.method || selectedOrder.receiverInfo?.bankName || 'N/A'}</span>
+                      <span className="text-white font-bold">
+                        {(() => {
+                           const info = selectedOrder.receiverInfo || selectedOrder.receiver_info || selectedOrder.bankInfo || selectedOrder.bank_info || selectedOrder;
+                           return info?.bankName || info?.method || info?.accountType || selectedOrder.method || selectedOrder.account_type || selectedOrder.accountType || 'N/A';
+                        })()}
+                      </span>
                     </div>
                     <div className="flex justify-between items-center text-sm">
-                      <span className="text-slate-500 font-bold">Sender Number</span>
-                      <span className="text-blue-400 font-mono font-bold tracking-widest">{selectedOrder.senderNumber || selectedOrder.sender_number || 'N/A'}</span>
+                      <span className="text-slate-500 font-bold">Number</span>
+                      <span className="text-blue-400 font-mono font-bold tracking-widest">
+                        {(() => {
+                           const info = selectedOrder.receiverInfo || selectedOrder.receiver_info || selectedOrder.bankInfo || selectedOrder.bank_info || selectedOrder;
+                           const num = info?.accountNumber || info?.number || info?.account || info?.withdrawal_account_number || selectedOrder.senderNumber || selectedOrder.sender_number;
+                           return num || 'N/A';
+                        })()}
+                      </span>
                     </div>
-                    {selectedOrder.receiverInfo && (
-                      <div className="pt-4 border-t border-white/5 mt-4 space-y-4">
-                        <div className="flex justify-between items-center text-sm">
-                          <span className="text-slate-500 font-bold">Receiver Account</span>
-                          <span className="text-white font-bold">{selectedOrder.receiverInfo.accountNumber || selectedOrder.receiverInfo.account_number}</span>
+                    {(() => {
+                      const info = selectedOrder.receiverInfo || selectedOrder.receiver_info || selectedOrder.bankInfo || selectedOrder.bank_info || selectedOrder;
+                      if (!info || (!info.name && !info.accountName && !info.withdrawal_account_name && !selectedOrder.targetAmount)) return null;
+                      return (
+                        <div className="pt-4 border-t border-white/5 mt-4 space-y-4">
+                          <div className="flex justify-between items-center text-sm">
+                            <span className="text-slate-500 font-bold">Account Name</span>
+                            <span className="text-white font-bold">{info.name || info.accountName || info.withdrawal_account_name || 'N/A'}</span>
+                          </div>
+                          {selectedOrder.targetAmount && (
+                            <div className="flex justify-between items-center text-sm">
+                              <span className="text-slate-500 font-bold">Target Amount</span>
+                              <span className="text-green-400 font-black tracking-tight">{selectedOrder.targetAmount?.toLocaleString()} {selectedOrder.targetCurrency}</span>
+                            </div>
+                          )}
                         </div>
-                        <div className="flex justify-between items-center text-sm">
-                          <span className="text-slate-500 font-bold">Target Amount</span>
-                          <span className="text-green-400 font-black tracking-tight">{selectedOrder.targetAmount?.toLocaleString()} {selectedOrder.targetCurrency}</span>
-                        </div>
-                      </div>
-                    )}
+                      );
+                    })()}
                   </div>
                 </div>
 

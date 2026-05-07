@@ -131,21 +131,6 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
     toast.loading('Uploading proof and marking as paid...', { id: 'paid' });
     
     try {
-      // Check if operator has enough balance
-      const amount = Number(selectedOrder.amount || 0);
-      const targetAmount = Number(selectedOrder.target_amount || selectedOrder.targetAmount || 0);
-      
-      // Determine impact amount (using same logic as WaitingPage for consistency)
-      let impactAmount = amount;
-      if (selectedOrder.currency === 'VND') impactAmount = amount;
-      else if (selectedOrder.target_currency === 'VND') impactAmount = targetAmount;
-      
-      if (Number(operator?.wallet_balance || 0) < impactAmount) {
-        toast.error('Insufficient working balance! Please refill your wallet.', { id: 'paid' });
-        setIsSubmitting(false);
-        return;
-      }
-
       const proofUrl = await supabaseService.uploadFile(proofFile);
       
       await supabaseService.updateDocument('transactions', selectedOrder.id, {
@@ -294,24 +279,28 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
                   </td>
                   <td className="px-6 py-5">
                     <div className="text-xs space-y-1">
-                      {order.receiverInfo ? (
-                        <>
-                          <p className="font-bold text-slate-200">{order.receiverInfo.name}</p>
-                          <p className="text-slate-400">Bank: {order.receiverInfo.bankName || order.accountType}</p>
-                          <p className="text-white font-mono">{order.receiverInfo.accountNumber}</p>
-                          {order.receiverInfo.branch && <p className="text-slate-500 italic">Branch: {order.receiverInfo.branch}</p>}
-                          {order.receiverInfo.qrCode && (
-                            <button 
-                              onClick={() => { setSelectedOrder({ ...order, proofUrl: order.receiverInfo.qrCode }); setIsDocModalOpen(true); }}
-                              className="text-blue-500 text-[10px] font-bold mt-1"
-                            >
-                              View Receiver QR
-                            </button>
-                          )}
-                        </>
-                      ) : (
-                        <p className="text-slate-500 italic">No details found</p>
-                      )}
+                      {(() => {
+                        const info = order.receiverInfo || order.receiver_info || order.bankInfo || order.bank_info || order;
+                        if (!info || (!info.bankName && !info.method && !info.accountNumber && !info.number && !info.account && !order.accountType)) {
+                          return <p className="text-slate-500 italic">No details found</p>;
+                        }
+                        return (
+                          <>
+                            <p className="font-bold text-slate-200">{info.name || info.accountName || info.withdrawal_account_name || ''}</p>
+                            <p className="text-slate-400">Bank: {info.bankName || info.method || info.accountType || order.account_type || order.accountType || 'N/A'}</p>
+                            <p className="text-white font-mono">{info.accountNumber || info.number || info.account || info.withdrawal_account_number || 'N/A'}</p>
+                            {info.branch && <p className="text-slate-500 italic text-[10px]">Branch: {info.branch}</p>}
+                            {(info.qrCode || info.qr_code) && (
+                              <button 
+                                onClick={() => { setSelectedOrder({ ...order, proofUrl: info.qrCode || info.qr_code }); setIsDocModalOpen(true); }}
+                                className="text-blue-500 text-[10px] font-bold mt-1"
+                              >
+                                View Receiver QR
+                              </button>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                   </td>
                   <td className="px-6 py-5">
@@ -456,15 +445,25 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
                   <div className="overflow-hidden space-y-3">
                     <div>
                       <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">Receiver</p>
-                      <p className="text-xs font-bold text-slate-200 truncate">{order.receiverInfo?.name}</p>
-                      <p className="text-[10px] text-slate-500 truncate">{order.receiverInfo?.bankName}</p>
-                      <p className="text-[10px] font-mono text-blue-400 mt-1">{order.receiverInfo?.accountNumber || order.receiverInfo?.account}</p>
+                      {(() => {
+                        const info = order.receiverInfo || order.receiver_info || order.bankInfo || order.bank_info || order;
+                        if (!info || (!info.bankName && !info.method && !info.accountNumber && !info.number && !info.account && !order.accountType)) {
+                          return <p className="text-[10px] text-slate-500 italic">No details</p>;
+                        }
+                        return (
+                          <>
+                            <p className="text-xs font-bold text-slate-200 truncate">{info.name || info.accountName || info.withdrawal_account_name}</p>
+                            <p className="text-[10px] text-slate-500 truncate">{info.bankName || info.method || info.accountType || order.account_type || order.accountType || 'N/A'}</p>
+                            <p className="text-[10px] font-mono text-blue-400 mt-1">{info.accountNumber || info.number || info.account || info.withdrawal_account_number || 'N/A'}</p>
+                          </>
+                        );
+                      })()}
                     </div>
-                    {(order.userProof || order.proofUrl || order.docUrl || (order.receiverInfo?.qrCode) || order.receiver_info?.qrCode) && (
+                    {(order.userProof || order.proofUrl || order.docUrl || (order.receiverInfo?.qrCode) || order.receiver_info?.qrCode || (order.bankInfo?.qrCode)) && (
                       <button 
                         onClick={(e) => { 
                           e.stopPropagation();
-                          setSelectedOrder({ ...order, proofUrl: order.userProof || order.proofUrl || order.docUrl || (order.receiverInfo?.qrCode) || order.receiver_info?.qrCode }); 
+                          setSelectedOrder({ ...order, proofUrl: order.userProof || order.proofUrl || order.docUrl || (order.receiverInfo?.qrCode) || order.receiver_info?.qrCode || (order.bankInfo?.qrCode) }); 
                           setIsDocModalOpen(true); 
                         }}
                         className="flex items-center gap-2 text-blue-500 text-[10px] font-bold mt-1 bg-blue-500/10 px-3 py-1.5 rounded-lg border border-blue-500/20 active:scale-95 transition-all"
@@ -583,22 +582,26 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
                     <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Amount to Pay</span>
                     <span className="text-lg font-black text-white">{selectedOrder?.currency === 'VND' ? '₫' : '৳'}{selectedOrder?.amount}</span>
                   </div>
-                  {selectedOrder?.receiverInfo && (
-                    <div className="pt-3 border-t border-white/5">
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Receiver Details</p>
-                      <div className="p-3 bg-black/40 rounded-xl space-y-1">
-                        <p className="text-xs font-bold text-white flex justify-between"><span>Method:</span> <span className="text-blue-400 capitalize">{selectedOrder.receiverInfo.method}</span></p>
-                        <p className="text-xs font-bold text-white flex justify-between"><span>Number:</span> <span className="text-blue-400 font-mono">{selectedOrder.receiverInfo.number || selectedOrder.receiverInfo.accountNumber}</span></p>
-                        <p className="text-xs font-bold text-white flex justify-between"><span>Name:</span> <span className="text-blue-400">{selectedOrder.receiverInfo.name}</span></p>
+                  {(() => {
+                    const info = selectedOrder?.receiverInfo || selectedOrder?.receiver_info || selectedOrder?.bankInfo || selectedOrder?.bank_info || selectedOrder;
+                    if (!info || (!info.bankName && !info.method && !info.accountNumber && !info.number && !info.account && !selectedOrder.accountType)) return null;
+                    return (
+                      <div className="pt-3 border-t border-white/5">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Receiver Details</p>
+                        <div className="p-3 bg-black/40 rounded-xl space-y-1">
+                          <p className="text-xs font-bold text-white flex justify-between"><span>Method:</span> <span className="text-blue-400 capitalize">{info.method || info.bankName || info.accountType || selectedOrder.account_type || selectedOrder.accountType || 'N/A'}</span></p>
+                          <p className="text-xs font-bold text-white flex justify-between"><span>Number:</span> <span className="text-blue-400 font-mono">{info.number || info.accountNumber || info.account || info.withdrawal_account_number || 'N/A'}</span></p>
+                          <p className="text-xs font-bold text-white flex justify-between"><span>Name:</span> <span className="text-blue-400">{info.name || info.accountName || info.withdrawal_account_name || 'N/A'}</span></p>
+                        </div>
                       </div>
-                    </div>
-                  )}
-                  {(selectedOrder?.userProof || selectedOrder?.proofUrl || selectedOrder?.docUrl || (selectedOrder?.receiverInfo?.qrCode) || selectedOrder?.receiver_info?.qrCode) && (
+                    );
+                  })()}
+                  {(selectedOrder?.userProof || selectedOrder?.proofUrl || selectedOrder?.docUrl || (selectedOrder?.receiverInfo?.qrCode) || selectedOrder?.receiver_info?.qrCode || (selectedOrder?.bankInfo?.qrCode)) && (
                     <div className="pt-3">
                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Reference Image / QR</p>
                        <div className="relative group overflow-hidden rounded-xl bg-black border border-white/5">
                           <img 
-                            src={selectedOrder?.userProof || selectedOrder?.proofUrl || selectedOrder?.docUrl || (selectedOrder?.receiverInfo?.qrCode) || selectedOrder?.receiver_info?.qrCode} 
+                            src={selectedOrder?.userProof || selectedOrder?.proofUrl || selectedOrder?.docUrl || (selectedOrder?.receiverInfo?.qrCode) || selectedOrder?.receiver_info?.qrCode || (selectedOrder?.bankInfo?.qrCode)} 
                             alt="Proof/QR" 
                             className="w-full h-32 object-contain group-hover:scale-110 transition-transform duration-500"
                             referrerPolicy="no-referrer"
