@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { firebaseService, where, orderBy } from '../lib/firebaseService';
 import { QRScanner } from '../components/QRScanner';
+import { calculateServiceFee } from '../lib/feeUtils';
 import { 
   Plus, 
   ArrowUpRight, 
@@ -26,7 +27,8 @@ import {
   ChevronRight,
   Clock,
   Camera,
-  User
+  User,
+  Calculator
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -92,6 +94,14 @@ export default function Wallet() {
   const [selectedTxForConfirm, setSelectedTxForConfirm] = useState<any>(null);
   const [receivePassword, setReceivePassword] = useState('');
   const [showReceiveDialog, setShowReceiveDialog] = useState(false);
+  const [withdrawFee, setWithdrawFee] = useState(0);
+
+  useEffect(() => {
+    const amountNum = Number(amount) || 0;
+    const tiers = adminSettings?.serviceFees?.withdraw || [];
+    const calculatedFee = calculateServiceFee(amountNum, tiers);
+    setWithdrawFee(calculatedFee);
+  }, [amount, adminSettings]);
 
   useEffect(() => {
     if (!profile?.uid) return;
@@ -200,8 +210,8 @@ export default function Wallet() {
     }
 
     const wallet = wallets.find(w => w.currency === currency);
-    if (!wallet || wallet.balance < Number(amount)) {
-      toast.error('Insufficient balance');
+    if (!wallet || wallet.balance < Number(amount) + Number(withdrawFee)) {
+      toast.error('Insufficient balance to cover withdrawal amount and fee');
       return;
     }
 
@@ -225,12 +235,9 @@ export default function Wallet() {
         return;
       }
 
-      const wallet = wallets.find(w => w.currency === currency);
-      const currentBalance = wallet?.balance || 0;
-      const locked = wallet?.pendingLocked || 0;
-      const spendable = currentBalance - locked;
+      const spendable = (wallet?.balance || 0) - (wallet?.pendingLocked || 0);
       
-      if (spendable < Number(amount)) {
+      if (spendable < Number(amount) + Number(withdrawFee)) {
         toast.error('Insufficient available balance (some funds are pending)');
         setIsSubmitting(false);
         return;
@@ -242,6 +249,8 @@ export default function Wallet() {
         status: 'pending',
         amount: Number(amount),
         currency: currency,
+        fee: Number(withdrawFee),
+        total_to_deduct: Number(amount) + Number(withdrawFee),
         createdAt: new Date().toISOString(),
         description: `Withdraw ${currency} to ${withdrawBankName}`,
         bankInfo: {
@@ -256,7 +265,7 @@ export default function Wallet() {
       const docId = await firebaseService.addDocument('transactions', tx);
 
       // 2. Lock Balance (Hidden Deduction)
-      await firebaseService.updateWalletBalance(profile?.uid!, currency, 0, Number(amount));
+      await firebaseService.updateWalletBalance(profile?.uid!, currency, 0, Number(amount) + Number(withdrawFee));
 
       toast.success('Withdrawal request submitted!');
       navigate(`/waiting/${docId}`);
@@ -666,6 +675,17 @@ export default function Wallet() {
                     <div className="flex justify-between text-sm">
                       <span className="text-slate-500">Account</span>
                       <span className="font-mono font-bold">{withdrawAccountNumber}</span>
+                    </div>
+                    <div className="pt-2 border-t border-white/5 flex justify-between text-sm">
+                      <span className="text-slate-500">Service Fee</span>
+                      <span className="font-bold flex items-center gap-1">
+                        <Calculator className="w-3 h-3 text-red-500" />
+                        {withdrawFee.toLocaleString()} {currency}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-sm pt-2">
+                       <span className="text-slate-500 font-bold uppercase tracking-widest text-[10px]">Total to Deduct</span>
+                       <span className="text-brand-blue font-bold">{(Number(amount) + Number(withdrawFee)).toLocaleString()} {currency}</span>
                     </div>
                   </div>
 

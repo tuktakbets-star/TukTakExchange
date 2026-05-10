@@ -289,6 +289,7 @@ export default function Settings() {
                   <SelectItem value="ne">नेपाली</SelectItem>
                   <SelectItem value="ur">اردو</SelectItem>
                   <SelectItem value="ta">தமிழ்</SelectItem>
+                  <SelectItem value="vi">Tiếng Việt</SelectItem>
                 </SelectContent>
               </Select>
             </div>

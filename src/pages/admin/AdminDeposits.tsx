@@ -11,7 +11,8 @@ import {
   Plus,
   QrCode,
   Building2,
-  Info
+  Info,
+  Trash2
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -19,6 +20,7 @@ import { ConfirmModal } from '@/components/ConfirmModal';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea.tsx';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -38,6 +40,9 @@ export default function AdminDeposits() {
   const [isUploading, setIsUploading] = useState(false);
   const [localQrFile, setLocalQrFile] = useState<File | null>(null);
   const [localQrPreview, setLocalQrPreview] = useState<string | null>(null);
+  const [bankList, setBankList] = useState<any[]>([]);
+  const [bankFiles, setBankFiles] = useState<Map<number, File>>(new Map());
+  const [bankPreviews, setBankPreviews] = useState<Map<number, string>>(new Map());
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedProof, setSelectedProof] = useState<string | null>(null);
@@ -72,6 +77,48 @@ export default function AdminDeposits() {
   }, []);
 
   useEffect(() => {
+    if (activeTab === 'add_money') {
+      setBankList(addMoneySettings?.value?.banks || []);
+    } else {
+      setBankList(cashInSettings?.value?.countries?.[selectedSetupCountry]?.banks || []);
+    }
+  }, [activeTab, selectedSetupCountry, addMoneySettings, cashInSettings]);
+
+  const addBankRow = () => {
+    setBankList([...bankList, { bankName: '', accountNumber: '', accountHolder: '', active: false, qrUrl: '' }]);
+  };
+
+  const removeBankRow = (index: number) => {
+    setBankList(bankList.filter((_, i) => i !== index));
+    const newFiles = new Map(bankFiles);
+    newFiles.delete(index);
+    setBankFiles(newFiles);
+    const newPreviews = new Map(bankPreviews);
+    newPreviews.delete(index);
+    setBankPreviews(newPreviews);
+  };
+
+  const updateBankRow = (index: number, field: string, value: any) => {
+    const newBanks = [...bankList];
+    if (field === 'active' && value === true) {
+      // Toggle all others to false
+      newBanks.forEach((b, i) => b.active = i === index);
+    } else {
+      newBanks[index] = { ...newBanks[index], [field]: value };
+    }
+    setBankList(newBanks);
+  };
+
+  const handleBankQrUpload = (index: number, file: File) => {
+    setBankFiles(new Map(bankFiles.set(index, file)));
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      setBankPreviews(new Map(bankPreviews.set(index, e.target?.result as string)));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  useEffect(() => {
     setLocalQrFile(null);
     setLocalQrPreview(null);
   }, [activeTab]);
@@ -82,46 +129,37 @@ export default function AdminDeposits() {
     const currentSettings = activeTab === 'add_money' ? addMoneySettings : cashInSettings;
     const settingsKey = activeTab === 'add_money' ? 'add_money_settings' : 'cash_in_settings';
     
-    // Handle File Upload for QR Code
-    let qrUrl = currentSettings?.value?.qrCode || '';
-    const qrFile = localQrFile;
-    
+    setIsUploading(true);
     try {
-      if (qrFile) {
-        setIsUploading(true);
-        qrUrl = await firebaseService.uploadFile(qrFile);
-      }
+      // 1. Upload individual bank QR codes
+      const updatedBanks = await Promise.all(bankList.map(async (bank, index) => {
+        const file = bankFiles.get(index);
+        if (file) {
+          const url = await firebaseService.uploadFile(file);
+          return { ...bank, qrUrl: url };
+        }
+        return bank;
+      }));
+
+      // 2. Filter valid banks
+      const banks = updatedBanks.filter(b => b.bankName && b.accountNumber);
 
       let value = { ...currentSettings?.value };
 
       if (activeTab === 'add_money') {
         value = {
           ...value,
-          qrCode: qrUrl,
-          bankName: formData.get('bankName'),
-          accountNumber: formData.get('accountNumber'),
-          accountHolder: formData.get('accountHolder'),
+          banks,
           instructions: formData.get('instructions'),
           terms: formData.get('terms')
         };
+        // Use the active bank's QR as the main QR if one is active
+        const activeBank = banks.find(b => b.active);
+        if (activeBank) value.qrCode = activeBank.qrUrl;
       } else {
-        // Cash In multi-country update
         const countryKey = selectedSetupCountry;
         const rate = parseFloat(formData.get('rate') as string) || 0;
         
-        const banks = [
-          { 
-            bankName: formData.get('bankName1'), 
-            accountNumber: formData.get('accNum1'), 
-            accountHolder: formData.get('accHolder1') 
-          },
-          { 
-            bankName: formData.get('bankName2'), 
-            accountNumber: formData.get('accNum2'), 
-            accountHolder: formData.get('accHolder2') 
-          }
-        ].filter(b => b.bankName && b.accountNumber);
-
         const newRates = { ...(value.rates || {}), [countryKey]: rate };
         const newCountries = { 
           ...(value.countries || {}), 
@@ -133,12 +171,14 @@ export default function AdminDeposits() {
 
         value = {
           ...value,
-          qrCode: qrUrl,
           instructions: formData.get('instructions'),
           terms: formData.get('terms'),
           rates: newRates,
           countries: newCountries
         };
+        
+        const activeBank = banks.find(b => b.active);
+        if (activeBank) value.qrCode = activeBank.qrUrl;
       }
 
       if (currentSettings) {
@@ -146,8 +186,14 @@ export default function AdminDeposits() {
       } else {
         await firebaseService.addDocument('adminSettings', { key: settingsKey, value, updatedAt: new Date().toISOString() });
       }
+      
+      // Clear local file states
+      setBankFiles(new Map());
+      setBankPreviews(new Map());
+      
       toast.success('Settings updated successfully');
     } catch (error) {
+      console.error(error);
       toast.error('Failed to update settings');
     } finally {
       setIsUploading(false);
@@ -290,136 +336,173 @@ export default function AdminDeposits() {
         </div>
         
         <form key={`${activeTab}-${selectedSetupCountry}-${currentSettings?.id}`} onSubmit={handleUpdateSettings} className="grid md:grid-cols-4 gap-8">
-          <div className="space-y-4">
-            <Label className="flex items-center gap-2">
-              <QrCode className="w-4 h-4 text-slate-500" />
-              Scan QR Code Photo
-            </Label>
-            <div 
-              onClick={() => document.getElementById('qr-upload')?.click()}
-              className="aspect-square bg-white/5 rounded-2xl border border-dashed border-white/10 flex items-center justify-center overflow-hidden cursor-pointer hover:bg-white/10 transition-colors group relative"
-            >
-              <input 
-                id="qr-upload"
-                name="qrFile"
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) {
-                    setLocalQrFile(file);
-                    const reader = new FileReader();
-                    reader.onload = (re) => {
-                      setLocalQrPreview(re.target?.result as string);
-                    };
-                    reader.readAsDataURL(file);
-                  }
-                }}
-              />
-              {localQrPreview || currentSettings?.value?.qrCode ? (
-                <img 
-                  src={localQrPreview || currentSettings.value.qrCode} 
-                  alt="QR Preview" 
-                  className="w-full h-full object-contain p-4" 
-                  referrerPolicy="no-referrer" 
-                />
-              ) : (
-                <div className="flex flex-col items-center gap-2 text-slate-500 group-hover:text-white transition-colors">
-                  <Upload className="w-8 h-8" />
-                  <span className="text-[10px] font-bold uppercase tracking-widest">Upload Photo</span>
-                </div>
-              )}
-              {isUploading && (
-                <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center">
-                  <div className="w-6 h-6 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="space-y-4 md:col-span-2">
-            {activeTab === 'add_money' ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Bank Name</Label>
-                  <Input 
-                    name="bankName" 
-                    defaultValue={currentSettings?.value?.bankName}
-                    placeholder="Bank Name" 
-                    className="bg-white/5 border-white/10 h-12 rounded-xl" 
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Account Holder</Label>
-                  <Input 
-                    name="accountHolder" 
-                    defaultValue={currentSettings?.value?.accountHolder}
-                    placeholder="Holder Name" 
-                    className="bg-white/5 border-white/10 h-12 rounded-xl" 
-                  />
-                </div>
-                <div className="space-y-2 md:col-span-2">
-                  <Label>Account Number</Label>
-                  <Input 
-                    name="accountNumber" 
-                    defaultValue={currentSettings?.value?.accountNumber}
-                    placeholder="0123456789" 
-                    className="bg-white/5 border-white/10 h-12 rounded-xl" 
-                  />
-                </div>
+          <div className="space-y-4 md:col-span-3">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <Label className="text-lg font-display font-bold block">Bank Account Settings</Label>
+                <p className="text-xs text-slate-500">Configure receiving accounts for this section. Only one account can be active at a time.</p>
               </div>
-            ) : (
-              <div className="space-y-6">
-                <div className="p-4 bg-red-500/5 border border-red-500/10 rounded-2xl">
-                  <Label className="text-[10px] uppercase text-red-400 font-bold tracking-widest block mb-2">Specific Cash In Rate for {selectedSetupCountry}</Label>
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1 relative">
-                       <Input 
-                        name="rate" 
-                        type="number"
-                        step="0.00000001"
-                        defaultValue={currentSettings?.value?.rates?.[selectedSetupCountry]}
-                        placeholder="e.g. 0.0035" 
-                        className="bg-white/5 border-white/10 h-12 rounded-xl pl-10" 
-                      />
-                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-xs">1 {selectedSetupCountry} = ? VND</span>
-                    </div>
-                  </div>
-                  <p className="text-[10px] text-slate-500 mt-2">Admin panel e set kora ei rate user Cash In page e calculate korte parbe. (Default rates page er rate override korbe)</p>
-                </div>
+              <Button 
+                type="button" 
+                variant="outline" 
+                size="sm" 
+                onClick={addBankRow}
+                className="h-10 px-4 rounded-xl border-white/10 hover:bg-white/5 flex items-center gap-2 font-bold"
+              >
+                <Plus className="w-4 h-4" />
+                Add New Bank
+              </Button>
+            </div>
 
-                <div className="grid grid-cols-1 gap-4">
-                  {[1, 2].map(i => (
-                    <div key={i} className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-3">
-                      <div className="flex items-center justify-between">
-                         <Label className="text-xs font-bold text-slate-400">Account #{i}</Label>
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                        <Input 
-                          name={`bankName${i}`} 
-                          defaultValue={currentSettings?.value?.countries?.[selectedSetupCountry]?.banks?.[i-1]?.bankName}
-                          placeholder="Bank/Wallet Name" 
-                          className="bg-white/5 border-white/10 h-10 rounded-lg text-xs" 
-                        />
-                        <Input 
-                          name={`accNum${i}`} 
-                          defaultValue={currentSettings?.value?.countries?.[selectedSetupCountry]?.banks?.[i-1]?.accountNumber}
-                          placeholder="Account Number" 
-                          className="bg-white/5 border-white/10 h-10 rounded-lg text-xs" 
-                        />
-                        <Input 
-                          name={`accHolder${i}`} 
-                          defaultValue={currentSettings?.value?.countries?.[selectedSetupCountry]?.banks?.[i-1]?.accountHolder}
-                          placeholder="Holder Name" 
-                          className="bg-white/5 border-white/10 h-10 rounded-lg text-xs" 
-                        />
-                      </div>
-                    </div>
-                  ))}
+            {activeTab === 'cash_in' && (
+              <div className="p-4 bg-red-500/5 border border-red-500/10 rounded-2xl mb-6">
+                <Label className="text-[10px] uppercase text-red-400 font-bold tracking-widest block mb-1">Cash In Rate Settings ({selectedSetupCountry})</Label>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 relative">
+                     <Input 
+                      name="rate" 
+                      type="number"
+                      step="0.00000001"
+                      defaultValue={currentSettings?.value?.rates?.[selectedSetupCountry]}
+                      placeholder="e.g. 0.0035" 
+                      className="bg-white/5 border-white/10 h-12 rounded-xl pl-10" 
+                    />
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-xs">1 {selectedSetupCountry} = ? VND</span>
+                  </div>
                 </div>
               </div>
             )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 overflow-y-auto pr-2 custom-scrollbar max-h-[600px]">
+              {bankList.length === 0 ? (
+                <div className="md:col-span-2 text-center py-12 rounded-[2.5rem] border border-dashed border-white/10 bg-white/5">
+                  <div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                    <Building2 className="w-8 h-8 text-slate-500" />
+                  </div>
+                  <p className="text-slate-400 font-medium">No banks added yet</p>
+                  <p className="text-slate-600 text-sm mt-1">Click the button above to add your first receiving account.</p>
+                </div>
+              ) : (
+                bankList.map((bank, index) => (
+                  <Card key={index} className={cn(
+                    "relative group overflow-hidden border transition-all duration-300 rounded-[2rem]",
+                    bank.active ? "bg-red-600/5 border-red-600/20" : "bg-white/5 border-white/10"
+                  )}>
+                    {/* Bank Header with Switch */}
+                    <div className={cn(
+                      "flex items-center justify-between p-5 border-b",
+                      bank.active ? "bg-red-600/10 border-red-600/10" : "bg-white/5 border-white/5"
+                    )}>
+                      <div className="flex items-center gap-3">
+                        <div className={cn(
+                          "w-10 h-10 rounded-xl flex items-center justify-center",
+                          bank.active ? "bg-red-600 text-white shadow-lg shadow-red-600/20" : "bg-white/5 text-slate-400"
+                        )}>
+                          <Building2 className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <span className="text-xs font-bold text-slate-400 uppercase tracking-widest block leading-none mb-1">Account #{index + 1}</span>
+                          <h4 className="font-bold text-sm leading-none">{bank.bankName || 'New Account'}</h4>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-3 bg-black/20 py-2 px-3 rounded-xl border border-white/5">
+                          <span className={cn("text-[10px] font-black uppercase tracking-widest transition-colors", bank.active ? "text-green-500" : "text-slate-500")}>
+                            {bank.active ? 'Active' : 'OFF'}
+                          </span>
+                          <Switch 
+                            checked={bank.active}
+                            onCheckedChange={(checked) => updateBankRow(index, 'active', checked)}
+                            className="data-[state=checked]:bg-green-500"
+                          />
+                        </div>
+                        <Button 
+                          type="button"
+                          variant="ghost" 
+                          size="icon" 
+                          onClick={() => removeBankRow(index)}
+                          className="h-10 w-10 text-red-500 hover:bg-red-500/10 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="p-6 space-y-6">
+                      {/* Photo Section */}
+                      <div className="flex items-start gap-4">
+                        <div className="flex-1 space-y-2">
+                           <Label className="text-[10px] uppercase text-slate-500 font-bold tracking-widest">QR Code Photo</Label>
+                           <div className="flex items-center gap-3">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => document.getElementById(`bank-qr-${index}`)?.click()}
+                                className="h-12 px-4 rounded-xl border-white/10 hover:bg-white/5 flex items-center gap-3 flex-1"
+                              >
+                                <Upload className="w-4 h-4" />
+                                <span className="text-xs">{bankFiles.get(index) ? 'Photo Selected' : 'Choose Photo'}</span>
+                              </Button>
+                              <input 
+                                id={`bank-qr-${index}`}
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) handleBankQrUpload(index, file);
+                                }}
+                              />
+                           </div>
+                        </div>
+
+                        {(bankPreviews.get(index) || bank.qrUrl) && (
+                          <div className="w-20 h-20 bg-slate-950 rounded-xl border border-white/10 flex items-center justify-center overflow-hidden shrink-0">
+                            <img 
+                              src={bankPreviews.get(index) || bank.qrUrl} 
+                              alt="QR" 
+                              className="w-full h-full object-contain p-2"
+                              referrerPolicy="no-referrer"
+                            />
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-4">
+                        <div className="space-y-1.5">
+                          <Label className="text-[10px] uppercase text-slate-500 font-bold tracking-widest">Bank/Wallet Name</Label>
+                          <Input 
+                            value={bank.bankName}
+                            onChange={(e) => updateBankRow(index, 'bankName', e.target.value)}
+                            placeholder="e.g. Vietcombank / bKash" 
+                            className="bg-white/5 border-white/10 h-12 rounded-xl text-sm" 
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-[10px] uppercase text-slate-500 font-bold tracking-widest">Account Holder</Label>
+                          <Input 
+                            value={bank.accountHolder}
+                            onChange={(e) => updateBankRow(index, 'accountHolder', e.target.value)}
+                            placeholder="Full Name" 
+                            className="bg-white/5 border-white/10 h-12 rounded-xl text-sm" 
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-[10px] uppercase text-slate-500 font-bold tracking-widest">Account Number / Phone</Label>
+                          <Input 
+                            value={bank.accountNumber}
+                            onChange={(e) => updateBankRow(index, 'accountNumber', e.target.value)}
+                            placeholder="0123456789" 
+                            className="bg-white/5 border-white/10 h-12 rounded-xl text-sm font-mono" 
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
+                ))
+              )}
+            </div>
             
             <div className="space-y-2 mt-4">
               <Label className="flex items-center gap-2">

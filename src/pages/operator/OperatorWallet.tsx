@@ -51,6 +51,7 @@ export default function OperatorWallet() {
   const [step, setStep] = useState(1);
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [password, setPassword] = useState('');
+  const [adminBankSettings, setAdminBankSettings] = useState<any>(null);
   const [adminBanks, setAdminBanks] = useState<any[]>([]);
 
   useEffect(() => {
@@ -59,6 +60,7 @@ export default function OperatorWallet() {
     const session = JSON.parse(sessionStr);
 
     fetchAdminBanks();
+    fetchAdminBankSettings();
 
     // Subscribe to operator doc
     const unsubOp = supabaseService.subscribeToDocument('sub_admins', session.id, (data) => {
@@ -92,6 +94,14 @@ export default function OperatorWallet() {
   const fetchAdminBanks = async () => {
     const data = await supabaseService.getCollection('admin_banks', [where('status', '==', 'active')]);
     if (data) setAdminBanks(data);
+  };
+
+  const fetchAdminBankSettings = async () => {
+    const data = await supabaseService.getCollection('admin_settings', []);
+    const settings = data?.find((s: any) => s.key === 'sub_admin_refill_bank');
+    if (settings) {
+      setAdminBankSettings(settings.value);
+    }
   };
 
   const flow = getTotalFlow();
@@ -155,7 +165,7 @@ export default function OperatorWallet() {
       }
 
       const requestPayload = {
-        sub_admin_id: Number(operator.id),
+        sub_admin_id: operator.id,
         username: operator.username,
         type: requestDialog.type,
         amount: numAmount,
@@ -516,12 +526,40 @@ export default function OperatorWallet() {
 
             {/* STEP 2: Payment Info / Bank Detail */}
             {step === 2 && (
-              <div className="space-y-6">
+              <div className="p-0 space-y-6">
                 {requestDialog.type === 'refill' ? (
-                  <div className="space-y-4">
+                  <div className="space-y-4 px-8">
                     <Label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Send funds to Admin</Label>
-                    <div className="p-4 bg-white/5 border border-white/5 rounded-3xl space-y-3">
-                      {adminBanks.length > 0 ? (
+                    <div className="p-6 bg-white/5 border border-white/5 rounded-3xl space-y-4 shadow-inner">
+                      {adminBankSettings ? (
+                        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
+                          <div className="flex items-center gap-4 border-b border-white/5 pb-4">
+                             <div className="w-12 h-12 bg-amber-500/20 rounded-2xl flex items-center justify-center border border-amber-500/20 shadow-lg shadow-amber-500/10">
+                                <CreditCard className="w-6 h-6 text-amber-500" />
+                             </div>
+                             <div>
+                                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-none">Primary Refill Bank</p>
+                                <h4 className="text-sm font-black text-white mt-1 capitalize tracking-tight">{adminBankSettings.bankName}</h4>
+                             </div>
+                          </div>
+                          
+                          <div className="space-y-3">
+                             <div className="flex justify-between items-center group cursor-pointer" onClick={() => { navigator.clipboard.writeText(adminBankSettings.accountNumber); toast.success('Account number copied'); }}>
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] italic">Account No</span>
+                                <span className="text-sm font-black text-blue-500 tracking-wider group-hover:underline">{adminBankSettings.accountNumber}</span>
+                             </div>
+                             <div className="flex justify-between items-center">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] italic">Holder Name</span>
+                                <span className="text-xs font-bold text-white uppercase italic">{adminBankSettings.accountHolder}</span>
+                             </div>
+                             {adminBankSettings.instructions && (
+                               <p className="p-3 bg-blue-600/10 border border-blue-500/20 rounded-xl text-[10px] text-blue-400 font-bold italic leading-relaxed">
+                                  Note: {adminBankSettings.instructions}
+                               </p>
+                             )}
+                          </div>
+                        </div>
+                      ) : adminBanks.length > 0 ? (
                         <div className="space-y-4">
                           <img src={adminBanks[0].qrCode || adminBanks[0].photo} className="w-full aspect-video object-contain bg-black/40 rounded-2xl" />
                           <div className="space-y-1">

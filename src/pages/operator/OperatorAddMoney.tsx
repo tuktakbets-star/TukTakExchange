@@ -83,6 +83,19 @@ export default function OperatorAddMoney({ type = 'add_money' }: { type?: 'add_m
 
   const handleAccept = async () => {
     if (!selectedOrder || !operator) return;
+    
+    // Check if operator has enough balance before accepting/claiming
+    const amount = Number(selectedOrder.amount || 0);
+    const saBalance = Number(operator?.walletBalance || 0);
+    
+    if (saBalance < amount) {
+      toast.error(`Insufficient balance to claim this order! You need ₫${amount.toLocaleString()}, but have ₫${saBalance.toLocaleString()}.`, {
+        duration: 5000
+      });
+      setIsAcceptConfirmOpen(false);
+      return;
+    }
+
     toast.loading('Accepting order...', { id: 'accept' });
     
     try {

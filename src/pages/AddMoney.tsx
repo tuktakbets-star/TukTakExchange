@@ -236,78 +236,86 @@ export default function AddMoney() {
                 <div className="space-y-4">
                   {adminSettings ? (
                     <div className="space-y-4">
-                      {/* Check if we have vietnamBanks array from AdminSettings.tsx */}
-                      {Array.isArray(adminSettings.vietnamBanks) && adminSettings.vietnamBanks.length > 0 ? (
-                        adminSettings.vietnamBanks.map((bank: any, idx: number) => (
-                          <div key={idx} className="p-5 rounded-2xl bg-white/5 border border-white/10 space-y-3">
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{t('receiving_bank')} #{idx + 1}</p>
-                                <h4 className="text-lg font-bold text-white">{bank.bankName}</h4>
-                              </div>
-                              <div className="w-10 h-10 bg-brand-blue/10 rounded-xl flex items-center justify-center">
-                                <CreditCard className="w-5 h-5 text-brand-blue" />
-                              </div>
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                              <div>
-                                <p className="text-[10px] text-slate-500 uppercase tracking-widest">{t('account_number')}</p>
-                                <p className="font-mono text-white text-base">{bank.accountNumber}</p>
-                              </div>
-                              <div>
-                                <p className="text-[10px] text-slate-500 uppercase tracking-widest">{t('account_holder')}</p>
-                                <p className="text-white text-base font-bold">{bank.accountHolder}</p>
-                              </div>
-                            </div>
-                            {bank.qrUrl && (
-                              <div className="pt-2">
-                                <div className="aspect-square max-w-[200px] mx-auto bg-slate-950 rounded-2xl border border-white/10 flex items-center justify-center overflow-hidden mb-2">
-                                  <img src={bank.qrUrl} alt="QR" className="w-full h-full object-contain p-4" referrerPolicy="no-referrer" />
+                      {/* Check if we have vietnamBanks array from AdminSettings.tsx OR banks from AdminDeposits.tsx */}
+                      {(() => {
+                        const banksToRender = (adminSettings.banks || adminSettings.vietnamBanks || []).filter((b: any) => b.active);
+                        
+                        if (banksToRender.length > 0) {
+                          return banksToRender.map((bank: any, idx: number) => (
+                            <div key={idx} className="p-5 rounded-2xl bg-white/5 border border-white/10 space-y-3">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{t('receiving_bank')}</p>
+                                  <h4 className="text-lg font-bold text-white">{bank.bankName}</h4>
                                 </div>
-                                <p className="text-[10px] text-center text-slate-500 uppercase font-black">{t('scan_to_pay')}</p>
-                              </div>
-                            )}
-                          </div>
-                        ))
-                      ) : (
-                        /* Fallback to legacy fields */
-                        (adminSettings.bankName || adminSettings.accountNumber) ? (
-                          <div className="p-5 rounded-2xl bg-white/5 border border-white/10 space-y-3">
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{t('receiving_bank')}</p>
-                                <h4 className="text-lg font-bold text-white">{adminSettings.bankName || 'Vietnam Local Bank'}</h4>
-                              </div>
-                              <div className="w-10 h-10 bg-brand-blue/10 rounded-xl flex items-center justify-center">
-                                <CreditCard className="w-5 h-5 text-brand-blue" />
-                              </div>
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                              <div>
-                                <p className="text-[10px] text-slate-500 uppercase tracking-widest">{t('account_number')}</p>
-                                <p className="font-mono text-white text-base">{adminSettings.accountNumber}</p>
-                              </div>
-                              <div>
-                                <p className="text-[10px] text-slate-500 uppercase tracking-widest">{t('account_holder')}</p>
-                                <p className="text-white text-base font-bold">{adminSettings.accountHolder}</p>
-                              </div>
-                            </div>
-                            {adminSettings.qrCode && (
-                              <div className="pt-2">
-                                <div className="aspect-square max-w-[200px] mx-auto bg-slate-950 rounded-2xl border border-white/10 flex items-center justify-center overflow-hidden mb-2">
-                                  <img src={adminSettings.qrCode} alt="QR" className="w-full h-full object-contain p-4" referrerPolicy="no-referrer" />
+                                <div className="w-10 h-10 bg-brand-blue/10 rounded-xl flex items-center justify-center">
+                                  <CreditCard className="w-5 h-5 text-brand-blue" />
                                 </div>
-                                <p className="text-[10px] text-center text-slate-500 uppercase font-black">{t('scan_to_pay')}</p>
                               </div>
-                            )}
-                          </div>
-                        ) : (
+                              <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                  <p className="text-[10px] text-slate-500 uppercase tracking-widest">{t('account_number')}</p>
+                                  <p className="font-mono text-white text-base">{bank.accountNumber}</p>
+                                </div>
+                                <div>
+                                  <p className="text-[10px] text-slate-500 uppercase tracking-widest">{t('account_holder')}</p>
+                                  <p className="text-white text-base font-bold">{bank.accountHolder}</p>
+                                </div>
+                              </div>
+                              {bank.qrUrl && (
+                                <div className="pt-2">
+                                  <div className="aspect-square max-w-[200px] mx-auto bg-slate-950 rounded-2xl border border-white/10 flex items-center justify-center overflow-hidden mb-2">
+                                    <img src={bank.qrUrl} alt="QR" className="w-full h-full object-contain p-4" referrerPolicy="no-referrer" />
+                                  </div>
+                                  <p className="text-[10px] text-center text-slate-500 uppercase font-black">{t('scan_to_pay')}</p>
+                                </div>
+                              )}
+                            </div>
+                          ));
+                        }
+
+                        // Fallback/Legacy: if it's Bangladesh and we have the old fields
+                        if (adminSettings.bankName || adminSettings.accountNumber) {
+                          return (
+                            <div className="p-5 rounded-2xl bg-white/5 border border-white/10 space-y-3">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{t('receiving_bank')}</p>
+                                  <h4 className="text-lg font-bold text-white">{adminSettings.bankName || 'Vietnam Local Bank'}</h4>
+                                </div>
+                                <div className="w-10 h-10 bg-brand-blue/10 rounded-xl flex items-center justify-center">
+                                  <CreditCard className="w-5 h-5 text-brand-blue" />
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                  <p className="text-[10px] text-slate-500 uppercase tracking-widest">{t('account_number')}</p>
+                                  <p className="font-mono text-white text-base">{adminSettings.accountNumber}</p>
+                                </div>
+                                <div>
+                                  <p className="text-[10px] text-slate-500 uppercase tracking-widest">{t('account_holder')}</p>
+                                  <p className="text-white text-base font-bold">{adminSettings.accountHolder}</p>
+                                </div>
+                              </div>
+                              {adminSettings.qrCode && (
+                                <div className="pt-2">
+                                  <div className="aspect-square max-w-[200px] mx-auto bg-slate-950 rounded-2xl border border-white/10 flex items-center justify-center overflow-hidden mb-2">
+                                    <img src={adminSettings.qrCode} alt="QR" className="w-full h-full object-contain p-4" referrerPolicy="no-referrer" />
+                                  </div>
+                                  <p className="text-[10px] text-center text-slate-500 uppercase font-black">{t('scan_to_pay')}</p>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        }
+
+                        return (
                           <div className="p-8 text-center bg-red-500/5 border border-red-500/10 rounded-2xl">
-                            <p className="text-slate-400">{t('no_bank_configured')}</p>
-                            <p className="text-xs text-red-400 mt-2">{t('contact_admin_chat')}</p>
+                             <p className="text-slate-400">{t('no_bank_configured')}</p>
+                             <p className="text-xs text-red-400 mt-2">{t('contact_admin_chat')}</p>
                           </div>
-                        )
-                      )}
+                        );
+                      })()}
 
                       {/* Display instructions and terms if they exist at the root level */}
                       {adminSettings.instructions && (

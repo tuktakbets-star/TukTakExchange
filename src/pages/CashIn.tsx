@@ -97,7 +97,13 @@ export default function CashIn() {
   const getBanksForCountry = () => {
     if (!adminSettings) return [];
     
-    // 1. Check for specific country array format from global_settings (AdminSettings.tsx)
+    // 1. Get banks from add_money_settings/cash_in_settings (AdminDeposits.tsx structure)
+    // For Cash In, banks are under countries[currency].banks
+    const ciBanks = adminSettings.countries?.[currentCountry.currency]?.banks || [];
+    const activeCiBanks = ciBanks.filter((b: any) => b.active);
+    if (activeCiBanks.length > 0) return activeCiBanks;
+
+    // 2. Check for specific country array format from global_settings (AdminSettings.tsx)
     const countryToKey: Record<string, string> = {
       'Bangladesh': 'bangladeshBanks',
       'India': 'indiaBanks',
@@ -107,12 +113,8 @@ export default function CashIn() {
     
     const settingsKey = countryToKey[selectedCountry];
     if (settingsKey && Array.isArray(adminSettings[settingsKey])) {
-      return adminSettings[settingsKey];
-    }
-
-    // 2. Check for country-specific banks in adminSettings (AdminDeposits.tsx structure)
-    if (adminSettings.countries?.[currentCountry.currency]?.banks) {
-      return adminSettings.countries[currentCountry.currency].banks;
+      const globalBanks = adminSettings[settingsKey].filter((b: any) => b.active !== false); // Default to true if active not present
+      return globalBanks;
     }
     
     // Fallback/Legacy: if it's Bangladesh and we have the old fields
@@ -331,12 +333,12 @@ export default function CashIn() {
                             <p className="text-white text-base font-bold">{bank.accountHolder}</p>
                           </div>
                         </div>
-                        {adminSettings.qrCode && idx === 0 && (
+                        {bank.qrUrl && (
                           <div className="pt-2">
                              <div className="aspect-square max-w-[200px] mx-auto bg-slate-950 rounded-2xl border border-white/10 flex items-center justify-center overflow-hidden mb-2">
-                                <img src={adminSettings.qrCode} alt="QR" className="w-full h-full object-contain p-4" referrerPolicy="no-referrer" />
+                                <img src={bank.qrUrl} alt="QR" className="w-full h-full object-contain p-4" referrerPolicy="no-referrer" />
                              </div>
-                             <p className="text-[10px] text-center text-slate-500 uppercase font-black">Scan to Pay (Primary Option)</p>
+                             <p className="text-[10px] text-center text-slate-500 uppercase font-black">{t('scan_to_pay')}</p>
                           </div>
                         )}
                       </div>

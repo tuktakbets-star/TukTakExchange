@@ -35,7 +35,20 @@ export default function AdminSubAdmins() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
+  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const [isRequestDetailsModalOpen, setIsRequestDetailsModalOpen] = useState(false);
+  const [isAdminBankModalOpen, setIsAdminBankModalOpen] = useState(false);
   const [selectedSubAdmin, setSelectedSubAdmin] = useState<any>(null);
+  const [selectedRequest, setSelectedRequest] = useState<any>(null);
+  const [tempServices, setTempServices] = useState<string[]>([]);
+  const [adminBankSettings, setAdminBankSettings] = useState<any>({
+    bankName: '',
+    accountNumber: '',
+    accountHolder: '',
+    instructions: ''
+  });
+  const [history, setHistory] = useState<any[]>([]);
   const [depositAmount, setDepositAmount] = useState('');
   const [newSubAdmin, setNewSubAdmin] = useState({
     fullName: '',
@@ -56,7 +69,43 @@ export default function AdminSubAdmins() {
   useEffect(() => {
     fetchSubAdmins();
     fetchRequests();
+    fetchAdminBankSettings();
   }, []);
+
+  const fetchAdminBankSettings = async () => {
+    const data = await supabaseService.getCollection('admin_settings', []);
+    const settings = data?.find((s: any) => s.key === 'sub_admin_refill_bank');
+    if (settings) {
+      setAdminBankSettings(settings.value);
+    }
+  };
+
+  const handleSaveAdminBank = async () => {
+    setLoading(true);
+    try {
+      const data = await supabaseService.getCollection('admin_settings', []);
+      const existing = data?.find((s: any) => s.key === 'sub_admin_refill_bank');
+      
+      if (existing) {
+        await supabaseService.updateDocument('admin_settings', existing.id, { 
+          value: adminBankSettings,
+          updated_at: new Date().toISOString()
+        });
+      } else {
+        await supabaseService.addDocument('admin_settings', { 
+          key: 'sub_admin_refill_bank', 
+          value: adminBankSettings,
+          updated_at: new Date().toISOString()
+        });
+      }
+      toast.success('Refill bank settings updated');
+      setIsAdminBankModalOpen(false);
+    } catch (error) {
+      toast.error('Failed to save settings');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const fetchRequests = async () => {
     const data = await supabaseService.getCollection('operator_balance_requests', [orderBy('created_at', 'desc')]);
@@ -66,6 +115,40 @@ export default function AdminSubAdmins() {
   const fetchSubAdmins = async () => {
     const data = await supabaseService.getCollection('sub_admins');
     setSubAdmins(data || []);
+  };
+
+  const fetchHistory = async (subAdminId: string) => {
+    const data = await supabaseService.getCollection('sub_admin_wallet_transactions', [
+      orderBy('created_at', 'desc')
+    ]);
+    // Filter locally since getCollection might not support complex queries easily in this setup
+    setHistory(data?.filter((t: any) => t.subAdminId === subAdminId) || []);
+  };
+
+  const handleToggleStatus = async (sub: any) => {
+    const newStatus = sub.status === 'active' ? 'banned' : 'active';
+    setLoading(true);
+    try {
+      await supabaseService.updateDocument('sub_admins', sub.id, { status: newStatus });
+      toast.success(`Sub Admin ${sub.username} is now ${newStatus}`);
+      fetchSubAdmins();
+    } catch (error) {
+      toast.error('Failed to update status');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdateServices = async (subId: string, services: string[]) => {
+    try {
+      await supabaseService.updateDocument('sub_admins', subId, { allowed_services: services });
+      toast.success('Services updated successfully');
+      fetchSubAdmins();
+      // Update selected sub admin state to reflect changes in modal
+      setSelectedSubAdmin((prev: any) => ({ ...prev, allowed_services: services }));
+    } catch (error) {
+      toast.error('Failed to update services');
+    }
   };
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -173,9 +256,11 @@ export default function AdminSubAdmins() {
   const handleRequestAction = async (request: any, action: 'approved' | 'rejected') => {
     setLoading(true);
     try {
-      const subAdmin = subAdmins.find(s => s.id === request.sub_admin_id);
+      // Fetch sub admin directly to avoid "not found" due to stale or filtered state
+      const { data: subAdmin } = await supabaseService.getDocument('sub_admins', request.subAdminId);
+      
       if (!subAdmin && action === 'approved') {
-        toast.error('Sub Admin not found');
+        toast.error('Sub Admin not found in global records');
         return;
       }
 
@@ -195,26 +280,26 @@ export default function AdminSubAdmins() {
         }
 
         // 1. Update sub admin balance
-        await supabaseService.updateDocument('sub_admins', request.sub_admin_id, {
+        await supabaseService.updateDocument('sub_admins', request.subAdminId, {
           walletBalance: newBalance,
           wallet_balance: newBalance
         });
 
         // 2. Record transaction with proof_url and extra metadata
         await supabaseService.addDocument('sub_admin_wallet_transactions', {
-          sub_admin_id: request.sub_admin_id,
+          sub_admin_id: request.subAdminId,
           type: request.type === 'refill' ? 'credit' : 'debit',
           amount: amount,
-          reason: `${request.type === 'refill' ? 'Refill' : 'Withdrawal'} approved: ${request.account_type || ''} ${request.withdrawal_account_number || ''}`,
+          reason: `${request.type === 'refill' ? 'Refill' : 'Withdrawal'} approved: ${request.accountType || ''} ${request.withdrawalAccountNumber || ''}`,
           balance_after: newBalance,
-          proof_url: request.proof_url || '',
+          proof_url: request.proofUrl || '',
           metadata: {
-            account_type: request.account_type,
-            account_name: request.withdrawal_account_name,
-            account_number: request.withdrawal_account_number,
-            tx_id: request.tx_id,
+            account_type: request.accountType,
+            account_name: request.withdrawalAccountName,
+            account_number: request.withdrawalAccountNumber,
+            tx_id: request.txId,
             country: request.country,
-            balance_type: request.balance_type
+            balance_type: request.balanceType
           },
           created_at: new Date().toISOString()
         });
@@ -311,6 +396,16 @@ export default function AdminSubAdmins() {
             </span>
           )}
         </button>
+
+        {activeTab === 'requests' && (
+          <Button 
+            onClick={() => setIsAdminBankModalOpen(true)}
+            variant="ghost"
+            className="pb-4 h-auto text-[10px] font-black uppercase tracking-[0.2em] text-amber-500 hover:text-amber-400 hover:bg-transparent"
+          >
+            Refill Bank Settings
+          </Button>
+        )}
       </div>
 
       {activeTab === 'operators' ? (
@@ -378,7 +473,14 @@ export default function AdminSubAdmins() {
                            </td>
                            <td className="px-8 py-6 text-right">
                               <div className="flex items-center justify-end gap-2">
-                                 <Button variant="dark" className="h-9 w-9 p-0 rounded-xl hover:bg-blue-600/10 hover:text-blue-500 group-hover:ring-1 ring-blue-500/20">
+                                 <Button 
+                                    onClick={() => {
+                                      setSelectedSubAdmin(sub);
+                                      setIsDetailsModalOpen(true);
+                                    }}
+                                    variant="dark" 
+                                    className="h-9 w-9 p-0 rounded-xl hover:bg-blue-600/10 hover:text-blue-500 group-hover:ring-1 ring-blue-500/20"
+                                 >
                                     <Eye className="w-4 h-4" />
                                  </Button>
                                  <Button 
@@ -391,10 +493,27 @@ export default function AdminSubAdmins() {
                                  >
                                     <Wallet className="w-4 h-4" />
                                  </Button>
-                                 <Button variant="dark" className="h-9 w-9 p-0 rounded-xl hover:bg-red-600/10 hover:text-red-500 group-hover:ring-1 ring-red-500/20">
+                                 <Button 
+                                    onClick={() => handleToggleStatus(sub)}
+                                    variant="dark" 
+                                    className={cn(
+                                       "h-9 w-9 p-0 rounded-xl group-hover:ring-1",
+                                       sub.status === 'banned' 
+                                          ? "hover:bg-green-600/10 hover:text-green-500 ring-green-500/20" 
+                                          : "hover:bg-red-600/10 hover:text-red-500 ring-red-500/20"
+                                    )}
+                                 >
                                     <Ban className="w-4 h-4" />
                                  </Button>
-                                 <Button variant="dark" className="h-9 w-9 p-0 rounded-xl">
+                                 <Button 
+                                    onClick={() => {
+                                      setSelectedSubAdmin(sub);
+                                      fetchHistory(sub.id);
+                                      setIsHistoryModalOpen(true);
+                                    }}
+                                    variant="dark" 
+                                    className="h-9 w-9 p-0 rounded-xl hover:bg-amber-600/10 hover:text-amber-500 group-hover:ring-1 ring-amber-500/20"
+                                 >
                                     <History className="w-4 h-4" />
                                  </Button>
                               </div>
@@ -427,7 +546,7 @@ export default function AdminSubAdmins() {
                       <td className="px-8 py-6">
                         <div className="flex flex-col">
                           <span className="text-sm font-black text-white">@{req.username}</span>
-                          <span className="text-[10px] font-bold text-slate-600 mt-1">{new Date(req.created_at).toLocaleString()}</span>
+                          <span className="text-[10px] font-bold text-slate-600 mt-1">{new Date(req.createdAt).toLocaleString()}</span>
                         </div>
                       </td>
                       <td className="px-8 py-6">
@@ -439,16 +558,26 @@ export default function AdminSubAdmins() {
                         </span>
                       </td>
                       <td className="px-8 py-6">
-                        <span className="text-lg font-black text-white">{Number(req.amount).toLocaleString()} {req.balance_type}</span>
+                        <span className="text-lg font-black text-white">{Number(req.amount).toLocaleString()} {req.balanceType}</span>
                       </td>
                       <td className="px-8 py-6 text-center">
-                        {req.proof_url ? (
-                          <a href={req.proof_url} target="_blank" rel="noopener noreferrer" className="p-2 inline-block bg-white/5 rounded-xl hover:bg-white/10 transition-all">
-                             <Eye className="w-4 h-4 text-blue-500" />
-                          </a>
-                        ) : (
-                          <span className="text-[10px] text-slate-600 italic">No Proof</span>
-                        )}
+                        <div className="flex items-center justify-center gap-2">
+                          {req.proofUrl && (
+                            <a href={req.proofUrl} target="_blank" rel="noopener noreferrer" className="p-2 inline-block bg-white/5 rounded-xl hover:bg-white/10 transition-all">
+                               <Eye className="w-4 h-4 text-blue-500" />
+                            </a>
+                          )}
+                          <Button
+                            onClick={() => {
+                              setSelectedRequest(req);
+                              setIsRequestDetailsModalOpen(true);
+                            }}
+                            variant="ghost"
+                            className="p-2 h-auto inline-block bg-white/5 rounded-xl hover:bg-white/10 transition-all"
+                          >
+                             <MoreVertical className="w-4 h-4 text-slate-400" />
+                          </Button>
+                        </div>
                       </td>
                       <td className="px-8 py-6 text-center">
                         <span className={cn(
@@ -656,7 +785,7 @@ export default function AdminSubAdmins() {
                 </div>
               </div>
 
-              <div className="space-y-2">
+               <div className="space-y-2">
                  <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Deposit Amount (BDT)</Label>
                  <Input 
                    type="number"
@@ -677,6 +806,364 @@ export default function AdminSubAdmins() {
                     {loading ? 'Processing...' : 'Confirm Load Wallet'}
                  </Button>
               </DialogFooter>
+           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Details & Services Modal */}
+      <Dialog open={isDetailsModalOpen} onOpenChange={setIsDetailsModalOpen}>
+        <DialogContent className="max-w-2xl bg-slate-900 border-slate-800 text-white rounded-[2.5rem] p-0 overflow-hidden shadow-2xl">
+           <div className="p-8 bg-gradient-to-br from-blue-600/20 to-indigo-600/20 border-b border-white/5 relative">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 blur-3xl rounded-full translate-x-16 -translate-y-16" />
+              <DialogTitle className="text-2xl font-display font-black tracking-tight">{selectedSubAdmin?.fullName}</DialogTitle>
+              <p className="text-sm text-blue-500/80 font-bold mt-1 uppercase tracking-widest">Operator Identity & Permission Pool</p>
+           </div>
+           
+           <div className="p-8 space-y-8 max-h-[70vh] overflow-y-auto custom-scrollbar">
+              {/* Profile Overview */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                 <div className="space-y-4">
+                    <div className="p-4 bg-white/5 rounded-2xl border border-white/10 space-y-1">
+                       <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Username</p>
+                       <p className="text-sm font-bold text-white">@{selectedSubAdmin?.username}</p>
+                    </div>
+                    <div className="p-4 bg-white/5 rounded-2xl border border-white/10 space-y-1">
+                       <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Email Address</p>
+                       <p className="text-sm font-bold text-white">{selectedSubAdmin?.email || 'N/A'}</p>
+                    </div>
+                    <div className="p-4 bg-white/5 rounded-2xl border border-white/10 space-y-1">
+                       <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Phone Number</p>
+                       <p className="text-sm font-bold text-white">{selectedSubAdmin?.phone || 'N/A'}</p>
+                    </div>
+                 </div>
+                 <div className="space-y-4">
+                    <div className="p-4 bg-white/5 rounded-2xl border border-white/10 space-y-1">
+                       <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Location</p>
+                       <p className="text-sm font-bold text-white">{selectedSubAdmin?.current_country || 'N/A'}</p>
+                    </div>
+                    <div className="p-4 bg-white/5 rounded-2xl border border-white/10 space-y-1">
+                       <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Passport / NID Photo</p>
+                       {selectedSubAdmin?.passport_photo ? (
+                          <a href={selectedSubAdmin.passport_photo} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-blue-400 hover:underline flex items-center gap-1 mt-1">
+                             View Document <ChevronRight className="w-3 h-3" />
+                          </a>
+                       ) : (
+                          <p className="text-xs text-slate-500 italic mt-1">No document uploaded</p>
+                       )}
+                    </div>
+                    <div className="p-4 bg-white/5 rounded-2xl border border-white/10 space-y-1">
+                       <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Current Status</p>
+                       <p className={cn(
+                          "text-[10px] font-black uppercase tracking-widest mt-1",
+                          selectedSubAdmin?.status === 'active' ? "text-green-500" : "text-red-500"
+                       )}>
+                          {selectedSubAdmin?.status}
+                       </p>
+                    </div>
+                 </div>
+              </div>
+
+              {/* Service Management */}
+              <div className="space-y-4">
+                 <div className="flex items-center justify-between">
+                    <Label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Active Services (Management)</Label>
+                    <ShieldCheck className="w-4 h-4 text-blue-500" />
+                 </div>
+                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {[
+                      { id: 'add_money', label: 'Add Money' },
+                      { id: 'cash_in', label: 'Cash In' },
+                      { id: 'exchange', label: 'Exchange' },
+                      { id: 'withdraw', label: 'Withdraw' },
+                      { id: 'recharge', label: 'Recharge' }
+                    ].map((service) => {
+                      const isAllowed = (tempServices.length > 0 ? tempServices : (selectedSubAdmin?.allowed_services || [])).includes(service.id);
+                      return (
+                        <button
+                          key={service.id}
+                          type="button"
+                          onClick={() => {
+                            const current = tempServices.length > 0 ? tempServices : (selectedSubAdmin?.allowed_services || []);
+                            const next = isAllowed 
+                              ? current.filter((s: string) => s !== service.id)
+                              : [...current, service.id];
+                            setTempServices(next);
+                          }}
+                          className={cn(
+                            "px-4 py-3 rounded-xl border text-[10px] font-bold uppercase tracking-widest transition-all text-center flex items-center justify-center gap-2",
+                            isAllowed
+                              ? "bg-blue-600/20 border-blue-500 text-blue-400 shadow-[0_0_20px_rgba(59,130,246,0.1)]"
+                              : "bg-white/5 border-white/10 text-slate-500 hover:border-white/20"
+                          )}
+                        >
+                          {service.label}
+                          {isAllowed && <ShieldCheck className="w-3 h-3" />}
+                        </button>
+                      );
+                    })}
+                 </div>
+                 {tempServices.length > 0 && (
+                   <Button 
+                     onClick={() => {
+                       handleUpdateServices(selectedSubAdmin.id, tempServices);
+                       setTempServices([]);
+                     }}
+                     className="w-full h-10 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-xs"
+                   >
+                     Save Services Changes
+                   </Button>
+                 )}
+              </div>
+           </div>
+
+           <div className="p-8 border-t border-white/5 bg-slate-950/50">
+              <Button 
+                onClick={() => setIsDetailsModalOpen(false)}
+                className="w-full h-12 bg-slate-800 hover:bg-slate-700 text-white rounded-2xl font-bold"
+              >
+                 Close Overview
+              </Button>
+           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Transaction History Modal */}
+      <Dialog open={isHistoryModalOpen} onOpenChange={setIsHistoryModalOpen}>
+        <DialogContent className="max-w-2xl bg-slate-900 border-slate-800 text-white rounded-[2.5rem] p-0 overflow-hidden shadow-2xl">
+           <div className="p-8 bg-gradient-to-br from-amber-600/20 to-orange-600/20 border-b border-white/5 relative">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 blur-3xl rounded-full translate-x-16 -translate-y-16" />
+              <DialogTitle className="text-2xl font-display font-black tracking-tight">Wallet Ledger History</DialogTitle>
+              <p className="text-sm text-amber-500/80 font-bold mt-1 uppercase tracking-widest">@{selectedSubAdmin?.username}'s Activity Logs</p>
+           </div>
+           
+           <div className="p-0 max-h-[60vh] overflow-y-auto custom-scrollbar">
+              <table className="w-full text-left">
+                 <thead className="sticky top-0 bg-slate-900 border-b border-white/5">
+                    <tr>
+                       <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest italic">Date / Time</th>
+                       <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest italic">Type</th>
+                       <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest italic font-black">Amount</th>
+                       <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest italic">Reason</th>
+                    </tr>
+                 </thead>
+                 <tbody className="divide-y divide-white/5">
+                    {history.map((tx) => (
+                       <tr key={tx.id} className="hover:bg-white/[0.02]">
+                          <td className="px-6 py-4">
+                             <p className="text-[10px] font-bold text-slate-400">{new Date(tx.createdAt).toLocaleString()}</p>
+                          </td>
+                          <td className="px-6 py-4">
+                             <span className={cn(
+                                "px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest",
+                                tx.type === 'deposit' || tx.type === 'credit' ? "bg-green-500/20 text-green-500" : "bg-red-500/20 text-red-500"
+                             )}>
+                                {tx.type}
+                             </span>
+                          </td>
+                          <td className="px-6 py-4">
+                             <p className={cn(
+                                "text-sm font-black italic",
+                                tx.type === 'deposit' || tx.type === 'credit' ? "text-green-500" : "text-red-500"
+                             )}>
+                                {tx.type === 'deposit' || tx.type === 'credit' ? '+' : '-'}{tx.amount.toLocaleString()}
+                             </p>
+                          </td>
+                          <td className="px-6 py-4">
+                             <p className="text-xs text-slate-500 line-clamp-1 truncate max-w-[150px]">{tx.reason}</p>
+                          </td>
+                       </tr>
+                    ))}
+                    {history.length === 0 && (
+                       <tr>
+                          <td colSpan={4} className="px-6 py-12 text-center text-slate-600 italic uppercase font-black text-[10px] tracking-widest">
+                             No transaction history found.
+                          </td>
+                       </tr>
+                    )}
+                 </tbody>
+              </table>
+           </div>
+
+           <div className="p-6 border-t border-white/5 bg-slate-950/50">
+              <Button 
+                onClick={() => setIsHistoryModalOpen(false)}
+                className="w-full h-12 bg-slate-800 hover:bg-slate-700 text-white rounded-2xl font-bold"
+              >
+                 Return to Management
+              </Button>
+           </div>
+        </DialogContent>
+      </Dialog>
+      {/* Admin Bank Settings for Sub Admin Refill */}
+      <Dialog open={isAdminBankModalOpen} onOpenChange={setIsAdminBankModalOpen}>
+        <DialogContent className="max-w-md bg-slate-900 border-slate-800 text-white rounded-[2.5rem] p-0 overflow-hidden shadow-2xl">
+           <div className="p-8 bg-gradient-to-br from-amber-600/20 to-orange-600/20 border-b border-white/5 relative">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 blur-3xl rounded-full translate-x-16 -translate-y-16" />
+              <DialogTitle className="text-2xl font-display font-black tracking-tight">Refill Payment Bank</DialogTitle>
+              <p className="text-sm text-amber-500/80 font-bold mt-1 uppercase tracking-widest">Where operators send money for refill</p>
+           </div>
+           
+           <div className="p-8 space-y-4">
+              <div className="space-y-2">
+                 <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Bank Name</Label>
+                 <Input 
+                   placeholder="e.g. Bkash (Personal)"
+                   value={adminBankSettings.bankName}
+                   onChange={(e) => setAdminBankSettings({...adminBankSettings, bankName: e.target.value})}
+                   className="bg-white/5 border-white/10 h-12 rounded-2xl px-5"
+                 />
+              </div>
+              <div className="space-y-2">
+                 <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Account Number</Label>
+                 <Input 
+                   placeholder="017..."
+                   value={adminBankSettings.accountNumber}
+                   onChange={(e) => setAdminBankSettings({...adminBankSettings, accountNumber: e.target.value})}
+                   className="bg-white/5 border-white/10 h-12 rounded-2xl px-5"
+                 />
+              </div>
+              <div className="space-y-2">
+                 <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Account Holder Name</Label>
+                 <Input 
+                   placeholder="Admin Name"
+                   value={adminBankSettings.accountHolder}
+                   onChange={(e) => setAdminBankSettings({...adminBankSettings, accountHolder: e.target.value})}
+                   className="bg-white/5 border-white/10 h-12 rounded-2xl px-5"
+                 />
+              </div>
+              <div className="space-y-2">
+                 <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Instructions (Optional)</Label>
+                 <textarea 
+                   placeholder="e.g. Send money and upload screenshot"
+                   value={adminBankSettings.instructions}
+                   onChange={(e) => setAdminBankSettings({...adminBankSettings, instructions: e.target.value})}
+                   className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-sm min-h-[100px] focus:ring-amber-500 transition-all outline-none"
+                 />
+              </div>
+
+              <DialogFooter className="pt-4">
+                 <Button type="button" variant="ghost" onClick={() => setIsAdminBankModalOpen(false)} className="h-12 flex-1 rounded-xl">Cancel</Button>
+                 <Button 
+                   onClick={handleSaveAdminBank}
+                   disabled={loading}
+                   className="h-12 flex-[2] bg-amber-600 hover:bg-amber-500 text-white rounded-xl font-bold"
+                 >
+                    {loading ? 'Saving...' : 'Update Settings'}
+                 </Button>
+              </DialogFooter>
+           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Request Details Modal */}
+      <Dialog open={isRequestDetailsModalOpen} onOpenChange={setIsRequestDetailsModalOpen}>
+        <DialogContent className="max-w-md bg-slate-900 border-slate-800 text-white rounded-[2.5rem] p-0 overflow-hidden shadow-2xl">
+           <div className={cn(
+             "p-8 border-b border-white/5 relative",
+             selectedRequest?.type === 'refill' ? "bg-gradient-to-br from-green-600/20 to-emerald-600/20" : "bg-gradient-to-br from-red-600/20 to-pink-600/20"
+           )}>
+              <DialogTitle className="text-2xl font-display font-black tracking-tight">{selectedRequest?.type?.toUpperCase()} Request</DialogTitle>
+              <p className={cn(
+                "text-sm font-bold mt-1 uppercase tracking-widest",
+                selectedRequest?.type === 'refill' ? "text-green-500" : "text-red-500"
+              )}>Operator: @{selectedRequest?.username}</p>
+           </div>
+           
+           <div className="p-8 space-y-6">
+              <div className="grid grid-cols-2 gap-4">
+                 <div className="p-4 bg-white/5 rounded-2xl border border-white/10">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Amount</p>
+                    <p className="text-xl font-black text-white">{selectedRequest?.amount?.toLocaleString()} {selectedRequest?.balanceType}</p>
+                 </div>
+                 <div className="p-4 bg-white/5 rounded-2xl border border-white/10">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Status</p>
+                    <p className={cn(
+                      "text-xs font-black uppercase tracking-widest",
+                      selectedRequest?.status === 'pending' ? "text-amber-500" :
+                      selectedRequest?.status === 'approved' ? "text-green-500" : "text-red-500"
+                    )}>{selectedRequest?.status}</p>
+                 </div>
+              </div>
+
+              {selectedRequest?.type === 'withdraw' && (
+                <div className="space-y-4">
+                   <Label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Withdrawal Account Details</Label>
+                   <div className="p-6 bg-white/5 rounded-2xl border border-white/10 space-y-4">
+                      <div className="flex justify-between items-center border-b border-white/5 pb-2">
+                        <span className="text-xs text-slate-500">Method</span>
+                        <span className="text-sm font-bold text-white">{selectedRequest?.accountType}</span>
+                      </div>
+                      <div className="flex justify-between items-center border-b border-white/5 pb-2">
+                        <span className="text-xs text-slate-500">Account Name</span>
+                        <span className="text-sm font-bold text-white">{selectedRequest?.withdrawalAccountName || 'N/A'}</span>
+                      </div>
+                      <div className="flex justify-between items-center bg-blue-600/10 p-3 rounded-xl border border-blue-500/20">
+                        <span className="text-xs text-blue-400">Account No.</span>
+                        <span className="text-sm font-black text-blue-500 select-all">{selectedRequest?.withdrawalAccountNumber}</span>
+                      </div>
+                   </div>
+                </div>
+              )}
+
+              {selectedRequest?.txId && (
+                <div className="p-4 bg-white/5 rounded-2xl border border-white/10">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Transaction / Ref ID</p>
+                  <p className="text-sm font-black text-white mt-1 select-all">{selectedRequest?.txId}</p>
+                </div>
+              )}
+
+              {selectedRequest?.proofUrl && (
+                <div className="space-y-2">
+                  <Label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Payment Proof</Label>
+                  <div className="aspect-video bg-white/5 rounded-2xl border border-white/10 overflow-hidden group relative">
+                    <img src={selectedRequest.proofUrl} alt="Proof" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    <a 
+                      href={selectedRequest.proofUrl} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white font-bold gap-2"
+                    >
+                      <Eye className="w-5 h-5" /> View Large Proof
+                    </a>
+                  </div>
+                </div>
+              )}
+
+              <div className="p-4 bg-white/5 rounded-2xl border border-white/10">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Requested Date</p>
+                <p className="text-xs text-slate-400 font-bold mt-1">{new Date(selectedRequest?.createdAt).toLocaleString()}</p>
+              </div>
+
+              {selectedRequest?.status === 'pending' ? (
+                <div className="grid grid-cols-2 gap-4">
+                  <Button 
+                    onClick={() => {
+                      handleRequestAction(selectedRequest, 'approved');
+                      setIsRequestDetailsModalOpen(false);
+                    }}
+                    className="h-14 bg-green-600 hover:bg-green-500 text-white rounded-2xl font-bold"
+                  >
+                    Approve Request
+                  </Button>
+                  <Button 
+                    onClick={() => {
+                      handleRequestAction(selectedRequest, 'rejected');
+                      setIsRequestDetailsModalOpen(false);
+                    }}
+                    variant="ghost" 
+                    className="h-14 bg-red-600/10 hover:bg-red-600 text-red-500 hover:text-white rounded-2xl font-bold"
+                  >
+                    Reject Request
+                  </Button>
+                </div>
+              ) : (
+                <Button 
+                  onClick={() => setIsRequestDetailsModalOpen(false)}
+                  className="w-full h-14 bg-slate-800 hover:bg-slate-700 text-white rounded-2xl font-bold"
+                >
+                  Close Details
+                </Button>
+              )}
            </div>
         </DialogContent>
       </Dialog>

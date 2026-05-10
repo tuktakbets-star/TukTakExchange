@@ -4,6 +4,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { firebaseService, where } from '../lib/firebaseService';
+import { calculateServiceFee } from '../lib/feeUtils';
 import { 
   Send, 
   ArrowRight, 
@@ -19,7 +20,8 @@ import {
   FileText,
   Building2,
   QrCode,
-  ChevronRight
+  ChevronRight,
+  Calculator
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -62,6 +64,15 @@ export default function ExchangeMoney() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPasswordStep, setShowPasswordStep] = useState(false);
   const [showInitialWarning, setShowInitialWarning] = useState(true);
+  const [fee, setFee] = useState(0);
+
+  useEffect(() => {
+    const unsub = firebaseService.subscribeToCollection('adminSettings', [], (data) => {
+      const globalSettings = data.find(s => s.key === 'global_settings');
+      if (globalSettings) setAdminSettings(globalSettings.value);
+    });
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     if (!profile?.uid) return;
@@ -133,6 +144,13 @@ export default function ExchangeMoney() {
   // Sync calculations reactively to handle rate updates (tiers)
   // Manual amount handlers handle cross-calculations now
 
+  useEffect(() => {
+    const amountNum = Number(amount) || 0;
+    const tiers = adminSettings?.serviceFees?.exchange || [];
+    const calculatedFee = calculateServiceFee(amountNum, tiers);
+    setFee(calculatedFee);
+  }, [amount, adminSettings]);
+
   const handleAmountChange = (val: string) => {
     setActiveSide('source');
     setAmount(val);
@@ -158,8 +176,6 @@ export default function ExchangeMoney() {
       setAmount(calculated);
     }
   };
-
-  const fee = amount ? (amountNum * 0.01).toFixed(0) : '0'; // 1% fee
 
   const handleNext = () => {
     if (step === 1) {
@@ -449,8 +465,11 @@ export default function ExchangeMoney() {
                       </span>
                     </div>
                     <div className="flex justify-between text-sm">
-                      <span className="text-slate-400">{t('fee')} (1%)</span>
-                      <span className="font-medium">{fee} {sourceCurrency}</span>
+                      <span className="text-slate-400">Service Fee</span>
+                      <span className="font-medium flex items-center gap-1">
+                        <Calculator className="w-3 h-3 text-brand-blue" />
+                        {fee.toLocaleString()} {sourceCurrency}
+                      </span>
                     </div>
                     <div className="pt-3 border-t border-white/5 flex justify-between font-bold">
                       <span>{t('totalToPay')}</span>
@@ -623,8 +642,11 @@ export default function ExchangeMoney() {
                         </div>
                       )}
                       <div className="pt-4 border-t border-white/5 flex justify-between text-sm font-bold">
-                        <span className="text-slate-400">Service Fee (1%)</span>
-                        <span>{fee} {sourceCurrency}</span>
+                        <span className="text-slate-400">Service Fee</span>
+                        <span className="flex items-center gap-1">
+                          <Calculator className="w-3 h-3 text-brand-blue" />
+                          {fee.toLocaleString()} {sourceCurrency}
+                        </span>
                       </div>
                     </div>
                   </div>

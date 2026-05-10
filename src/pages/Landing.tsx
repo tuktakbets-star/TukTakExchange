@@ -80,6 +80,7 @@ export default function Landing() {
     { code: 'en', name: 'English' },
     { code: 'hi', name: 'हिन्दी (Hindi)' },
     { code: 'ne', name: 'नेपाली (Nepali)' },
+    { code: 'ta', name: 'தமிழ் (Tamil)' },
     { code: 'ur', name: 'اردو (Urdu)' },
     { code: 'vi', name: 'Tiếng Việt (Vietnamese)' }
   ];

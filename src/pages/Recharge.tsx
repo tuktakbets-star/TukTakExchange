@@ -4,6 +4,7 @@ import { useAuth } from '../hooks/useAuth';
 import { firebaseService, where } from '../lib/firebaseService';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
+import { calculateServiceFee } from '../lib/feeUtils';
 import { 
   Zap, 
   Phone, 
@@ -12,7 +13,8 @@ import {
   CheckCircle2,
   AlertCircle,
   Smartphone,
-  CreditCard
+  CreditCard,
+  Calculator
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -42,18 +44,33 @@ export default function Recharge() {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [amount, setAmount] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [adminSettings, setAdminSettings] = useState<any>(null);
+  const [rechargeFee, setRechargeFee] = useState(0);
 
   useEffect(() => {
-    if (!profile?.uid) return;
-
     const unsubWallets = firebaseService.subscribeToCollection(
       'wallets',
       [where('uid', '==', profile.uid)],
       (data) => setWallets(data)
     );
 
-    return () => unsubWallets();
+    const unsubSettings = firebaseService.subscribeToCollection('adminSettings', [], (data) => {
+      const globalSettings = data.find(s => s.key === 'global_settings');
+      if (globalSettings) setAdminSettings(globalSettings.value);
+    });
+
+    return () => {
+      unsubWallets();
+      unsubSettings();
+    };
   }, [profile?.uid]);
+
+  useEffect(() => {
+    const amountNum = Number(amount) || 0;
+    const tiers = adminSettings?.serviceFees?.recharge || [];
+    const calculatedFee = calculateServiceFee(amountNum, tiers);
+    setRechargeFee(calculatedFee);
+  }, [amount, adminSettings]);
 
   const operators: Record<string, string[]> = {
     Bangladesh: ['Grameenphone', 'Banglalink', 'Robi', 'Airtel', 'Teletalk'],
@@ -88,8 +105,8 @@ export default function Recharge() {
     }
 
     const wallet = wallets.find(w => w.currency === 'VND');
-    if (!wallet || wallet.balance < Number(amount)) {
-      toast.error(t('insufficient_balance_vnd'));
+    if (!wallet || wallet.balance < Number(amount) + Number(rechargeFee)) {
+      toast.error('Insufficient balance to cover recharge amount and service fee');
       return;
     }
 
@@ -109,6 +126,8 @@ export default function Recharge() {
         status: 'pending',
         amount: Number(amount),
         currency: 'VND',
+        fee: Number(rechargeFee),
+        total_to_deduct: Number(amount) + Number(rechargeFee),
         createdAt: new Date().toISOString(),
         description: `${t('recharge')}: ${operator} (${phoneNumber})`,
         rechargeDetails: {
@@ -122,7 +141,7 @@ export default function Recharge() {
       
       if (docId) {
         // Lock balance instead of direct deduction
-        await firebaseService.updateWalletBalance(profile?.uid!, 'VND', 0, Number(amount));
+        await firebaseService.updateWalletBalance(profile?.uid!, 'VND', 0, Number(amount) + Number(rechargeFee));
 
         toast.success(t('recharge_submitted'));
         navigate(`/waiting/${docId}`);
@@ -283,10 +302,17 @@ export default function Recharge() {
                         <span className="text-slate-500 text-sm">{t('phoneNumber')}</span>
                         <span className="font-mono">{phoneNumber}</span>
                       </div>
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-slate-500">Service Fee</span>
+                        <span className="font-bold flex items-center gap-1">
+                          <Calculator className="w-3 h-3 text-brand-blue" />
+                          ₫{rechargeFee.toLocaleString()}
+                        </span>
+                      </div>
                       <div className="h-px bg-white/5" />
                       <div className="flex justify-between items-center">
-                        <span className="text-slate-500 text-sm">{t('amount')}</span>
-                        <span className="text-2xl font-display font-bold text-brand-blue">₫{parseInt(amount).toLocaleString()}</span>
+                        <span className="text-slate-500 text-sm">Total to Deduct</span>
+                        <span className="text-2xl font-display font-bold text-brand-blue">₫{(Number(amount) + rechargeFee).toLocaleString()}</span>
                       </div>
                    </div>
 

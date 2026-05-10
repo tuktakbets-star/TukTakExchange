@@ -54,8 +54,7 @@ export default function OperatorLayout() {
     // ... unsub notifications ...
     const unsubNotifications = supabaseService.subscribeToCollection('notifications', [
       where('sub_admin_id', '==', operatorSession.id),
-      where('read', '==', false),
-      orderBy('created_at', 'desc')
+      where('read', '==', false)
     ], (data) => {
       setUnreadMessages(data.length);
     });
@@ -311,11 +310,19 @@ export default function OperatorLayout() {
           </div>
 
           <div className="flex items-center gap-4">
-            <button className="relative w-11 h-11 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center hover:bg-blue-600/10 transition-all group">
+            <button 
+              onClick={() => navigate('/operator/messages')}
+              className="relative w-11 h-11 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center hover:bg-blue-600/10 transition-all group"
+            >
               <Bell className="w-5 h-5 text-slate-400 group-hover:text-blue-400" />
-              <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-[#0d1117]" />
+              {unreadMessages > 0 && (
+                <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-[#0d1117] animate-pulse" />
+              )}
             </button>
-            <button className="relative w-11 h-11 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center hover:bg-blue-600/10 transition-all group">
+            <button 
+              onClick={() => navigate('/operator/messages')}
+              className="relative w-11 h-11 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center hover:bg-blue-600/10 transition-all group"
+            >
               <MessageCircle className="w-5 h-5 text-slate-400 group-hover:text-blue-400" />
               <span className="absolute top-2 right-2 w-2 h-2 bg-blue-500 rounded-full border-2 border-[#0d1117]" />
             </button>

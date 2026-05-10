@@ -167,7 +167,9 @@ export default function Navbar({ onMenuClick }: NavbarProps) {
               <DropdownMenuItem onClick={() => changeLanguage('bn')} className="cursor-pointer focus:bg-white/5">বাংলা (Bengali)</DropdownMenuItem>
               <DropdownMenuItem onClick={() => changeLanguage('hi')} className="cursor-pointer focus:bg-white/5">हिन्दी (Hindi)</DropdownMenuItem>
               <DropdownMenuItem onClick={() => changeLanguage('ne')} className="cursor-pointer focus:bg-white/5">नेपाली (Nepali)</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => changeLanguage('ta')} className="cursor-pointer focus:bg-white/5">தமிழ் (Tamil)</DropdownMenuItem>
               <DropdownMenuItem onClick={() => changeLanguage('ur')} className="cursor-pointer focus:bg-white/5">اردو (Urdu)</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => changeLanguage('vi')} className="cursor-pointer focus:bg-white/5">Tiếng Việt (Vietnamese)</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
 
