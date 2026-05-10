@@ -69,7 +69,7 @@ export default function AddMoney() {
   const handleNext = () => {
     if (step === 1) {
       if (!amountSource || Number(amountSource) <= 0) {
-        toast.error('Please enter a valid amount');
+        toast.error(t('amount_invalid'));
         return;
       }
       setStep(2);
@@ -78,17 +78,17 @@ export default function AddMoney() {
 
   const handleConfirm = async () => {
     if (!password) {
-      toast.error('Please enter your password');
+      toast.error(t('password_required'));
       return;
     }
 
     if (!proofFile) {
-        toast.error('Please upload payment receipt');
+        toast.error(t('receipt_required'));
         return;
     }
 
     if (!profile?.uid || !profile?.email) {
-      toast.error('You must be logged in to create a transaction.');
+      toast.error(t('login_required_tx'));
       return;
     }
 
@@ -97,7 +97,7 @@ export default function AddMoney() {
       // 1. Verify Password first
       const { error: authError } = await firebaseService.signIn(profile.email, password);
       if (authError) {
-        toast.error('Incorrect password. Please try again.');
+        toast.error(t('password_incorrect'));
         setIsSubmitting(false);
         return;
       }
@@ -120,14 +120,14 @@ export default function AddMoney() {
 
       const docId = await firebaseService.addDocument('transactions', tx);
       if (docId) {
-        toast.success('Add Money request submitted!');
+        toast.success(t('tx_submitted'));
         navigate(`/waiting/${docId}`);
       } else {
-        toast.error('Failed to create transaction. Please check your connection or contact admin.');
+        toast.error(t('tx_failed'));
       }
     } catch (error) {
       console.error(error);
-      toast.error('Failed to submit request');
+      toast.error(t('submit_failed'));
     } finally {
       setIsSubmitting(false);
     }
@@ -140,7 +140,7 @@ export default function AddMoney() {
           <Plus className="w-8 h-8 text-blue-500" />
         </div>
         <h1 className="text-3xl font-display font-bold">{t('addMoney')}</h1>
-        <p className="text-slate-400 max-w-md mx-auto">Vietnam theke money load korun shohojei</p>
+        <p className="text-slate-400 max-w-md mx-auto">{t('add_money_desc')}</p>
       </div>
 
       {/* Stepper */}
@@ -171,12 +171,12 @@ export default function AddMoney() {
               >
                 <div className="flex items-center gap-2 text-blue-500 font-bold mb-4">
                   <Calculator className="w-5 h-5" />
-                  <h3>Entry Amount</h3>
+                  <h3>{t('entry_amount')}</h3>
                 </div>
 
                 <div className="grid gap-6">
                   <div className="space-y-2">
-                    <Label className="text-slate-400 text-xs uppercase tracking-widest">Amount (VND)</Label>
+                    <Label className="text-slate-400 text-xs uppercase tracking-widest">{t('amount')} (VND)</Label>
                     <div className="relative">
                       <Input 
                         type="number"
@@ -191,14 +191,16 @@ export default function AddMoney() {
                 </div>
 
                 <div className="p-4 bg-blue-500/5 border border-blue-500/20 rounded-2xl flex gap-3 items-start">
-                  <Info className="w-5 h-5 text-blue-400 mt-0.5" />
+                  <div className="w-5 h-5 text-blue-400 mt-0.5 shrink-0">
+                    <Info className="w-full h-full" />
+                  </div>
                   <p className="text-xs text-slate-400 leading-relaxed">
-                    Vietnam er local bank theke amader bank e VND pathiye screenshot upload korun.
+                    {t('add_money_instructions')}
                   </p>
                 </div>
 
                 <Button onClick={handleNext} className="w-full h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold shadow-lg shadow-blue-600/20 transition-all">
-                  Next Step <ChevronRight className="ml-2 w-5 h-5" />
+                  {t('next_step')} <ChevronRight className="ml-2 w-5 h-5" />
                 </Button>
               </motion.div>
             )}
@@ -214,21 +216,21 @@ export default function AddMoney() {
                 {/* Amount Summary */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
                   <div className="p-5 rounded-3xl bg-blue-500/10 border border-blue-500/20 flex flex-col justify-center">
-                    <p className="text-[10px] text-blue-400 font-black uppercase tracking-widest mb-1">Amount to Pay</p>
+                    <p className="text-[10px] text-blue-400 font-black uppercase tracking-widest mb-1">{t('amount_to_pay')}</p>
                     <h3 className="text-3xl font-black text-white flex items-baseline gap-1">
                       <span className="text-sm font-bold text-blue-400">₫</span>
                       {Number(amountSource).toLocaleString()}
                     </h3>
                   </div>
                   <div className="p-5 rounded-3xl bg-white/5 border border-white/10 flex flex-col justify-center">
-                    <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-1">Currency</p>
-                    <h3 className="text-xl font-black text-white">Vietnamese Dong (VND)</h3>
+                    <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-1">{t('pay_currency')}</p>
+                    <h3 className="text-xl font-black text-white">{t('vietnamese_dong')}</h3>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2 text-blue-500 font-bold mb-4">
                   <Building2 className="w-5 h-5" />
-                  <h3>Admin Vietnam Bank Details</h3>
+                  <h3>{t('admin_bank_details_vn')}</h3>
                 </div>
 
                 <div className="space-y-4">
@@ -240,7 +242,7 @@ export default function AddMoney() {
                           <div key={idx} className="p-5 rounded-2xl bg-white/5 border border-white/10 space-y-3">
                             <div className="flex justify-between items-start">
                               <div>
-                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">RECEIVING BANK #{idx + 1}</p>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{t('receiving_bank')} #{idx + 1}</p>
                                 <h4 className="text-lg font-bold text-white">{bank.bankName}</h4>
                               </div>
                               <div className="w-10 h-10 bg-brand-blue/10 rounded-xl flex items-center justify-center">
@@ -262,7 +264,7 @@ export default function AddMoney() {
                                 <div className="aspect-square max-w-[200px] mx-auto bg-slate-950 rounded-2xl border border-white/10 flex items-center justify-center overflow-hidden mb-2">
                                   <img src={bank.qrUrl} alt="QR" className="w-full h-full object-contain p-4" referrerPolicy="no-referrer" />
                                 </div>
-                                <p className="text-[10px] text-center text-slate-500 uppercase font-black">Scan to Pay</p>
+                                <p className="text-[10px] text-center text-slate-500 uppercase font-black">{t('scan_to_pay')}</p>
                               </div>
                             )}
                           </div>
@@ -273,7 +275,7 @@ export default function AddMoney() {
                           <div className="p-5 rounded-2xl bg-white/5 border border-white/10 space-y-3">
                             <div className="flex justify-between items-start">
                               <div>
-                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">RECEIVING BANK</p>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{t('receiving_bank')}</p>
                                 <h4 className="text-lg font-bold text-white">{adminSettings.bankName || 'Vietnam Local Bank'}</h4>
                               </div>
                               <div className="w-10 h-10 bg-brand-blue/10 rounded-xl flex items-center justify-center">
@@ -295,14 +297,14 @@ export default function AddMoney() {
                                 <div className="aspect-square max-w-[200px] mx-auto bg-slate-950 rounded-2xl border border-white/10 flex items-center justify-center overflow-hidden mb-2">
                                   <img src={adminSettings.qrCode} alt="QR" className="w-full h-full object-contain p-4" referrerPolicy="no-referrer" />
                                 </div>
-                                <p className="text-[10px] text-center text-slate-500 uppercase font-black">Scan to Pay</p>
+                                <p className="text-[10px] text-center text-slate-500 uppercase font-black">{t('scan_to_pay')}</p>
                               </div>
                             )}
                           </div>
                         ) : (
                           <div className="p-8 text-center bg-red-500/5 border border-red-500/10 rounded-2xl">
-                            <p className="text-slate-400">Admin hasn't configured Vietnam bank accounts yet.</p>
-                            <p className="text-xs text-red-400 mt-2">Please contact admin via chat to get bank details.</p>
+                            <p className="text-slate-400">{t('no_bank_configured')}</p>
+                            <p className="text-xs text-red-400 mt-2">{t('contact_admin_chat')}</p>
                           </div>
                         )
                       )}
@@ -310,28 +312,28 @@ export default function AddMoney() {
                       {/* Display instructions and terms if they exist at the root level */}
                       {adminSettings.instructions && (
                         <div className="pt-4 mt-4 border-t border-white/5 bg-white/5 p-4 rounded-xl">
-                          <Label className="text-[10px] text-slate-500 uppercase tracking-widest mb-1 block">Instructions</Label>
+                          <Label className="text-[10px] text-slate-500 uppercase tracking-widest mb-1 block">{t('instructions')}</Label>
                           <p className="text-xs text-slate-400 whitespace-pre-line">{adminSettings.instructions}</p>
                         </div>
                       )}
                       {adminSettings.terms && (
                         <div className="pt-4 mt-4 border-t border-red-500/10 bg-red-500/5 p-4 rounded-xl">
-                          <Label className="text-[10px] text-red-500 uppercase tracking-widest mb-1 block font-bold">Terms & Conditions</Label>
+                          <Label className="text-[10px] text-red-500 uppercase tracking-widest mb-1 block font-bold">{t('terms_conditions')}</Label>
                           <p className="text-[10px] text-slate-500 italic whitespace-pre-line">{adminSettings.terms}</p>
                         </div>
                       )}
                     </div>
                   ) : (
                     <div className="p-8 text-center bg-white/5 border border-white/10 rounded-2xl">
-                       <p className="text-slate-400">Admin hasn't configured Vietnam bank accounts yet.</p>
-                       <p className="text-xs text-slate-500 mt-2">Please contact admin via chat.</p>
+                       <p className="text-slate-400">{t('no_bank_configured')}</p>
+                       <p className="text-xs text-slate-500 mt-2">{t('contact_admin_chat')}</p>
                     </div>
                   )}
                 </div>
 
                 <div className="pt-4 border-t border-white/5 space-y-6">
                    <div className="space-y-2">
-                    <Label className="text-slate-400 text-xs uppercase tracking-widest">Upload Payment Receipt</Label>
+                    <Label className="text-slate-400 text-xs uppercase tracking-widest">{t('upload_receipt')}</Label>
                     <div 
                       className={cn(
                         "relative border-2 border-dashed rounded-2xl p-8 transition-all cursor-pointer group",
@@ -357,12 +359,12 @@ export default function AddMoney() {
                           {proofFile ? (
                             <>
                               <p className="font-bold text-blue-500">{proofFile.name}</p>
-                              <p className="text-xs text-slate-500 mt-1">Click to change photo</p>
+                              <p className="text-xs text-slate-500 mt-1">{t('click_to_change')}</p>
                             </>
                           ) : (
                             <>
-                              <p className="font-bold text-slate-300">Click to Upload Receipt</p>
-                              <p className="text-xs text-slate-500 mt-1">Upload screen shot of your payment</p>
+                              <p className="font-bold text-slate-300">{t('click_to_upload')}</p>
+                              <p className="text-xs text-slate-500 mt-1">{t('upload_desc')}</p>
                             </>
                           )}
                         </div>
@@ -371,7 +373,7 @@ export default function AddMoney() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label className="text-slate-400 text-xs uppercase tracking-widest">Transaction ID (Optional)</Label>
+                    <Label className="text-slate-400 text-xs uppercase tracking-widest">{t('transaction_id_optional')}</Label>
                     <Input 
                       placeholder="e.g. 987654321"
                       value={transactionId}
@@ -384,7 +386,7 @@ export default function AddMoney() {
                     <Label className="text-slate-400 text-xs uppercase tracking-widest">{t('password')}</Label>
                     <Input 
                       type="password" 
-                      placeholder="Enter password to confirm"
+                      placeholder={t('password')}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       className="h-14 bg-white/5 border-white/10 rounded-2xl"
@@ -401,7 +403,7 @@ export default function AddMoney() {
                     disabled={isSubmitting || !proofFile || !password}
                     className="flex-1 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold transition-all shadow-lg shadow-blue-600/20"
                   >
-                    {isSubmitting ? t('processing') : 'Confirm Add Money'} <ChevronRight className="ml-2 w-5 h-5" />
+                    {isSubmitting ? t('processing') : t('confirm_add_money')} <ChevronRight className="ml-2 w-5 h-5" />
                   </Button>
                 </div>
               </motion.div>
@@ -417,7 +419,7 @@ export default function AddMoney() {
            onClick={() => navigate('/messages')}
          >
             <MessageSquare className="w-5 h-5 mr-2 text-brand-blue" />
-            Chat with Admin
+            {t('chatWithAdmin')}
          </Button>
          <Button 
            variant="ghost" 
@@ -425,7 +427,7 @@ export default function AddMoney() {
            onClick={() => navigate('/dashboard')}
          >
             <ChevronLeft className="w-5 h-5 mr-2" />
-            Back to Dashboard
+            {t('back_to_dashboard')}
          </Button>
       </div>
     </div>

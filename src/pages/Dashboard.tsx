@@ -244,10 +244,10 @@ export default function Dashboard() {
             <div className="flex items-center justify-between px-2">
               <h3 className="text-sm font-bold text-yellow-500 flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4" />
-                Active Transactions
+                {t('active_transactions')}
               </h3>
               <Badge variant="outline" className="text-[10px] border-yellow-500/20 text-yellow-500">
-                {activeTransactions.length} Pending
+                {activeTransactions.length} {t('pending')}
               </Badge>
             </div>
             <div className="grid gap-3">
@@ -263,16 +263,16 @@ export default function Dashboard() {
                         <Clock className="w-5 h-5 animate-pulse" />
                       </div>
                       <div>
-                        <p className="text-sm font-bold">{tx.type === 'exchange' ? 'Currency Exchange' : tx.type.toUpperCase()}</p>
+                        <p className="text-sm font-bold">{tx.type === 'exchange' ? t('currency_exchange') : tx.type.toUpperCase()}</p>
                         <p className="text-[10px] text-slate-400">
-                          {(tx.status === 'paid' || tx.status === 'waiting_confirmation' || tx.status === 'mark_as_paid') ? 'Action Required: Confirm Receipt' : 
-                           (tx.status === 'accepted' || tx.status === 'processing') ? 'Agent Assigned - Processing' : 
-                           tx.status === 'disputed' ? 'Appeal Under Investigation' : 'Awaiting Agent Assignment'}
+                          {(tx.status === 'paid' || tx.status === 'waiting_confirmation' || tx.status === 'mark_as_paid') ? t('status_action_required') : 
+                           (tx.status === 'accepted' || tx.status === 'processing') ? t('status_agent_assigned') : 
+                           tx.status === 'disputed' ? t('status_under_investigation') : t('status_awaiting_agent')}
                         </p>
                       </div>
                     </div>
                     <Button variant="ghost" size="sm" className="text-yellow-500 h-8 font-bold text-xs">
-                      View Status
+                      {t('viewStatus') || 'View Status'}
                       <ChevronRight className="w-3 h-3 ml-1" />
                     </Button>
                   </CardContent>
@@ -355,7 +355,7 @@ export default function Dashboard() {
                 <ShieldCheck className="w-4 h-4 text-brand-blue" />
               </div>
               <div>
-                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest leading-none mb-1">Account Number</p>
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest leading-none mb-1">{t('account_number')}</p>
                 <p className="text-sm font-bold text-white leading-none">{profile?.phoneNumber || 'Not Set'}</p>
               </div>
             </div>
@@ -447,10 +447,10 @@ export default function Dashboard() {
       {/* 4. Notifications Section */}
       {notifications.length > 0 && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xl font-display font-bold">Notifications</h3>
+        <div className="flex items-center justify-between">
+            <h3 className="text-xl font-display font-bold">{t('notifications')}</h3>
             <Badge className="bg-brand-blue/10 text-brand-blue border-brand-blue/20">
-              {notifications.filter(n => !n.read).length} New
+              {notifications.filter(n => !n.read).length} {t('new_notif')}
             </Badge>
           </div>
           <div className="space-y-3">
@@ -533,17 +533,27 @@ export default function Dashboard() {
                   </p>
                   <p className="text-[10px] text-slate-500">{t('fee')}: ₫0</p>
                 </div>
-                <Badge variant="outline" className={cn(
-                  "text-[10px] h-6 px-3 rounded-full",
-                  tx.status === 'completed' || tx.status === 'approved' ? "border-green-500/50 text-green-500 bg-green-500/5" : 
-                  (tx.status === 'accepted' || tx.status === 'processing') ? "border-blue-500/50 text-blue-500 bg-blue-500/5" :
-                  (tx.status === 'waiting_confirmation' || tx.status === 'mark_as_paid') ? "border-purple-500/50 text-purple-500 bg-purple-500/5" :
-                  tx.status === 'pending' ? "border-yellow-500/50 text-yellow-500 bg-yellow-500/5" : "border-red-500/50 text-red-500 bg-red-500/5"
-                )}>
-                  {tx.status === 'accepted' || tx.status === 'processing' ? 'Agent Assigned' :
-                   (tx.status === 'waiting_confirmation' || tx.status === 'mark_as_paid') ? 'Agent Paid' :
-                   tx.status?.toUpperCase().replace('_', ' ')}
-                </Badge>
+                <div className="flex items-center gap-3">
+                  <Badge variant="outline" className={cn(
+                    "text-[10px] h-6 px-3 rounded-full",
+                    tx.status === 'completed' || tx.status === 'approved' ? "border-green-500/50 text-green-500 bg-green-500/5" : 
+                    (tx.status === 'accepted' || tx.status === 'processing') ? "border-blue-500/50 text-blue-500 bg-blue-500/5" :
+                    (tx.status === 'waiting_confirmation' || tx.status === 'mark_as_paid') ? "border-purple-500/50 text-purple-500 bg-purple-500/5" :
+                    tx.status === 'pending' ? "border-yellow-500/50 text-yellow-500 bg-yellow-500/5" : "border-red-500/50 text-red-500 bg-red-500/5"
+                  )}>
+                    {tx.status === 'accepted' || tx.status === 'processing' ? 'Agent Assigned' :
+                     (tx.status === 'waiting_confirmation' || tx.status === 'mark_as_paid') ? 'Agent Paid' :
+                     tx.status?.toUpperCase().replace('_', ' ')}
+                  </Badge>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="h-8 px-3 text-[10px] font-bold text-blue-500 bg-blue-500/5 hover:bg-blue-500 hover:text-white rounded-xl border border-blue-500/10 transition-all font-display tracking-tight"
+                  >
+                    <Eye className="w-3 h-3 mr-1.5" />
+                    {t('view_details')}
+                  </Button>
+                </div>
               </div>
             </motion.div>
           )) : (

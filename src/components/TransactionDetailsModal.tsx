@@ -20,6 +20,8 @@ import { Badge } from './ui/badge';
 import { cn } from '@/lib/utils';
 import { ImageViewer } from './ImageViewer';
 
+import { useTranslation } from 'react-i18next';
+
 interface TransactionDetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -33,6 +35,7 @@ export const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = (
   tx,
   user
 }) => {
+  const { t } = useTranslation();
   const [viewerSrc, setViewerSrc] = React.useState<string | null>(null);
   const [isViewerOpen, setIsViewerOpen] = React.useState(false);
 
@@ -73,8 +76,8 @@ export const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = (
           >
             <div className="flex items-center justify-between mb-8">
               <div>
-                <h2 className="text-2xl font-display font-bold text-white">Transaction Details</h2>
-                <p className="text-sm text-slate-500">Full information for ID: {tx.id}</p>
+                <h2 className="text-2xl font-display font-bold text-white">{t('transaction_details')}</h2>
+                <p className="text-sm text-slate-500">{t('full_info_id')}: {tx.id}</p>
               </div>
               <button 
                 onClick={onClose}
@@ -87,21 +90,21 @@ export const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = (
             <div className="grid lg:grid-cols-3 gap-8">
               <div className="space-y-6 lg:col-span-1">
                 <div>
-                  <h3 className="text-sm font-bold text-blue-500 uppercase tracking-widest mb-4">User Information</h3>
+                  <h3 className="text-sm font-bold text-blue-500 uppercase tracking-widest mb-4">{t('user_info')}</h3>
                   <div className="p-4 rounded-2xl bg-white/5 border border-white/5">
-                    <DetailRow label="Name" value={user?.displayName} icon={User} />
-                    <DetailRow label="Email" value={user?.email} icon={User} />
+                    <DetailRow label={t('name')} value={user?.displayName} icon={User} />
+                    <DetailRow label={t('email')} value={user?.email} icon={User} />
                     <DetailRow label="UID" value={tx.uid} icon={Tag} isMonospace />
                   </div>
                 </div>
 
                 <div>
-                  <h3 className="text-sm font-bold text-purple-500 uppercase tracking-widest mb-4">Core Transaction</h3>
+                  <h3 className="text-sm font-bold text-purple-500 uppercase tracking-widest mb-4">{t('core_transaction')}</h3>
                   <div className="p-4 rounded-2xl bg-white/5 border border-white/5">
-                    <DetailRow label="Type" value={tx.type} icon={Tag} />
-                    <DetailRow label="Status" value={tx.status} icon={Tag} />
-                    <DetailRow label="Amount" value={`${tx.amount?.toLocaleString()} ${tx.currency}`} icon={DollarSign} />
-                    <DetailRow label="Created At" value={new Date(tx.createdAt).toLocaleString()} icon={Calendar} />
+                    <DetailRow label={t('type')} value={tx.type} icon={Tag} />
+                    <DetailRow label={t('status')} value={tx.status} icon={Tag} />
+                    <DetailRow label={t('amount')} value={`${tx.amount?.toLocaleString()} ${tx.currency}`} icon={DollarSign} />
+                    <DetailRow label={t('date')} value={new Date(tx.createdAt).toLocaleString()} icon={Calendar} />
                   </div>
                 </div>
               </div>
@@ -125,17 +128,17 @@ export const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = (
 
                     return (
                       <div>
-                        <h3 className="text-sm font-bold text-green-500 uppercase tracking-widest mb-4">Bank/Payment Information</h3>
+                        <h3 className="text-sm font-bold text-green-500 uppercase tracking-widest mb-4">{t('bank_payment_info')}</h3>
                         <div className="p-4 rounded-2xl bg-white/5 border border-white/5">
-                          <DetailRow label="Bank/Method" value={bankName} icon={Landmark} />
-                          <DetailRow label="Account Name" value={accountName} icon={User} />
-                          <DetailRow label="Account #" value={accountNumber} icon={CreditCard} isMonospace />
-                          {branch && <DetailRow label="Branch" value={branch} icon={Building2} />}
-                          {tx.targetAmount && <DetailRow label="Amount (Target)" value={`${tx.targetAmount} ${tx.targetCurrency}`} icon={DollarSign} />}
+                          <DetailRow label={t('bank_method')} value={bankName} icon={Landmark} />
+                          <DetailRow label={t('account_name')} value={accountName} icon={User} />
+                          <DetailRow label={t('account_number')} value={accountNumber} icon={CreditCard} isMonospace />
+                          {branch && <DetailRow label={t('branch')} value={branch} icon={Building2} />}
+                          {tx.targetAmount && <DetailRow label={t('amount_target')} value={`${tx.targetAmount} ${tx.targetCurrency}`} icon={DollarSign} />}
                           
                           {qrCode && (
                             <div className="mt-4 pt-4 border-t border-white/5 group">
-                               <p className="text-[10px] uppercase font-bold text-slate-500 mb-2">QR Code</p>
+                               <p className="text-[10px] uppercase font-bold text-slate-500 mb-2">{t('qrCode')}</p>
                                <div 
                                  className="relative cursor-pointer overflow-hidden rounded-xl border border-white/10 bg-black/20"
                                  onClick={() => {
@@ -159,18 +162,18 @@ export const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = (
                 <div className="space-y-6">
                   {tx.rechargeDetails && (
                     <div>
-                      <h3 className="text-sm font-bold text-yellow-500 uppercase tracking-widest mb-4">Recharge Details</h3>
+                      <h3 className="text-sm font-bold text-yellow-500 uppercase tracking-widest mb-4">{t('recharge_details')}</h3>
                       <div className="p-4 rounded-2xl bg-white/5 border border-white/5">
-                        <DetailRow label="Operator" value={tx.rechargeDetails.operator} icon={Tag} />
-                        <DetailRow label="Phone" value={tx.rechargeDetails.phoneNumber} icon={Tag} />
-                        <DetailRow label="Country" value={tx.rechargeDetails.country} icon={Tag} />
+                        <DetailRow label={t('operator')} value={tx.rechargeDetails.operator} icon={Tag} />
+                        <DetailRow label={t('phoneNumber')} value={tx.rechargeDetails.phoneNumber} icon={Tag} />
+                        <DetailRow label={t('country')} value={tx.rechargeDetails.country} icon={Tag} />
                       </div>
                     </div>
                   )}
 
                   {(tx.proofUrl || tx.userProof || tx.proof_url) && (
                     <div>
-                      <h3 className="text-sm font-bold text-orange-500 uppercase tracking-widest mb-4">User Payment Proof</h3>
+                      <h3 className="text-sm font-bold text-orange-500 uppercase tracking-widest mb-4">{t('user_payment_proof')}</h3>
                       <div 
                         className="relative cursor-pointer group rounded-2xl overflow-hidden border border-white/10 bg-white/5"
                         onClick={() => {
@@ -190,7 +193,7 @@ export const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = (
 
                   {(tx.adminProof || tx.admin_proof) && (
                     <div>
-                      <h3 className="text-sm font-bold text-blue-500 uppercase tracking-widest mb-4">Admin Payout Proof</h3>
+                      <h3 className="text-sm font-bold text-blue-500 uppercase tracking-widest mb-4">{t('admin_payout_proof')}</h3>
                       <div 
                         className="relative cursor-pointer group rounded-2xl overflow-hidden border border-white/10 bg-white/5"
                         onClick={() => {
@@ -209,9 +212,17 @@ export const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = (
               </div>
             </div>
 
-            <div className="mt-8 flex justify-end">
+            <div className="mt-8 flex justify-end gap-3">
+              {tx.status === 'pending' && (
+                <Button 
+                  onClick={() => window.location.href = `/waiting/${tx.id}`}
+                  className="bg-blue-600 hover:bg-blue-500 text-white border-0 py-6 px-12 rounded-2xl font-bold"
+                >
+                  {t('view_progress')}
+                </Button>
+              )}
               <Button onClick={onClose} className="bg-white/5 hover:bg-white/10 text-white border-0 py-6 px-12 rounded-2xl font-bold">
-                Close Details
+                {t('close_details')}
               </Button>
             </div>
           </motion.div>

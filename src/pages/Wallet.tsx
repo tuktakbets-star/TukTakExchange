@@ -50,6 +50,8 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 
+import { TransactionDetailsModal } from '../components/TransactionDetailsModal';
+
 export default function Wallet() {
   const { t } = useTranslation();
   const { profile } = useAuth();
@@ -878,106 +880,15 @@ export default function Wallet() {
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex justify-end gap-2">
-                        <Dialog>
-                          <DialogTrigger render={<Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-white" onClick={() => handleTransactionClick(tx)} />}>
-                              <Eye className="w-4 h-4" />
-                          </DialogTrigger>
-                          <DialogContent className="bg-slate-900 border-slate-800 text-white max-w-md">
-                            <DialogHeader>
-                              <DialogTitle>Transaction Details</DialogTitle>
-                            </DialogHeader>
-                            <div className="space-y-6 py-4">
-                              <div className="flex justify-between items-center p-4 rounded-2xl bg-white/5 border border-white/5">
-                                <div>
-                                  <p className="text-xs text-slate-500 uppercase font-bold tracking-widest">Amount</p>
-                                  <p className="text-2xl font-display font-bold">{tx.amount.toLocaleString()} {tx.currency}</p>
-                                </div>
-                                <Badge className={cn(
-                                  "capitalize",
-                                  tx.status?.toLowerCase().trim() === 'completed' ? "bg-green-500/20 text-green-500" : 
-                                  tx.status?.toLowerCase().trim() === 'pending' ? "bg-yellow-500/20 text-yellow-500" : 
-                                  tx.status?.toLowerCase().trim() === 'paid' ? "bg-indigo-500/20 text-indigo-500" :
-                                  "bg-red-500/20 text-red-500"
-                                )}>
-                                  {tx.status}
-                                </Badge>
-                              </div>
-                              
-                              <div className="space-y-3">
-                                <div className="flex justify-between text-sm">
-                                  <span className="text-slate-500">Transaction ID</span>
-                                  <span className="font-mono text-xs">{tx.id}</span>
-                                </div>
-                                <div className="flex justify-between text-sm">
-                                  <span className="text-slate-500">Date</span>
-                                  <span>{new Date(tx.created_at || tx.createdAt).toLocaleString()}</span>
-                                </div>
-                                <div className="flex justify-between text-sm">
-                                  <span className="text-slate-500">Type</span>
-                                  <span className="capitalize">{tx.type}</span>
-                                </div>
-                                {(() => {
-                                  const info = tx.receiverInfo || tx.receiver_info || tx.bankInfo || tx.bank_info || tx;
-                                  if (!info || (!info.name && !info.accountName && !info.bankName && !info.method && !info.accountNumber && !info.number && !info.account)) return null;
-                                  return (
-                                    <>
-                                      <div className="flex justify-between text-sm">
-                                        <span className="text-slate-500">Receiver</span>
-                                        <span>{info.name || info.accountName || info.withdrawal_account_name || 'N/A'}</span>
-                                      </div>
-                                      <div className="flex justify-between text-sm">
-                                        <span className="text-slate-500">Destination</span>
-                                        <span className="text-blue-400">{info.bankName || info.method || info.accountType || tx.account_type || tx.accountType || 'N/A'}</span>
-                                      </div>
-                                      <div className="flex justify-between text-sm">
-                                        <span className="text-slate-500">Account</span>
-                                        <span className="font-mono">{info.accountNumber || info.number || info.account || info.withdrawal_account_number || 'N/A'}</span>
-                                      </div>
-                                    </>
-                                  );
-                                })()}
-                              </div>
-
-                              {(tx.proofUrl || tx.proof_url || tx.admin_proof || tx.adminProof || tx.metadata?.proof_url) && (
-                                <div className="space-y-2">
-                                  <p className="text-xs text-slate-500 uppercase font-bold tracking-widest">
-                                    {(tx.admin_proof || tx.adminProof) ? 'Payment Receipt (Admin)' : 'Payment Proof (Sender)'}
-                                  </p>
-                                  <div className="aspect-video rounded-xl bg-black/40 border border-white/5 flex items-center justify-center overflow-hidden relative group">
-                                    <img 
-                                      src={tx.admin_proof || tx.adminProof || tx.proofUrl || tx.proof_url || tx.metadata?.proof_url} 
-                                      alt="Proof" 
-                                      className="w-full h-full object-cover opacity-50 group-hover:opacity-100 transition-opacity" 
-                                      referrerPolicy="no-referrer"
-                                    />
-                                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                       <Button 
-                                         variant="secondary" 
-                                         size="sm" 
-                                         className="bg-slate-900/80 backdrop-blur-md border-white/10"
-                                         onClick={() => window.open(tx.admin_proof || tx.adminProof || tx.proofUrl || tx.proof_url, '_blank')}
-                                       >
-                                         <Eye className="w-4 h-4 mr-2" />
-                                         View Full
-                                       </Button>
-                                    </div>
-                                  </div>
-                                </div>
-                              )}
-
-                              {tx.status === 'pending' && tx.uid === profile?.uid && (
-                                <Button 
-                                  variant="ghost" 
-                                  className="w-full text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl"
-                                  onClick={() => handleAppeal(tx)}
-                                >
-                                  <AlertTriangle className="w-4 h-4 mr-2" />
-                                  Report Issue / Appeal
-                                </Button>
-                              )}
-                            </div>
-                          </DialogContent>
-                        </Dialog>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="h-8 px-3 text-[10px] font-bold text-blue-500 bg-blue-500/5 hover:bg-blue-500 hover:text-white rounded-xl border border-blue-500/10 transition-all font-display tracking-tight"
+                          onClick={() => handleTransactionClick(tx)}
+                        >
+                          <Eye className="w-3 h-3 mr-1.5" />
+                          {t('view_details')}
+                        </Button>
                       </div>
                     </td>
                   </tr>
@@ -997,12 +908,20 @@ export default function Wallet() {
         onClose={() => setIsQRScannerOpen(false)} 
         onScan={handleQRScan} 
       />
+      
+      <TransactionDetailsModal
+        isOpen={!!selectedTx}
+        onClose={() => setSelectedTx(null)}
+        tx={selectedTx}
+        user={profile}
+      />
+
       {/* Receive Confirmation Dialog */}
       <Dialog open={showReceiveDialog} onOpenChange={setShowReceiveDialog}>
         <DialogContent className="bg-slate-900 border-slate-800 text-white max-w-sm rounded-[2rem]">
           <DialogHeader className="text-center">
-            <DialogTitle className="text-2xl font-display font-bold">Confirm Receipt</DialogTitle>
-            <p className="text-slate-400 text-sm mt-2">Enter your password to confirm you've received the money on your external wallet/bank.</p>
+            <DialogTitle className="text-2xl font-display font-bold">{t('confirm_receipt')}</DialogTitle>
+            <p className="text-slate-400 text-sm mt-2">{t('confirm_receipt_long_msg')}</p>
           </DialogHeader>
           <div className="py-6 space-y-4">
             <div className="space-y-2">
@@ -1018,7 +937,7 @@ export default function Wallet() {
             <div className="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-2xl flex gap-3">
               <AlertTriangle className="w-5 h-5 text-yellow-500 shrink-0" />
               <p className="text-[10px] text-yellow-500 leading-tight font-bold italic">
-                This action is irreversible. Only confirm if you've actually verified the funds.
+                {t('irreversible_action')}
               </p>
             </div>
           </div>
@@ -1028,14 +947,14 @@ export default function Wallet() {
               disabled={isConfirmingReceive || !receivePassword}
               className="w-full h-14 bg-green-600 hover:bg-green-500 text-white rounded-2xl font-bold text-lg shadow-xl shadow-green-600/20"
             >
-              {isConfirmingReceive ? 'Confirming...' : 'I Received Money'}
+              {isConfirmingReceive ? t('confirming') : t('i_received_money')}
             </Button>
             <Button 
               variant="ghost" 
               onClick={() => setShowReceiveDialog(false)}
               className="w-full h-12 rounded-xl text-slate-500"
             >
-              Cancel
+              {t('cancel')}
             </Button>
           </DialogFooter>
         </DialogContent>

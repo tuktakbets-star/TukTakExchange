@@ -111,7 +111,7 @@ export default function Landing() {
                 Tuktak<span className="text-blue-500">Exchange</span>
               </span>
               <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest leading-none mt-1">
-                Fast & Secure
+                {t('fast_and_secure')}
               </span>
             </div>
           </Link>
@@ -377,12 +377,12 @@ export default function Landing() {
         
         <div className="max-w-7xl mx-auto pt-8 border-t border-white/5 text-center flex flex-col sm:flex-row justify-between gap-4">
           <p className="text-slate-500 text-sm">
-            © 2026 Tuktak Exchange. All rights reserved.
+            {t('copy_rights')}
           </p>
           <div className="flex items-center justify-center gap-6">
             <div className="flex items-center gap-2 text-slate-500 text-sm">
               <ShieldCheck className="w-4 h-4 text-green-500" />
-              Fully Verified Hub
+              {t('fully_verified_hub')}
             </div>
           </div>
         </div>
@@ -411,8 +411,8 @@ export default function Landing() {
                 <div className="w-16 h-16 bg-blue-500/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
                   <Lock className="w-8 h-8 text-blue-500" />
                 </div>
-                <h2 className="text-2xl font-display font-black tracking-tight">🔐 TukTak Secure Access</h2>
-                <p className="text-slate-500 text-sm mt-1 uppercase tracking-widest font-bold">Authorized Personnel Only</p>
+                <h2 className="text-2xl font-display font-black tracking-tight">🔐 {t('restrictedArea') || 'Secure Access'}</h2>
+                <p className="text-slate-500 text-sm mt-1 uppercase tracking-widest font-bold">{t('authorized_personnel_only')}</p>
               </div>
 
               <div className="grid grid-cols-2 gap-4 mb-8">
@@ -423,7 +423,7 @@ export default function Landing() {
                   <div className="w-12 h-12 bg-blue-600/20 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
                     <span className="text-2xl">👑</span>
                   </div>
-                  <span className="font-bold text-sm">Admin Panel</span>
+                  <span className="font-bold text-sm">{t('admin_panel')}</span>
                   <div className="absolute inset-x-0 bottom-0 h-1 bg-blue-500 scale-x-0 group-hover:scale-x-100 transition-transform rounded-b-3xl" />
                 </button>
 
@@ -434,7 +434,7 @@ export default function Landing() {
                   <div className="w-12 h-12 bg-purple-600/20 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
                     <span className="text-2xl">⚙️</span>
                   </div>
-                  <span className="font-bold text-sm">Operator Panel</span>
+                  <span className="font-bold text-sm">{t('operator_panel')}</span>
                   <div className="absolute inset-x-0 bottom-0 h-1 bg-purple-500 scale-x-0 group-hover:scale-x-100 transition-transform rounded-b-3xl" />
                 </button>
               </div>
@@ -444,7 +444,7 @@ export default function Landing() {
                 onClick={() => setShowRoleModal(false)}
                 className="w-full text-slate-500 hover:text-white"
               >
-                ← Back to Site
+                ← {t('back_to_site')}
               </Button>
             </motion.div>
           </div>

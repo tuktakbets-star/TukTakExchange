@@ -18,8 +18,10 @@ import { cn } from '@/lib/utils';
 import { supabaseService, where, orderBy, limit } from '@/lib/supabaseService';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 
 export default function OperatorDashboard() {
+  const { t } = useTranslation();
   const [operator, setOperator] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [recentOrders, setRecentOrders] = useState<any[]>([]);
@@ -161,32 +163,32 @@ export default function OperatorDashboard() {
       
       setStats([
         { 
-          label: 'Available (Public)', 
+          label: t('available_public'), 
           value: pendingPublicCount.toString(), 
           icon: Clock, 
           color: 'amber',
-          sub: 'Click to claim'
+          sub: t('click_to_claim')
         },
         { 
-          label: 'Claimed (Private)', 
+          label: t('claimed_private'), 
           value: myClaimedCount.toString(), 
           icon: FileText, 
           color: 'orange',
-          sub: 'Awaiting Accept'
+          sub: t('awaiting_accept')
         },
         { 
-          label: 'My Active Works', 
+          label: t('my_active_works'), 
           value: processingMe.toString(), 
           icon: Zap, 
           color: 'blue',
-          sub: 'Processing/Accepted'
+          sub: t('processing_accepted')
         },
         { 
-          label: 'Waiting Confirm', 
+          label: t('waiting_confirm'), 
           value: waitingMe.toString(), 
           icon: CheckCircle2, 
           color: 'purple',
-          sub: 'Awaiting User'
+          sub: t('awaiting_user')
         },
       ]);
     }
@@ -205,13 +207,13 @@ export default function OperatorDashboard() {
     <div className="space-y-8">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-display font-black tracking-tight text-white">Dashboard Overview</h1>
-          <p className="text-slate-500 mt-1 font-medium tracking-tight uppercase text-[9px] sm:text-[10px] tracking-[0.2em]">Welcome back, Operator. Stay productive!</p>
+          <h1 className="text-2xl sm:text-3xl font-display font-black tracking-tight text-white">{t('operator_dashboard_title')}</h1>
+          <p className="text-slate-500 mt-1 font-medium tracking-tight uppercase text-[9px] sm:text-[10px] tracking-[0.2em]">{t('operator_welcome_msg')}</p>
         </div>
         {hasNewActivity && (
           <div className="flex items-center gap-2 bg-red-600/10 border border-red-500/20 px-4 py-2 rounded-2xl animate-pulse">
             <div className="w-2 h-2 bg-red-500 rounded-full shadow-[0_0_10px_rgba(239,68,68,0.8)]" />
-            <span className="text-[10px] font-black text-red-500 uppercase tracking-widest">New Order Available!</span>
+            <span className="text-[10px] font-black text-red-500 uppercase tracking-widest">{t('new_order_alert')}</span>
           </div>
         )}
       </div>
@@ -226,7 +228,7 @@ export default function OperatorDashboard() {
             <div className="w-8 h-8 sm:w-10 sm:h-10 bg-green-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-green-600/20 group-active:scale-95 transition-transform">
               <Zap className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest">Add Money</span>
+            <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t('addMoney')}</span>
           </button>
         )}
         {(!operator?.allowed_services?.length || operator?.allowed_services?.includes('withdraw')) && (
@@ -237,7 +239,7 @@ export default function OperatorDashboard() {
             <div className="w-8 h-8 sm:w-10 sm:h-10 bg-purple-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-purple-600/20 group-active:scale-95 transition-transform">
               <CreditCard className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest">Withdraw</span>
+            <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t('withdraw')}</span>
           </button>
         )}
         {(!operator?.allowed_services?.length || operator?.allowed_services?.includes('exchange')) && (
@@ -248,7 +250,7 @@ export default function OperatorDashboard() {
             <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-600/20 group-active:scale-95 transition-transform">
               <ArrowUpRight className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
             </div>
-            <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest">Exchange</span>
+            <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t('exchangeMoney')}</span>
           </button>
         )}
         <button 
@@ -261,7 +263,7 @@ export default function OperatorDashboard() {
           <div className="w-8 h-8 sm:w-10 sm:h-10 bg-amber-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-amber-600/20 group-active:scale-95 transition-transform">
             <MessageSquare className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
           </div>
-          <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest">Support Chat</span>
+          <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t('support_chat')}</span>
         </button>
       </div>
 
@@ -275,14 +277,14 @@ export default function OperatorDashboard() {
             <div className="w-8 h-8 sm:w-10 sm:h-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-md border border-white/20">
               <Clock className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.15em] sm:tracking-[0.2em] opacity-80">Today's Wallet Flow</span>
+            <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.15em] sm:tracking-[0.2em] opacity-80">{t('today_wallet_flow')}</span>
           </div>
           <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 opacity-40" />
         </div>
 
         <div className="space-y-4 sm:space-y-6 relative">
           <div className="flex items-center justify-between group">
-            <span className="text-xs sm:text-sm font-bold opacity-80 tracking-tight">Total Credit (+)</span>
+            <span className="text-xs sm:text-sm font-bold opacity-80 tracking-tight">{t('total_credit')}</span>
             <div className="flex items-baseline gap-1">
                <span className="text-lg sm:text-xl font-black">+{currencySymbol}{walletFlow.credit.toLocaleString()}</span>
             </div>
@@ -291,7 +293,7 @@ export default function OperatorDashboard() {
           <div className="h-px bg-white/10 w-full" />
           
           <div className="flex items-center justify-between group">
-            <span className="text-xs sm:text-sm font-bold opacity-80 tracking-tight">Total Debit (-)</span>
+            <span className="text-xs sm:text-sm font-bold opacity-80 tracking-tight">{t('total_debit')}</span>
             <div className="flex items-baseline gap-1">
                <span className="text-lg sm:text-xl font-black">-{currencySymbol}{walletFlow.debit.toLocaleString()}</span>
             </div>
@@ -364,9 +366,9 @@ export default function OperatorDashboard() {
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-bold text-blue-500 uppercase tracking-tight flex items-center gap-2">
               <MessageSquare className="w-5 h-5" />
-              Active Order Chats ({activeConversations.length})
+              {t('active_order_chats')} ({activeConversations.length})
             </h2>
-            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Recent communication with assigned clients</p>
+            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{t('recent_communication')}</p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {activeConversations.map((item) => (
@@ -412,13 +414,13 @@ export default function OperatorDashboard() {
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold font-display tracking-tight flex items-center gap-3">
               <FileText className="w-5 h-5 text-blue-500" />
-              Recent Assignments
+              {t('recent_assignments')}
             </h2>
             <button 
               onClick={() => navigate('/operator/history')}
               className="text-xs font-bold text-blue-500 hover:underline"
             >
-              View All Orders
+              {t('view_all_orders')}
             </button>
           </div>
 
@@ -427,12 +429,12 @@ export default function OperatorDashboard() {
               <table className="w-full text-left min-w-[600px]">
                 <thead>
                   <tr className="border-b border-white/5">
-                    <th className="px-6 py-4 text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">Order ID</th>
-                    <th className="px-6 py-4 text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">Type</th>
-                    <th className="px-6 py-4 text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">User</th>
-                    <th className="px-6 py-4 text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">Amount</th>
-                    <th className="px-6 py-4 text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">Status</th>
-                    <th className="px-6 py-4 text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right whitespace-nowrap">Action</th>
+                    <th className="px-6 py-4 text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">{t('order_id')}</th>
+                    <th className="px-6 py-4 text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">{t('type')}</th>
+                    <th className="px-6 py-4 text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">{t('user')}</th>
+                    <th className="px-6 py-4 text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">{t('amount')}</th>
+                    <th className="px-6 py-4 text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">{t('status')}</th>
+                    <th className="px-6 py-4 text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right whitespace-nowrap">{t('action')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5 font-medium text-xs sm:text-sm">
@@ -464,7 +466,7 @@ export default function OperatorDashboard() {
                           (row.status === 'waiting_confirmation' || row.status === 'mark_as_paid') ? "bg-purple-500/10 text-purple-500 border border-purple-500/20" :
                           "bg-green-500/10 text-green-500 border border-green-500/20"
                         )}>
-                          {(row.status === 'pending' && row.assigned_sub_admin_id) ? 'ASSIGNED' : row.status?.replace(/_/g, ' ') || 'N/A'}
+                          {(row.status === 'pending' && row.assigned_sub_admin_id) ? t('assigned') : row.status?.replace(/_/g, ' ') || 'N/A'}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right">
@@ -474,13 +476,13 @@ export default function OperatorDashboard() {
                           className="h-8 px-3 text-[10px] font-bold text-blue-500 bg-blue-500/5 hover:bg-blue-500 hover:text-white rounded-xl border border-blue-500/10 transition-all font-display tracking-tight"
                           onClick={() => navigate('/operator/history')}
                         >
-                          View Details
+                          {t('view_details')}
                         </Button>
                       </td>
                     </tr>
                   )) : (
                     <tr>
-                      <td colSpan={5} className="px-6 py-12 text-center text-slate-500 italic">No assigned orders found.</td>
+                      <td colSpan={5} className="px-6 py-12 text-center text-slate-500 italic">{t('no_assigned_orders')}</td>
                     </tr>
                   )}
                 </tbody>
@@ -492,7 +494,7 @@ export default function OperatorDashboard() {
         <div className="space-y-6">
            <h2 className="text-xl font-bold font-display tracking-tight flex items-center gap-3">
             <TrendingUp className="w-5 h-5 text-purple-500" />
-            Performance Rank
+            {t('performance_rank')}
           </h2>
           <div className="p-8 bg-gradient-to-br from-blue-600/20 to-purple-600/20 border border-white/10 rounded-[2.5rem] text-center relative overflow-hidden group">
             <div className="absolute -top-12 -right-12 w-32 h-32 bg-blue-500/20 blur-3xl rounded-full transition-transform group-hover:scale-150 duration-1000" />
@@ -502,16 +504,16 @@ export default function OperatorDashboard() {
                  <span className="text-3xl font-black text-white">#04</span>
               </div>
               <div>
-                <h3 className="text-xl font-bold tracking-tight">Top Operator Pool</h3>
-                <p className="text-xs text-slate-400 font-medium px-4 leading-relaxed mt-2 uppercase tracking-widest">Maintain 98% approval accuracy to receive bonus wallet loads.</p>
+                <h3 className="text-xl font-bold tracking-tight">{t('top_operator_pool')}</h3>
+                <p className="text-xs text-slate-400 font-medium px-4 leading-relaxed mt-2 uppercase tracking-widest">{t('maintain_accuracy_msg')}</p>
               </div>
               <div className="pt-4 grid grid-cols-2 gap-4">
                 <div className="bg-black/20 p-3 rounded-2xl border border-white/5">
-                   <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest mb-1">Response Time</p>
+                   <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest mb-1">{t('response_time')}</p>
                    <p className="text-sm font-black text-blue-400">1.2m</p>
                 </div>
                 <div className="bg-black/20 p-3 rounded-2xl border border-white/5">
-                   <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest mb-1">Accuracy</p>
+                   <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest mb-1">{t('accuracy')}</p>
                    <p className="text-sm font-black text-purple-400">99.2%</p>
                 </div>
               </div>
