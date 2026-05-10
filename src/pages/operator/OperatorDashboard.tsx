@@ -52,7 +52,7 @@ export default function OperatorDashboard() {
   const handleNewOrders = (allOrders: any[]) => {
     if (!operator) return;
     
-    const allowedServices = operator.allowed_services || [];
+    const allowedServices = operator.allowedServices || [];
     const isAllowed = (type: string) => !allowedServices.length || allowedServices.includes(type?.toLowerCase());
 
     const pendingPublic = allOrders.filter(order => {
@@ -78,7 +78,7 @@ export default function OperatorDashboard() {
         
         // Show notification toast
         toast.success(`New ${latestOrder.type?.replace(/_/g, ' ')} order available!`, {
-          description: `Order #${latestOrder.id?.slice(0, 8)} for ৳${(latestOrder.amount || 0).toLocaleString()}`,
+          description: `Order #${latestOrder.id?.slice(0, 8)} for ${(latestOrder.currency?.toUpperCase() === 'VND' || latestOrder.type === 'cash_in' || latestOrder.type === 'add_money') ? '₫' : latestOrder.currency?.toUpperCase() === 'USDT' ? '$' : '৳'}${(latestOrder.amount || 0).toLocaleString()}`,
           duration: 10000,
           action: {
             label: "View All",
@@ -108,11 +108,11 @@ export default function OperatorDashboard() {
         limit(100)
       ]);
 
-      const allowedServices = data.allowed_services || [];
+      const allowedServices = data.allowedServices || [];
       const isAllowed = (type: string) => !allowedServices.length || allowedServices.includes(type?.toLowerCase());
 
       const filteredOrders = (allRelevantOrders || []).filter(order => {
-        const saId = order.assigned_sub_admin_id || order.assignedSubAdminId;
+        const saId = order.assignedSubAdminId || order.assignedSubAdminId;
         // Show if assigned to me OR if pending and unassigned AND allowed for me
         const isPendingPublic = order.status === 'pending' && !saId;
         return saId === data.id || (isPendingPublic && isAllowed(order.type));
@@ -130,8 +130,8 @@ export default function OperatorDashboard() {
       ]);
 
       const flow = (walletTx || []).reduce((acc, tx) => {
-        if (tx.type === 'deposit' || tx.type === 'credit') acc.credit += (tx.amount || 0);
-        if (tx.type === 'debit') acc.debit += (tx.amount || 0);
+        if (tx.type === 'deposit' || tx.type === 'credit' || tx.type === 'refill' || tx.type === 'adjustment_add' || tx.type === 'bonus') acc.credit += (tx.amount || 0);
+        if (tx.type === 'debit' || tx.type === 'withdraw' || tx.type === 'adjustment_sub' || tx.type === 'fee') acc.debit += (tx.amount || 0);
         return acc;
       }, { credit: 0, debit: 0 });
 
@@ -139,7 +139,7 @@ export default function OperatorDashboard() {
 
       // Active Conversations
       const convos = (allRelevantOrders || []).filter(tx => {
-        const saId = tx.assigned_sub_admin_id || tx.assignedSubAdminId;
+        const saId = tx.assignedSubAdminId || tx.assignedSubAdminId;
         return saId === data.id && 
           ['accepted', 'processing', 'paid', 'waiting_confirmation', 'mark_as_paid', 'disputed'].includes(tx.status);
       });
@@ -199,6 +199,8 @@ export default function OperatorDashboard() {
     </div>;
   }
 
+  const currencySymbol = operator?.balanceType === 'BDT' ? '৳' : operator?.balanceType === 'USDT' ? '$' : '₫';
+  
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
@@ -282,7 +284,7 @@ export default function OperatorDashboard() {
           <div className="flex items-center justify-between group">
             <span className="text-xs sm:text-sm font-bold opacity-80 tracking-tight">Total Credit (+)</span>
             <div className="flex items-baseline gap-1">
-               <span className="text-lg sm:text-xl font-black">+৳{walletFlow.credit.toLocaleString()}</span>
+               <span className="text-lg sm:text-xl font-black">+{currencySymbol}{walletFlow.credit.toLocaleString()}</span>
             </div>
           </div>
           
@@ -291,7 +293,7 @@ export default function OperatorDashboard() {
           <div className="flex items-center justify-between group">
             <span className="text-xs sm:text-sm font-bold opacity-80 tracking-tight">Total Debit (-)</span>
             <div className="flex items-baseline gap-1">
-               <span className="text-lg sm:text-xl font-black">-৳{walletFlow.debit.toLocaleString()}</span>
+               <span className="text-lg sm:text-xl font-black">-{currencySymbol}{walletFlow.debit.toLocaleString()}</span>
             </div>
           </div>
         </div>
@@ -387,7 +389,7 @@ export default function OperatorDashboard() {
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant="outline" className="text-[9px] font-bold border-0 bg-blue-500/10 text-blue-400">
-                      ৳{(item.amount || item.totalAmount || 0).toLocaleString()}
+                      {(item.currency?.toUpperCase() === 'VND' || item.type === 'cash_in' || item.type === 'add_money') ? '₫' : item.currency?.toUpperCase() === 'USDT' ? '$' : '৳'}{(item.amount || item.totalAmount || 0).toLocaleString()}
                     </Badge>
                     <span className={cn(
                       "text-[9px] font-black uppercase px-2 py-0.5 rounded border",
@@ -430,6 +432,7 @@ export default function OperatorDashboard() {
                     <th className="px-6 py-4 text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">User</th>
                     <th className="px-6 py-4 text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">Amount</th>
                     <th className="px-6 py-4 text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">Status</th>
+                    <th className="px-6 py-4 text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right whitespace-nowrap">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5 font-medium text-xs sm:text-sm">
@@ -450,7 +453,7 @@ export default function OperatorDashboard() {
                            )}
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-white font-black whitespace-nowrap">৳{(row.totalAmount || row.amount || 0).toLocaleString()}</td>
+                      <td className="px-6 py-4 text-white font-black whitespace-nowrap">{(row.currency?.toUpperCase() === 'VND' || row.type === 'cash_in' || row.type === 'add_money') ? '₫' : row.currency?.toUpperCase() === 'USDT' ? '$' : '৳'}{(row.totalAmount || row.amount || 0).toLocaleString()}</td>
                       <td className="px-6 py-4">
                         <span className={cn(
                           "px-3 py-1 rounded-full text-[9px] sm:text-[10px] font-bold uppercase tracking-wider inline-block whitespace-nowrap",
@@ -463,6 +466,16 @@ export default function OperatorDashboard() {
                         )}>
                           {(row.status === 'pending' && row.assigned_sub_admin_id) ? 'ASSIGNED' : row.status?.replace(/_/g, ' ') || 'N/A'}
                         </span>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="h-8 px-3 text-[10px] font-bold text-blue-500 bg-blue-500/5 hover:bg-blue-500 hover:text-white rounded-xl border border-blue-500/10 transition-all font-display tracking-tight"
+                          onClick={() => navigate('/operator/history')}
+                        >
+                          View Details
+                        </Button>
                       </td>
                     </tr>
                   )) : (

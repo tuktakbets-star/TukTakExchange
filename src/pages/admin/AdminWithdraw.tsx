@@ -117,24 +117,28 @@ export default function AdminWithdraw() {
           await firebaseService.updateWalletBalance(tx.uid, tx.currency, -totalToDeduct, -totalToDeduct);
 
           // 2. CRITICAL: Update sub-admin balance if assigned
-          if (tx.assigned_sub_admin_id) {
-            const { data: subAdmin } = await firebaseService.getDocument('sub_admins', tx.assigned_sub_admin_id);
+          if (tx.assignedSubAdminId || tx.assigned_sub_admin_id) {
+            const saId = tx.assignedSubAdminId || tx.assigned_sub_admin_id;
+            const { data: subAdmin } = await firebaseService.getDocument('sub_admins', saId);
             if (subAdmin) {
-              const newSaBalance = (subAdmin.wallet_balance || 0) + totalToDeduct;
+              const currentBalance = subAdmin.walletBalance || subAdmin.wallet_balance || subAdmin.vndBalance || subAdmin.vnd_balance || 0;
+              const newSaBalance = currentBalance + totalToDeduct;
               
-              await firebaseService.updateDocument('sub_admins', tx.assigned_sub_admin_id, {
+              await firebaseService.updateDocument('sub_admins', saId, {
+                walletBalance: newSaBalance,
                 wallet_balance: newSaBalance,
-                updated_at: new Date().toISOString()
+                updatedAt: new Date().toISOString()
               });
               
               await firebaseService.addDocument('sub_admin_wallet_transactions', {
-                sub_admin_id: tx.assigned_sub_admin_id,
+                subAdminId: saId,
+                sub_admin_id: saId,
                 type: 'credit',
                 amount: totalToDeduct,
                 reason: `Withdrawal #${tx.id} completed by admin`,
-                order_id: tx.id,
-                balance_after: newSaBalance,
-                created_at: new Date().toISOString()
+                orderId: tx.id,
+                balanceAfter: newSaBalance,
+                createdAt: new Date().toISOString()
               });
             }
           }
@@ -283,14 +287,28 @@ export default function AdminWithdraw() {
                         <p className="text-[10px] text-slate-500 uppercase tracking-widest">{tx.currency}</p>
                       </td>
                       <td className="px-8 py-6">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <Building2 className="w-3 h-3 text-slate-500" />
-                            <p className="font-bold text-sm">{tx.bankInfo?.bankName}</p>
-                          </div>
-                          <p className="text-xs text-slate-400">{tx.bankInfo?.accountNumber}</p>
-                          <p className="text-[10px] text-slate-500 uppercase tracking-widest">{tx.bankInfo?.accountName}</p>
-                        </div>
+                        {(() => {
+                           const info = (tx.bankInfo && (tx.bankInfo.bankName || tx.bankInfo.accountNumber || tx.bankInfo.accountName)) ? tx.bankInfo : 
+                                        (tx.receiverInfo && (tx.receiverInfo.name || tx.receiverInfo.bankName || tx.receiverInfo.accountNumber)) ? tx.receiverInfo :
+                                        (tx.bank_info && (tx.bank_info.bank_name || tx.bank_info.account_number || tx.bank_info.account_name)) ? tx.bank_info :
+                                        (tx.receiver_info && (tx.receiver_info.name || tx.receiver_info.bank_name || tx.receiver_info.account_number)) ? tx.receiver_info :
+                                        tx;
+                                        
+                           const bankName = info.bankName || info.bank_name || info.method || info.accountType || tx.account_type || tx.accountType || 'N/A';
+                           const accountNumber = info.accountNumber || info.account_number || info.number || info.account || info.withdrawal_account_number || 'N/A';
+                           const accountName = info.name || info.accountName || info.withdrawal_account_name || info.account_name || 'N/A';
+
+                           return (
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <Building2 className="w-3 h-3 text-slate-500" />
+                                <p className="font-bold text-sm">{bankName}</p>
+                              </div>
+                              <p className="text-xs text-slate-400">{accountNumber}</p>
+                              <p className="text-[10px] text-slate-500 uppercase tracking-widest">{accountName}</p>
+                            </div>
+                           );
+                        })()}
                       </td>
                       <td className="px-8 py-6">
                         {tx.bankInfo?.qrCode ? (
@@ -450,8 +468,25 @@ export default function AdminWithdraw() {
                     </div>
                     <div>
                       <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">Bank</p>
-                      <p className="text-xs font-bold leading-tight">{tx.bankInfo?.bankName}</p>
-                      <p className="text-[9px] text-slate-400 font-mono mt-1">{tx.bankInfo?.accountNumber}</p>
+                      {(() => {
+                         const info = (tx.bankInfo && (tx.bankInfo.bankName || tx.bankInfo.accountNumber || tx.bankInfo.accountName)) ? tx.bankInfo : 
+                                      (tx.receiverInfo && (tx.receiverInfo.name || tx.receiverInfo.bankName || tx.receiverInfo.accountNumber)) ? tx.receiverInfo :
+                                      (tx.bank_info && (tx.bank_info.bank_name || tx.bank_info.account_number || tx.bank_info.account_name)) ? tx.bank_info :
+                                      (tx.receiver_info && (tx.receiver_info.name || tx.receiver_info.bank_name || tx.receiver_info.account_number)) ? tx.receiver_info :
+                                      tx;
+                                      
+                         const bankName = info.bankName || info.bank_name || info.method || info.accountType || tx.account_type || tx.accountType || 'N/A';
+                         const accountNumber = info.accountNumber || info.account_number || info.number || info.account || info.withdrawal_account_number || 'N/A';
+                         const accountName = info.name || info.accountName || info.withdrawal_account_name || info.account_name || 'N/A';
+
+                         return (
+                           <>
+                             <p className="text-xs font-bold leading-tight">{bankName}</p>
+                             <p className="text-[9px] text-slate-400 font-mono mt-1">{accountNumber}</p>
+                             <p className="text-[9px] text-slate-500 mt-1 uppercase tracking-tighter">{accountName}</p>
+                           </>
+                         );
+                      })()}
                     </div>
                   </div>
 

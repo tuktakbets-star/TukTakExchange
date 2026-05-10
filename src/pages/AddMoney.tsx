@@ -211,6 +211,21 @@ export default function AddMoney() {
                 exit={{ opacity: 0, x: -20 }}
                 className="space-y-6"
               >
+                {/* Amount Summary */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                  <div className="p-5 rounded-3xl bg-blue-500/10 border border-blue-500/20 flex flex-col justify-center">
+                    <p className="text-[10px] text-blue-400 font-black uppercase tracking-widest mb-1">Amount to Pay</p>
+                    <h3 className="text-3xl font-black text-white flex items-baseline gap-1">
+                      <span className="text-sm font-bold text-blue-400">₫</span>
+                      {Number(amountSource).toLocaleString()}
+                    </h3>
+                  </div>
+                  <div className="p-5 rounded-3xl bg-white/5 border border-white/10 flex flex-col justify-center">
+                    <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-1">Currency</p>
+                    <h3 className="text-xl font-black text-white">Vietnamese Dong (VND)</h3>
+                  </div>
+                </div>
+
                 <div className="flex items-center gap-2 text-blue-500 font-bold mb-4">
                   <Building2 className="w-5 h-5" />
                   <h3>Admin Vietnam Bank Details</h3>
@@ -254,12 +269,12 @@ export default function AddMoney() {
                         ))
                       ) : (
                         /* Fallback to legacy fields */
-                        adminSettings.bankName && (
+                        (adminSettings.bankName || adminSettings.accountNumber) ? (
                           <div className="p-5 rounded-2xl bg-white/5 border border-white/10 space-y-3">
                             <div className="flex justify-between items-start">
                               <div>
                                 <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">RECEIVING BANK</p>
-                                <h4 className="text-lg font-bold text-white">{adminSettings.bankName}</h4>
+                                <h4 className="text-lg font-bold text-white">{adminSettings.bankName || 'Vietnam Local Bank'}</h4>
                               </div>
                               <div className="w-10 h-10 bg-brand-blue/10 rounded-xl flex items-center justify-center">
                                 <CreditCard className="w-5 h-5 text-brand-blue" />
@@ -283,6 +298,11 @@ export default function AddMoney() {
                                 <p className="text-[10px] text-center text-slate-500 uppercase font-black">Scan to Pay</p>
                               </div>
                             )}
+                          </div>
+                        ) : (
+                          <div className="p-8 text-center bg-red-500/5 border border-red-500/10 rounded-2xl">
+                            <p className="text-slate-400">Admin hasn't configured Vietnam bank accounts yet.</p>
+                            <p className="text-xs text-red-400 mt-2">Please contact admin via chat to get bank details.</p>
                           </div>
                         )
                       )}

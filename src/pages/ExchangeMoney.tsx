@@ -10,6 +10,7 @@ import {
   Info, 
   CheckCircle2, 
   AlertCircle,
+  AlertTriangle,
   RefreshCw,
   User,
   Globe,
@@ -48,6 +49,8 @@ export default function ExchangeMoney() {
   const [targetCurrency, setTargetCurrency] = useState('BDT');
   const [accountType, setAccountType] = useState('bKash');
   const [amount, setAmount] = useState('');
+  const [targetAmount, setTargetAmount] = useState('');
+  const [activeSide, setActiveSide] = useState<'source' | 'target' | null>(null);
   const [receiverCountry, setReceiverCountry] = useState('Bangladesh');
   const [receiverName, setReceiverName] = useState('');
   const [receiverBankName, setReceiverBankName] = useState('');
@@ -58,6 +61,7 @@ export default function ExchangeMoney() {
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPasswordStep, setShowPasswordStep] = useState(false);
+  const [showInitialWarning, setShowInitialWarning] = useState(true);
 
   useEffect(() => {
     if (!profile?.uid) return;
@@ -126,7 +130,35 @@ export default function ExchangeMoney() {
   // Calculate Rate
   const currentRate = applicableTier ? Number(applicableTier.rate) : (Number(rateDoc?.rate) || 0);
 
-  const targetAmount = (amount && currentRate && currentRate > 0) ? (amountNum / currentRate).toFixed(2) : '0.00';
+  // Sync calculations reactively to handle rate updates (tiers)
+  // Manual amount handlers handle cross-calculations now
+
+  const handleAmountChange = (val: string) => {
+    setActiveSide('source');
+    setAmount(val);
+    if (!val) {
+      setTargetAmount('');
+      return;
+    }
+    if (currentRate > 0) {
+      const calculated = (Number(val) / currentRate).toFixed(2);
+      setTargetAmount(calculated);
+    }
+  };
+
+  const handleTargetAmountChange = (val: string) => {
+    setActiveSide('target');
+    setTargetAmount(val);
+    if (!val) {
+      setAmount('');
+      return;
+    }
+    if (currentRate > 0) {
+      const calculated = (Number(val) * currentRate).toFixed(0);
+      setAmount(calculated);
+    }
+  };
+
   const fee = amount ? (amountNum * 0.01).toFixed(0) : '0'; // 1% fee
 
   const handleNext = () => {
@@ -263,6 +295,51 @@ export default function ExchangeMoney() {
         ))}
       </div>
 
+      {/* Initial Warning Modal */}
+      <AnimatePresence>
+        {showInitialWarning && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-slate-950/90 backdrop-blur-xl"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 40 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 40 }}
+              className="relative w-full max-w-2xl bg-slate-900 border border-yellow-500/30 rounded-[2.5rem] p-8 md:p-12 shadow-[0_0_50px_rgba(234,179,8,0.15)] overflow-hidden"
+            >
+              <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-yellow-500 via-orange-500 to-yellow-500 animate-pulse" />
+              
+              <div className="text-center">
+                <div className="w-20 h-20 bg-yellow-500/10 rounded-3xl flex items-center justify-center mx-auto mb-8 animate-bounce">
+                  <AlertTriangle className="w-10 h-10 text-yellow-500" />
+                </div>
+                
+                <h2 className="text-2xl md:text-3xl font-black text-white mb-6 uppercase tracking-tight">
+                  {t('warning')}
+                </h2>
+                
+                <div className="bg-white/5 rounded-3xl p-6 md:p-8 border border-white/5 mb-8">
+                  <p className="text-lg md:text-xl leading-relaxed text-slate-200 font-medium whitespace-pre-wrap">
+                    {t('exchange_warning_message')}
+                  </p>
+                </div>
+
+                <Button 
+                  onClick={() => setShowInitialWarning(false)}
+                  className="w-full h-16 bg-yellow-500 hover:bg-yellow-400 text-black text-xl font-black rounded-2xl shadow-xl shadow-yellow-500/20 transition-all active:scale-95"
+                >
+                  {t('i_agree')}
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       <div className="grid lg:grid-cols-5 gap-8">
         <Card className="lg:col-span-3 glass-dark border-white/5 rounded-3xl overflow-hidden">
           <CardContent className="p-8">
@@ -313,7 +390,8 @@ export default function ExchangeMoney() {
                           type="number" 
                           placeholder="0.00" 
                           value={amount}
-                          onChange={(e) => setAmount(e.target.value)}
+                          onChange={(e) => handleAmountChange(e.target.value)}
+                          onFocus={() => setActiveSide('source')}
                           className="bg-transparent border-none text-3xl font-display font-bold p-0 h-auto focus-visible:ring-0"
                         />
                         <Select value={sourceCurrency} onValueChange={setSourceCurrency}>
@@ -339,9 +417,14 @@ export default function ExchangeMoney() {
                     <div className="p-4 rounded-2xl bg-white/5 border border-white/5 space-y-2">
                       <Label className="text-slate-400 text-xs uppercase tracking-wider">{t('receiver_gets')}</Label>
                       <div className="flex gap-4">
-                        <div className="flex-1 text-3xl font-display font-bold py-1">
-                          {targetAmount}
-                        </div>
+                        <Input 
+                          type="number" 
+                          placeholder="0.00" 
+                          value={targetAmount}
+                          onChange={(e) => handleTargetAmountChange(e.target.value)}
+                          onFocus={() => setActiveSide('target')}
+                          className="bg-transparent border-none text-3xl font-display font-bold p-0 h-auto focus-visible:ring-0"
+                        />
                         <Select value={targetCurrency} disabled>
                           <SelectTrigger className="w-32 bg-slate-800 border-none rounded-xl h-12 font-bold opacity-50 cursor-not-allowed">
                             <SelectValue />
@@ -667,6 +750,45 @@ export default function ExchangeMoney() {
           </div>
         </div>
       </div>
+
+      {/* Pop-up Warning */}
+      <AnimatePresence>
+        {showInitialWarning && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+              onClick={() => setShowInitialWarning(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-lg bg-[#0d1117] border border-white/10 rounded-[2.5rem] shadow-2xl overflow-hidden"
+            >
+              <div className="p-8 space-y-6">
+                <div className="w-16 h-16 rounded-3xl bg-amber-500/10 flex items-center justify-center mx-auto">
+                  <AlertTriangle className="w-10 h-10 text-amber-500" />
+                </div>
+                <div className="text-center space-y-2">
+                  <h3 className="text-2xl font-display font-black uppercase tracking-tighter text-white">{t('warning')}</h3>
+                  <p className="text-sm text-slate-400 font-medium leading-relaxed">
+                    {t('exchange_warning_message')}
+                  </p>
+                </div>
+                <Button 
+                  onClick={() => setShowInitialWarning(false)}
+                  className="w-full h-14 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-amber-500/20"
+                >
+                  {t('i_agree')}
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

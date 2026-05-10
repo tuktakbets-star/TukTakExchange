@@ -104,7 +104,7 @@ export default function OperatorHistory() {
           <div className="relative flex items-center justify-between">
             <div className="space-y-1 sm:space-y-2">
               <p className="text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] leading-none mb-1">Volume Handled</p>
-              <h3 className="text-2xl sm:text-3xl font-black text-white">৳{stats.totalAmount.toLocaleString()}</h3>
+              <h3 className="text-2xl sm:text-3xl font-black text-white">{stats.totalAmount.toLocaleString()}</h3>
               <p className="text-[10px] sm:text-xs font-bold text-slate-600 italic">{stats.totalHandled} orders processed</p>
             </div>
             <div className="w-12 h-12 sm:w-16 sm:h-16 bg-blue-600/10 rounded-2xl sm:rounded-3xl flex items-center justify-center border border-blue-500/20">
@@ -191,12 +191,17 @@ export default function OperatorHistory() {
                        <span className="text-[10px] font-bold text-purple-400/80 uppercase tracking-wider">{row.type.replace(/_/g, ' ')}</span>
                     </td>
                     <td className="px-6 py-4">
-                       <span className="text-base sm:text-lg font-black text-white">৳{row.amount}</span>
+                       <span className="text-base sm:text-lg font-black text-white">
+                         {row.currency === 'VND' || row.type === 'cash_in' || row.type === 'add_money' ? '₫' : 
+                          row.currency === 'USDT' ? '$' : 
+                          row.currency === 'BDT' ? '৳' : '₫'}
+                         {row.amount.toLocaleString()}
+                       </span>
                     </td>
                     <td className="px-6 py-4">
                        <span className="text-[10px] font-bold text-slate-400 italic capitalize truncate max-w-[100px] inline-block">{row.subAdminAction || 'No action'}</span>
                     </td>
-                    <td className="px-6 py-4 text-right flex items-center justify-end gap-2 text-slate-100">
+                    <td className="px-6 py-4 text-right flex items-center justify-end gap-3 text-slate-100">
                        <span className={cn(
                          "px-3 py-1 rounded-full text-[9px] sm:text-[10px] font-bold uppercase tracking-wider inline-block border whitespace-nowrap",
                          (row.status === 'approved' || row.status === 'completed') ? "bg-green-500/10 text-green-500 border-green-500/20" :
@@ -206,19 +211,20 @@ export default function OperatorHistory() {
                        )}>
                           {row.status.replace(/_/g, ' ')}
                        </span>
-                       <div className="flex items-center gap-1">
+                       <div className="flex items-center gap-2">
                         <Button 
                           variant="ghost" 
-                          size="icon" 
-                          className="w-8 h-8 text-slate-500 hover:text-blue-500 hover:bg-blue-500/10"
+                          size="sm" 
+                          className="h-8 px-3 text-[10px] font-bold text-blue-500 bg-blue-500/5 hover:bg-blue-500 hover:text-white rounded-xl border border-blue-500/10 transition-all flex items-center gap-1"
                           onClick={() => setSelectedOrder(row)}
                         >
-                          <Eye className="w-4 h-4" />
+                          <Eye className="w-3.5 h-3.5" />
+                          View Details
                         </Button>
                         <Button 
                           variant="ghost" 
                           size="icon" 
-                          className="w-8 h-8 text-slate-600 hover:text-red-500 hover:bg-red-500/10"
+                          className="w-8 h-8 text-slate-600 hover:text-red-500 hover:bg-red-500/10 rounded-xl"
                           onClick={async () => {
                             if (confirm('Permanently delete this record?')) {
                               await supabaseService.deleteDocument('transactions', row.id);
@@ -248,7 +254,7 @@ export default function OperatorHistory() {
               <div className="flex justify-between items-start">
                 <div className="space-y-1">
                   <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">#{row.id.substring(0, 8).toUpperCase()}</p>
-                  <p className="text-lg font-black text-white">৳{row.amount.toLocaleString()}</p>
+                  <p className="text-lg font-black text-white">{row.currency === 'VND' ? '₫' : row.currency === 'USDT' ? '$' : '৳'}{row.amount.toLocaleString()}</p>
                 </div>
                 <div className={cn(
                   "px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider border",
@@ -265,9 +271,31 @@ export default function OperatorHistory() {
                   <span className="text-purple-400 uppercase tracking-widest">{row.type.replace(/_/g, ' ')}</span>
                   <span className="text-slate-500">{new Date(row.createdAt || row.created_at).toLocaleDateString()}</span>
                 </div>
-                <div className="text-right">
+                <div className="text-right flex flex-col items-end gap-2">
                   <span className="text-slate-400 italic block">{row.subAdminAction || 'No action'}</span>
-                  <span className="text-slate-600 truncate max-w-[80px] inline-block">{row.userName || row.uid?.slice(0, 6)}</span>
+                  <div className="flex items-center gap-2">
+                    <Button 
+                      size="sm" 
+                      variant="ghost" 
+                      className="h-8 text-[10px] font-bold text-blue-500 bg-blue-500/5 rounded-xl border border-blue-500/10"
+                      onClick={() => setSelectedOrder(row)}
+                    >
+                      <Eye className="w-3 h-3 mr-1" /> View Detail
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="w-8 h-8 text-slate-600 hover:text-red-500 hover:bg-red-500/10 rounded-xl"
+                      onClick={async () => {
+                        if (confirm('Permanently delete this record?')) {
+                          await supabaseService.deleteDocument('transactions', row.id);
+                          window.location.reload();
+                        }
+                      }}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -315,53 +343,102 @@ export default function OperatorHistory() {
                   </div>
                   <div className="p-5 bg-white/5 border border-white/5 rounded-3xl space-y-1">
                     <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest leading-none mb-1">Amount</p>
-                    <h4 className="text-2xl font-black text-white">{selectedOrder.amount.toLocaleString()} {selectedOrder.currency}</h4>
+                    <h4 className="text-2xl font-black text-white">
+                      {(selectedOrder.currency?.toUpperCase() === 'VND' || selectedOrder.type === 'cash_in' || selectedOrder.type === 'add_money') ? '₫' : 
+                       selectedOrder.currency?.toUpperCase() === 'USDT' ? '$' : 
+                       selectedOrder.currency?.toUpperCase() === 'BDT' ? '৳' : '₫'}
+                      {selectedOrder.amount.toLocaleString()}
+                    </h4>
                   </div>
                 </div>
 
+                {/* Transaction Information */}
                 <div className="space-y-4">
                   <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest ml-1">Transaction Information</h4>
                   <div className="p-6 bg-[#161b22] border border-white/5 rounded-3xl space-y-4">
                     <div className="flex justify-between items-center text-sm">
                       <span className="text-slate-500 font-bold">Flow Type</span>
-                      <span className="text-purple-400 font-black uppercase tracking-widest">{selectedOrder.type}</span>
+                      <span className="text-purple-400 font-black uppercase tracking-widest">{selectedOrder.type?.replace(/_/g, ' ')}</span>
                     </div>
                     <div className="flex justify-between items-center text-sm">
                       <span className="text-slate-500 font-bold">User</span>
-                      <span className="text-white font-bold">{selectedOrder.userName || selectedOrder.uid}</span>
+                      <span className="text-white font-bold">{selectedOrder.userName || selectedOrder.user_name || selectedOrder.fullName || selectedOrder.uid?.slice(0, 8)}</span>
                     </div>
                     <div className="flex justify-between items-center text-sm">
                       <span className="text-slate-500 font-bold">Method / Bank</span>
                       <span className="text-white font-bold">
-                        {(() => {
-                           const info = selectedOrder.receiverInfo || selectedOrder.receiver_info || selectedOrder.bankInfo || selectedOrder.bank_info || selectedOrder;
-                           return info?.bankName || info?.method || info?.accountType || selectedOrder.method || selectedOrder.account_type || selectedOrder.accountType || 'N/A';
-                        })()}
+                               {selectedOrder && (() => {
+                                  const info = (selectedOrder.bankInfo && (selectedOrder.bankInfo.bankName || selectedOrder.bankInfo.accountNumber || selectedOrder.bankInfo.accountName)) ? selectedOrder.bankInfo : 
+                                               (selectedOrder.receiverInfo && (selectedOrder.receiverInfo.name || selectedOrder.receiverInfo.bankName || selectedOrder.receiverInfo.accountNumber)) ? selectedOrder.receiverInfo :
+                                               (selectedOrder.bank_info && (selectedOrder.bank_info.bank_name || selectedOrder.bank_info.account_number || selectedOrder.bank_info.account_name)) ? selectedOrder.bank_info :
+                                               (selectedOrder.receiver_info && (selectedOrder.receiver_info.name || selectedOrder.receiver_info.bank_name || selectedOrder.receiver_info.account_number)) ? selectedOrder.receiver_info :
+                                               selectedOrder;
+                                  return info?.bankName || info?.bank_name || info?.method || info?.accountType || info?.account_type || selectedOrder.method || selectedOrder.account_type || selectedOrder.accountType || 'N/A';
+                               })()}
                       </span>
                     </div>
                     <div className="flex justify-between items-center text-sm">
-                      <span className="text-slate-500 font-bold">Number</span>
+                      <span className="text-slate-500 font-bold">Account / Card</span>
                       <span className="text-blue-400 font-mono font-bold tracking-widest">
-                        {(() => {
-                           const info = selectedOrder.receiverInfo || selectedOrder.receiver_info || selectedOrder.bankInfo || selectedOrder.bank_info || selectedOrder;
-                           const num = info?.accountNumber || info?.number || info?.account || info?.withdrawal_account_number || selectedOrder.senderNumber || selectedOrder.sender_number;
+                        {selectedOrder && (() => {
+                           const info = (selectedOrder.bankInfo && (selectedOrder.bankInfo.bankName || selectedOrder.bankInfo.accountNumber || selectedOrder.bankInfo.accountName)) ? selectedOrder.bankInfo : 
+                                        (selectedOrder.receiverInfo && (selectedOrder.receiverInfo.name || selectedOrder.receiverInfo.bankName || selectedOrder.receiverInfo.accountNumber)) ? selectedOrder.receiverInfo :
+                                        (selectedOrder.bank_info && (selectedOrder.bank_info.bank_name || selectedOrder.bank_info.account_number || selectedOrder.bank_info.account_name)) ? selectedOrder.bank_info :
+                                        (selectedOrder.receiver_info && (selectedOrder.receiver_info.name || selectedOrder.receiver_info.bank_name || selectedOrder.receiver_info.account_number)) ? selectedOrder.receiver_info :
+                                        selectedOrder;
+                           const num = info?.accountNumber || info?.account_number || info?.number || info?.account || info?.withdrawal_account_number || info?.account_no || info?.accountNo;
                            return num || 'N/A';
                         })()}
                       </span>
                     </div>
-                    {(() => {
-                      const info = selectedOrder.receiverInfo || selectedOrder.receiver_info || selectedOrder.bankInfo || selectedOrder.bank_info || selectedOrder;
-                      if (!info || (!info.name && !info.accountName && !info.withdrawal_account_name && !selectedOrder.targetAmount)) return null;
+
+                    {(selectedOrder.sender_number || selectedOrder.senderNumber || selectedOrder.senderPhone) && (
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-slate-500 font-bold">Sender No</span>
+                        <span className="text-brand-blue font-mono font-bold">{selectedOrder.sender_number || selectedOrder.senderNumber || selectedOrder.senderPhone}</span>
+                      </div>
+                    )}
+
+                    {(selectedOrder.transactionId || selectedOrder.transactionCode || selectedOrder.txId || selectedOrder.transaction_id || selectedOrder.transaction_code) && (
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-slate-500 font-bold">Transaction ID</span>
+                        <span className="text-amber-500 font-mono font-bold">{selectedOrder.transactionId || selectedOrder.transactionCode || selectedOrder.txId || selectedOrder.transaction_id || selectedOrder.transaction_code}</span>
+                      </div>
+                    )}
+                    {selectedOrder && (() => {
+                      const info = (selectedOrder.bankInfo && (selectedOrder.bankInfo.bankName || selectedOrder.bankInfo.accountNumber || selectedOrder.bankInfo.accountName)) ? selectedOrder.bankInfo : 
+                                   (selectedOrder.receiverInfo && (selectedOrder.receiverInfo.name || selectedOrder.receiverInfo.bankName || selectedOrder.receiverInfo.accountNumber)) ? selectedOrder.receiverInfo :
+                                   (selectedOrder.bank_info && (selectedOrder.bank_info.bank_name || selectedOrder.bank_info.account_number || selectedOrder.bank_info.account_name)) ? selectedOrder.bank_info :
+                                   (selectedOrder.receiver_info && (selectedOrder.receiver_info.name || selectedOrder.receiver_info.bank_name || selectedOrder.receiver_info.account_number)) ? selectedOrder.receiver_info :
+                                   selectedOrder;
+                      
+                      const hasDetails = info.name || info.accountName || info.withdrawal_account_name || info.account_name || selectedOrder.targetAmount || selectedOrder.rejection_reason || selectedOrder.description;
+                      
+                      if (!hasDetails) return null;
                       return (
                         <div className="pt-4 border-t border-white/5 mt-4 space-y-4">
-                          <div className="flex justify-between items-center text-sm">
-                            <span className="text-slate-500 font-bold">Account Name</span>
-                            <span className="text-white font-bold">{info.name || info.accountName || info.withdrawal_account_name || 'N/A'}</span>
-                          </div>
+                          {(info.name || info.accountName || info.withdrawal_account_name || info.account_name) && (
+                            <div className="flex justify-between items-center text-sm">
+                              <span className="text-slate-500 font-bold">Account Name</span>
+                              <span className="text-white font-bold">{info.name || info.accountName || info.withdrawal_account_name || info.account_name || 'N/A'}</span>
+                            </div>
+                          )}
                           {selectedOrder.targetAmount && (
                             <div className="flex justify-between items-center text-sm">
                               <span className="text-slate-500 font-bold">Target Amount</span>
                               <span className="text-green-400 font-black tracking-tight">{selectedOrder.targetAmount?.toLocaleString()} {selectedOrder.targetCurrency}</span>
+                            </div>
+                          )}
+                          {selectedOrder.rejection_reason && (
+                            <div className="flex flex-col gap-1 p-3 bg-red-500/5 rounded-xl border border-red-500/10">
+                              <span className="text-red-500 font-bold text-[10px] uppercase tracking-widest leading-none">Rejection Reason</span>
+                              <span className="text-slate-300 text-xs font-medium">{selectedOrder.rejection_reason}</span>
+                            </div>
+                          )}
+                          {selectedOrder.description && (
+                            <div className="flex flex-col gap-1">
+                              <span className="text-slate-500 font-bold text-[10px] uppercase tracking-widest leading-none">Description / Note</span>
+                              <span className="text-slate-300 text-xs italic">"{selectedOrder.description}"</span>
                             </div>
                           )}
                         </div>
@@ -371,35 +448,63 @@ export default function OperatorHistory() {
                 </div>
 
                 {/* Proof Photos */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  {(selectedOrder.userProof || selectedOrder.user_proof) && (
-                    <div className="space-y-3">
-                      <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest ml-1">User Proof</h4>
-                      <div 
-                        className="aspect-video rounded-3xl bg-black border border-white/5 overflow-hidden cursor-pointer group relative"
-                        onClick={() => { setViewerSrc(selectedOrder.userProof || selectedOrder.user_proof); setIsViewerOpen(true); }}
-                      >
-                        <img src={selectedOrder.userProof || selectedOrder.user_proof} alt="User Proof" className="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity" referrerPolicy="no-referrer" />
-                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Eye className="w-8 h-8 text-white" />
+                <div className="space-y-4">
+                  <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest ml-1">Evidence & Files</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* User Proofs */}
+                    {(selectedOrder.userProof || selectedOrder.user_proof || selectedOrder.proofUrl || selectedOrder.proof_url || selectedOrder.proof_uri || selectedOrder.receipt_url) && (
+                      <div className="space-y-2">
+                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1 flex items-center gap-2">
+                          <CheckCircle2 className="w-3 h-3 text-blue-500" /> User Receipt
+                        </p>
+                        <div 
+                          className="aspect-video rounded-3xl bg-black border border-white/10 overflow-hidden cursor-pointer group relative shadow-inner"
+                          onClick={() => { setViewerSrc(selectedOrder.userProof || selectedOrder.user_proof || selectedOrder.proofUrl || selectedOrder.proof_url || selectedOrder.proof_uri || selectedOrder.receipt_url); setIsViewerOpen(true); }}
+                        >
+                          <img src={selectedOrder.userProof || selectedOrder.user_proof || selectedOrder.proofUrl || selectedOrder.proof_url || selectedOrder.proof_uri || selectedOrder.receipt_url} alt="User Proof" className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" referrerPolicy="no-referrer" />
+                          <div className="absolute inset-0 bg-blue-600/10 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center">
+                            <Eye className="w-8 h-8 text-white scale-90 group-hover:scale-100 transition-transform" />
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )}
-                  {(selectedOrder.adminProof || selectedOrder.admin_proof) && (
-                    <div className="space-y-3">
-                      <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest ml-1">Admin Proof (Payment)</h4>
-                      <div 
-                        className="aspect-video rounded-3xl bg-black border border-white/5 overflow-hidden cursor-pointer group relative"
-                        onClick={() => { setViewerSrc(selectedOrder.adminProof || selectedOrder.admin_proof); setIsViewerOpen(true); }}
-                      >
-                        <img src={selectedOrder.adminProof || selectedOrder.admin_proof} alt="Admin Proof" className="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity" referrerPolicy="no-referrer" />
-                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Eye className="w-8 h-8 text-white" />
+                    )}
+                    
+                    {/* Admin Proofs */}
+                    {(selectedOrder.adminProof || selectedOrder.admin_proof || selectedOrder.sub_admin_proof) && (
+                      <div className="space-y-2">
+                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1 flex items-center gap-2">
+                          <CheckCircle2 className="w-3 h-3 text-green-500" /> Admin/Payment Proof
+                        </p>
+                        <div 
+                          className="aspect-video rounded-3xl bg-black border border-white/10 overflow-hidden cursor-pointer group relative shadow-inner"
+                          onClick={() => { setViewerSrc(selectedOrder.adminProof || selectedOrder.admin_proof || selectedOrder.sub_admin_proof); setIsViewerOpen(true); }}
+                        >
+                          <img src={selectedOrder.adminProof || selectedOrder.admin_proof || selectedOrder.sub_admin_proof} alt="Admin Proof" className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" referrerPolicy="no-referrer" />
+                          <div className="absolute inset-0 bg-green-600/10 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center">
+                            <Eye className="w-8 h-8 text-white scale-90 group-hover:scale-100 transition-transform" />
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )}
+                    )}
+
+                    {/* QR Codes */}
+                    {(selectedOrder.receiver_info?.qrCode || selectedOrder.receiver_info?.qr_code || selectedOrder.bank_info?.qrCode || selectedOrder.receiverInfo?.qrCode) && (
+                      <div className="space-y-2">
+                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1 flex items-center gap-2">
+                          <CheckCircle2 className="w-3 h-3 text-amber-500" /> Target QR / Wallet
+                        </p>
+                        <div 
+                          className="aspect-video rounded-3xl bg-black border border-white/10 overflow-hidden cursor-pointer group relative shadow-inner"
+                          onClick={() => { setViewerSrc(selectedOrder.receiver_info?.qrCode || selectedOrder.receiver_info?.qr_code || selectedOrder.bank_info?.qrCode || selectedOrder.receiverInfo?.qrCode); setIsViewerOpen(true); }}
+                        >
+                          <img src={selectedOrder.receiver_info?.qrCode || selectedOrder.receiver_info?.qr_code || selectedOrder.bank_info?.qrCode || selectedOrder.receiverInfo?.qrCode} alt="Target QR" className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" referrerPolicy="no-referrer" />
+                          <div className="absolute inset-0 bg-amber-600/10 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center">
+                            <Eye className="w-8 h-8 text-white scale-90 group-hover:scale-100 transition-transform" />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div className="p-6 bg-blue-500/5 border border-blue-500/10 rounded-3xl">

@@ -252,25 +252,28 @@ export default function AdminExchange() {
           const amountToDeduct = tx.total_to_deduct || tx.totalToDeduct || tx.amount;
           
           // CRITICAL: Update sub-admin balance if assigned
-          if (tx.assigned_sub_admin_id) {
-            const { data: subAdmin } = await firebaseService.getDocument('sub_admins', tx.assigned_sub_admin_id);
+          if (tx.assignedSubAdminId || tx.assigned_sub_admin_id) {
+            const saId = tx.assignedSubAdminId || tx.assigned_sub_admin_id;
+            const { data: subAdmin } = await firebaseService.getDocument('sub_admins', saId);
             if (subAdmin) {
-              const newSaBalance = (subAdmin.wallet_balance || subAdmin.vnd_balance || 0) + amountToDeduct;
+              const currentBalance = subAdmin.walletBalance || subAdmin.wallet_balance || subAdmin.vndBalance || subAdmin.vnd_balance || 0;
+              const newSaBalance = currentBalance + amountToDeduct;
               
-              await firebaseService.updateDocument('sub_admins', tx.assigned_sub_admin_id, {
-                wallet_balance: newSaBalance,
-                vnd_balance: newSaBalance,
-                updated_at: new Date().toISOString()
+              await firebaseService.updateDocument('sub_admins', saId, {
+                walletBalance: newSaBalance,
+                wallet_balance: newSaBalance, // Keep for backward compatibility
+                updatedAt: new Date().toISOString()
               });
               
               await firebaseService.addDocument('sub_admin_wallet_transactions', {
-                sub_admin_id: tx.assigned_sub_admin_id,
+                subAdminId: saId,
+                sub_admin_id: saId,
                 type: 'credit',
                 amount: amountToDeduct,
                 reason: `Exchange #${tx.id} completed by admin`,
-                order_id: tx.id,
-                balance_after: newSaBalance,
-                created_at: new Date().toISOString()
+                orderId: tx.id,
+                balanceAfter: newSaBalance,
+                createdAt: new Date().toISOString()
               });
             }
           }

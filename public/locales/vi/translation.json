@@ -93,5 +93,9 @@
   "about": "Giới thiệu",
   "security_settings_updated": "Cài đặt bảo mật đã cập nhật",
   "notification_settings_updated": "Cài đặt thông báo đã cập nhật",
-  "two_factor_auth_active": "Xác thực 2 lớp đã kích hoạt"
+  "two_factor_auth_active": "Xác thực 2 lớp đã kích hoạt",
+  "warning": "Cảnh báo",
+  "i_agree": "Tôi đồng ý",
+  "exchange_warning_message": "Trước khi đặt hàng, vui lòng nói chuyện với gia đình hoặc chủ tài khoản của bạn. Vì quản trị viên sẽ chỉ có 5 phút sau khi gửi tiền về nước của bạn. Bạn phải xác nhận trong thời gian này xem bạn đã nhận được tiền hay chưa. Nếu bạn không thể xác nhận trong thời gian này, quản trị viên sẽ không chịu trách nhiệm dưới bất kỳ hình thức nào nếu có bất kỳ vấn đề hoặc gian lận nào xảy ra sau đó. Cảm ơn bạn.",
+  "operator_warning_message": "Cảnh báo bảo mật: Đảm bảo bạn đã xác minh chi tiết người nhận trước khi xử lý bất kỳ giao dịch nào. Bạn có cửa sổ 5 phút để xác nhận giao dịch sau khi gửi. Quản trị viên không chịu trách nhiệm về các lỗi sau khoảng thời gian này.",
 }

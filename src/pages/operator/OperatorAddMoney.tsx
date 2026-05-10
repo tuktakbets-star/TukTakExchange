@@ -44,6 +44,7 @@ export default function OperatorAddMoney({ type = 'add_money' }: { type?: 'add_m
   const [rejectionReason, setRejectionReason] = useState('');
   const [isPaidConfirmOpen, setIsPaidConfirmOpen] = useState(false);
   const [proofFile, setProofFile] = useState<File | null>(null);
+  const [transactionId, setTransactionId] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAcceptConfirmOpen, setIsAcceptConfirmOpen] = useState(false);
   const [isStartConfirmOpen, setIsStartConfirmOpen] = useState(false);
@@ -129,15 +130,15 @@ export default function OperatorAddMoney({ type = 'add_money' }: { type?: 'add_m
       const amount = Number(selectedOrder.amount || 0);
       
       // Check if operator has enough balance
-      if (Number(operator?.wallet_balance || 0) < amount) {
+      if (Number(operator?.walletBalance || 0) < amount) {
         toast.error('Insufficient working balance! Please refill your wallet.', { id: 'paid' });
         setIsSubmitting(false);
         return;
       }
 
-      let proofUrl = selectedOrder.proof_url; 
+      let adminProofUrl = ''; 
       if (proofFile) {
-        proofUrl = await supabaseService.uploadFile(proofFile);
+        adminProofUrl = await supabaseService.uploadFile(proofFile);
       }
       
       // AUTO-COMPLETE Workflow for Add Money / Cash In
@@ -145,7 +146,7 @@ export default function OperatorAddMoney({ type = 'add_money' }: { type?: 'add_m
       await supabaseService.updateWalletBalance(selectedOrder.uid, selectedOrder.currency, amount, 0);
 
       // 2. Update Sub-Admin Balance (Decrease)
-      const currentSaBal = Number(operator.wallet_balance || 0);
+      const currentSaBal = Number(operator.walletBalance || 0);
       const newSaBalance = currentSaBal - amount;
       
       await supabaseService.updateDocument('sub_admins', operator.id, {
@@ -161,13 +162,15 @@ export default function OperatorAddMoney({ type = 'add_money' }: { type?: 'add_m
         reason: `Order #${selectedOrder.id} finalized (Add Money/Cash In)`,
         order_id: selectedOrder.id,
         balance_after: newSaBalance,
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
+        proof_url: adminProofUrl || selectedOrder.proof_url // Save proof for reference in ledger
       });
 
       // 4. Update Transaction status to completed
       await supabaseService.updateDocument('transactions', selectedOrder.id, {
         status: 'completed',
-        admin_proof: proofUrl,
+        admin_proof: adminProofUrl || null,
+        transaction_id: transactionId,
         sub_admin_action: 'finalize_completed',
         sub_admin_actioned_at: new Date().toISOString(),
         paid_at: new Date().toISOString(),
@@ -314,7 +317,7 @@ export default function OperatorAddMoney({ type = 'add_money' }: { type?: 'add_m
                     </td>
                     <td className="px-6 py-5">
                        <div className="flex flex-col">
-                         <span className="text-xl font-black text-white">{order.currency === 'VND' ? '₫' : '৳'}{order.amount}</span>
+                         <span className="text-xl font-black text-white">{(order.currency === 'VND' || order.type === 'cash_in' || order.type === 'add_money') ? '₫' : order.currency === 'USDT' ? '$' : '৳'}{order.amount}</span>
                          <span className="text-[10px] font-bold text-slate-500 mt-1 uppercase tracking-widest">{order.method || order.paymentMethod}</span>
                          {order.source_info && <span className="text-[9px] text-blue-500 font-bold mt-1">From: {order.source_info}</span>}
                        </div>
@@ -490,7 +493,7 @@ export default function OperatorAddMoney({ type = 'add_money' }: { type?: 'add_m
                 <div className="flex justify-between items-end border-t border-white/5 pt-4">
                   <div>
                     <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">Amount</p>
-                    <p className="text-xl font-black text-white">{order.currency === 'VND' ? '₫' : '৳'}{order.amount}</p>
+                    <p className="text-xl font-black text-white">{(order.currency === 'VND' || order.type === 'cash_in' || order.type === 'add_money') ? '₫' : order.currency === 'USDT' ? '$' : '৳'}{order.amount}</p>
                   </div>
                   <button 
                     onClick={() => {
@@ -617,7 +620,7 @@ export default function OperatorAddMoney({ type = 'add_money' }: { type?: 'add_m
           <div className="p-6 bg-[#0d1117] flex justify-between items-center">
              <div className="flex flex-col">
                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">User Paid Amount</span>
-               <span className="text-2xl font-black text-white">{selectedOrder?.currency === 'VND' ? '₫' : '৳'}{selectedOrder?.amount}</span>
+               <span className="text-2xl font-black text-white">{(selectedOrder?.currency === 'VND' || selectedOrder?.type === 'cash_in' || selectedOrder?.type === 'add_money') ? '₫' : selectedOrder?.currency === 'USDT' ? '$' : '৳'}{selectedOrder?.amount}</span>
              </div>
              <div className="flex gap-3">
                 <Button 
@@ -757,11 +760,54 @@ export default function OperatorAddMoney({ type = 'add_money' }: { type?: 'add_m
                <CheckCircle2 className="w-8 h-8 text-green-500" />
             </div>
             <h2 className="text-2xl font-display font-black tracking-tight mb-4">Confirm Processed?</h2>
-            <div className="p-6 bg-white/5 rounded-3xl border border-white/10 space-y-4 text-left">
-               <div className="flex justify-between items-center text-sm">
-                 <span className="text-slate-500 font-bold uppercase tracking-widest text-[10px]">User to Receive:</span>
-                 <span className="text-white font-black text-lg">{selectedOrder?.currency === 'VND' ? '₫' : '৳'}{selectedOrder?.amount}</span>
-               </div>
+            
+            <div className="space-y-4 text-left">
+              <div className="p-4 bg-white/5 rounded-2xl border border-white/10 space-y-4">
+                 <div className="flex justify-between items-center text-sm">
+                   <span className="text-slate-500 font-bold uppercase tracking-widest text-[10px]">User to Receive:</span>
+                   <span className="text-white font-black text-lg">{(selectedOrder?.currency === 'VND' || selectedOrder?.type === 'add_money' || selectedOrder?.type === 'cash_in') ? '₫' : selectedOrder?.currency === 'USDT' ? '$' : '৳'}{selectedOrder?.amount}</span>
+                 </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Transaction ID / Reference (Optional)</label>
+                <Input 
+                  placeholder="Enter transaction code"
+                  value={transactionId}
+                  onChange={(e) => setTransactionId(e.target.value)}
+                  className="bg-white/5 border-white/10 rounded-xl"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Upload Payment Proof (Admin)</label>
+                <div 
+                  className={cn(
+                    "border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all",
+                    proofFile ? "border-blue-500 bg-blue-500/5" : "border-white/10 hover:border-blue-500/50"
+                  )}
+                  onClick={() => document.getElementById('admin-proof-add-money')?.click()}
+                >
+                  <input 
+                    id="admin-proof-add-money"
+                    type="file"
+                    className="hidden"
+                    accept="image/*"
+                    onChange={(e) => setProofFile(e.target.files?.[0] || null)}
+                  />
+                  {proofFile ? (
+                    <div className="flex items-center justify-center gap-2 text-blue-500">
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span className="text-xs font-bold">{proofFile.name}</span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-2">
+                      <Camera className="w-6 h-6 text-slate-600" />
+                      <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Click to upload transfer screenshot</span>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
             
             <div className="mt-6 p-4 bg-blue-500/10 border border-blue-500/20 rounded-2xl flex gap-3 text-left">

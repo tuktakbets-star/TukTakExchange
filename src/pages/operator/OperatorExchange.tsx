@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Search, 
@@ -39,6 +40,7 @@ import { toast } from 'sonner';
 import { supabaseService, where, orderBy } from '@/lib/supabaseService';
 
 export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchange' | 'withdraw' | 'recharge' }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('pending');
@@ -50,10 +52,17 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
   const [isStartConfirmOpen, setIsStartConfirmOpen] = useState(false);
   const [isPaidConfirmOpen, setIsPaidConfirmOpen] = useState(false);
   const [proofFile, setProofFile] = useState<File | null>(null);
+  const [fromAccount, setFromAccount] = useState('');
+  const [transactionId, setTransactionId] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [operator, setOperator] = useState<any>(null);
+  const [showWarning, setShowWarning] = useState(false);
+
+  useEffect(() => {
+    setShowWarning(true);
+  }, []);
 
   useEffect(() => {
     fetchData();
@@ -136,6 +145,8 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
       await supabaseService.updateDocument('transactions', selectedOrder.id, {
         status: 'waiting_confirmation',
         admin_proof: proofUrl,
+        sub_admin_from_account: fromAccount,
+        transaction_id: transactionId,
         sub_admin_action: 'mark_as_paid',
         sub_admin_actioned_at: new Date().toISOString(),
         paid_at: new Date().toISOString(),
@@ -279,34 +290,44 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
                   </td>
                   <td className="px-6 py-5">
                     <div className="text-xs space-y-1">
-                      {(() => {
-                        const info = order.receiverInfo || order.receiver_info || order.bankInfo || order.bank_info || order;
-                        if (!info || (!info.bankName && !info.method && !info.accountNumber && !info.number && !info.account && !order.accountType)) {
-                          return <p className="text-slate-500 italic">No details found</p>;
-                        }
-                        return (
-                          <>
-                            <p className="font-bold text-slate-200">{info.name || info.accountName || info.withdrawal_account_name || ''}</p>
-                            <p className="text-slate-400">Bank: {info.bankName || info.method || info.accountType || order.account_type || order.accountType || 'N/A'}</p>
-                            <p className="text-white font-mono">{info.accountNumber || info.number || info.account || info.withdrawal_account_number || 'N/A'}</p>
-                            {info.branch && <p className="text-slate-500 italic text-[10px]">Branch: {info.branch}</p>}
-                            {(info.qrCode || info.qr_code) && (
-                              <button 
-                                onClick={() => { setSelectedOrder({ ...order, proofUrl: info.qrCode || info.qr_code }); setIsDocModalOpen(true); }}
-                                className="text-blue-500 text-[10px] font-bold mt-1"
-                              >
-                                View Receiver QR
-                              </button>
-                            )}
-                          </>
-                        );
-                      })()}
+                        {(() => {
+                          const info = (order.bankInfo && (order.bankInfo.bankName || order.bankInfo.accountNumber || order.bankInfo.accountName)) ? order.bankInfo : 
+                                       (order.receiverInfo && (order.receiverInfo.name || order.receiverInfo.bankName || order.receiverInfo.accountNumber)) ? order.receiverInfo :
+                                       (order.bank_info && (order.bank_info.bank_name || order.bank_info.account_number || order.bank_info.account_name)) ? order.bank_info :
+                                       (order.receiver_info && (order.receiver_info.name || order.receiver_info.bank_name || order.receiver_info.account_number)) ? order.receiver_info :
+                                       order;
+
+                          const name = info.name || info.accountName || info.withdrawal_account_name || info.account_name || '';
+                          const bank = info.bankName || info.bank_name || info.method || info.accountType || order.account_type || order.accountType;
+                          const number = info.accountNumber || info.account_number || info.number || info.account || info.withdrawal_account_number;
+
+                          if (!name && !bank && !number) {
+                            return <p className="text-slate-500 italic">No details found</p>;
+                          }
+                          
+                          return (
+                            <div className="space-y-1">
+                              <p className="font-bold text-slate-200">{name || 'N/A'}</p>
+                              <p className="text-slate-400">Bank: {bank || 'N/A'}</p>
+                              <p className="text-white font-mono">{number || 'N/A'}</p>
+                              {info.branch && <p className="text-slate-500 italic text-[10px]">Branch: {info.branch}</p>}
+                              {(info.qrCode || info.qr_code) && (
+                                <button 
+                                  onClick={() => { setSelectedOrder({ ...order, proofUrl: info.qrCode || info.qr_code }); setIsDocModalOpen(true); }}
+                                  className="text-blue-500 text-[10px] font-bold mt-1"
+                                >
+                                  View Receiver QR
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })()}
                     </div>
                   </td>
                   <td className="px-6 py-5">
                     <div className="flex flex-col">
                       <span className="font-black text-white text-lg">
-                        {order.currency === 'VND' ? '₫' : '৳'}{order.amount}
+                        {(order.currency === 'VND' || order.type === 'cash_in' || order.type === 'add_money') ? '₫' : order.currency === 'USDT' ? '$' : '৳'}{order.amount}
                       </span>
                       {mode === 'exchange' && (
                         <span className="text-xs font-bold text-blue-400">
@@ -430,7 +451,7 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
                   <div className="space-y-3">
                     <div>
                       <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">Amount</p>
-                      <p className="font-black text-white text-base">₫{order.amount?.toLocaleString()}</p>
+                      <p className="font-black text-white text-base">{(order.currency === 'VND' || order.type === 'cash_in' || order.type === 'add_money') ? '₫' : order.currency === 'USDT' ? '$' : '৳'}{order.amount?.toLocaleString()}</p>
                       {mode === 'exchange' && (
                         <p className="text-[10px] text-blue-400 font-bold mt-1">
                           → {order.targetAmount || order.target_amount || (order.amount * 1000)} {order.targetCurrency || order.target_currency}
@@ -446,15 +467,25 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
                     <div>
                       <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">Receiver</p>
                       {(() => {
-                        const info = order.receiverInfo || order.receiver_info || order.bankInfo || order.bank_info || order;
-                        if (!info || (!info.bankName && !info.method && !info.accountNumber && !info.number && !info.account && !order.accountType)) {
+                        const info = (order.bankInfo && (order.bankInfo.bankName || order.bankInfo.accountNumber || order.bankInfo.accountName)) ? order.bankInfo : 
+                                     (order.receiverInfo && (order.receiverInfo.name || order.receiverInfo.bankName || order.receiverInfo.accountNumber)) ? order.receiverInfo :
+                                     (order.bank_info && (order.bank_info.bank_name || order.bank_info.account_number || order.bank_info.account_name)) ? order.bank_info :
+                                     (order.receiver_info && (order.receiver_info.name || order.receiver_info.bank_name || order.receiver_info.account_number)) ? order.receiver_info :
+                                     order;
+
+                        const name = info.name || info.accountName || info.withdrawal_account_name || info.account_name;
+                        const bank = info.bankName || info.bank_name || info.method || info.accountType || order.account_type || order.accountType;
+                        const number = info.accountNumber || info.account_number || info.number || info.account || info.withdrawal_account_number;
+
+                        if (!name && !bank && !number) {
                           return <p className="text-[10px] text-slate-500 italic">No details</p>;
                         }
+                        
                         return (
                           <>
-                            <p className="text-xs font-bold text-slate-200 truncate">{info.name || info.accountName || info.withdrawal_account_name}</p>
-                            <p className="text-[10px] text-slate-500 truncate">{info.bankName || info.method || info.accountType || order.account_type || order.accountType || 'N/A'}</p>
-                            <p className="text-[10px] font-mono text-blue-400 mt-1">{info.accountNumber || info.number || info.account || info.withdrawal_account_number || 'N/A'}</p>
+                            <p className="text-xs font-bold text-slate-200 truncate">{name || 'N/A'}</p>
+                            <p className="text-[10px] text-slate-500 truncate">{bank || 'N/A'}</p>
+                            <p className="text-[10px] font-mono text-blue-400 mt-1">{number || 'N/A'}</p>
                           </>
                         );
                       })()}
@@ -582,16 +613,26 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
                     <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Amount to Pay</span>
                     <span className="text-lg font-black text-white">{selectedOrder?.currency === 'VND' ? '₫' : '৳'}{selectedOrder?.amount}</span>
                   </div>
-                  {(() => {
-                    const info = selectedOrder?.receiverInfo || selectedOrder?.receiver_info || selectedOrder?.bankInfo || selectedOrder?.bank_info || selectedOrder;
-                    if (!info || (!info.bankName && !info.method && !info.accountNumber && !info.number && !info.account && !selectedOrder.accountType)) return null;
+                  {selectedOrder && (() => {
+                    const info = (selectedOrder?.bankInfo && (selectedOrder.bankInfo.bankName || selectedOrder.bankInfo.accountNumber || selectedOrder.bankInfo.accountName)) ? selectedOrder.bankInfo : 
+                                 (selectedOrder?.receiverInfo && (selectedOrder.receiverInfo.name || selectedOrder.receiverInfo.bankName || selectedOrder.receiverInfo.accountNumber)) ? selectedOrder.receiverInfo :
+                                 (selectedOrder?.bank_info && (selectedOrder.bank_info.bank_name || selectedOrder.bank_info.account_number || selectedOrder.bank_info.account_name)) ? selectedOrder.bank_info :
+                                 (selectedOrder?.receiver_info && (selectedOrder.receiver_info.name || selectedOrder.receiver_info.bank_name || selectedOrder.receiver_info.account_number)) ? selectedOrder.receiver_info :
+                                 selectedOrder;
+
+                    const name = info?.name || info?.accountName || info?.withdrawal_account_name || info?.account_name;
+                    const bank = info?.bankName || info?.bank_name || info?.method || info?.accountType || selectedOrder?.account_type || selectedOrder?.accountType;
+                    const number = info?.accountNumber || info?.account_number || info?.number || info?.account || info?.withdrawal_account_number;
+
+                    if (!name && !bank && !number) return null;
+                    
                     return (
                       <div className="pt-3 border-t border-white/5">
                         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Receiver Details</p>
                         <div className="p-3 bg-black/40 rounded-xl space-y-1">
-                          <p className="text-xs font-bold text-white flex justify-between"><span>Method:</span> <span className="text-blue-400 capitalize">{info.method || info.bankName || info.accountType || selectedOrder.account_type || selectedOrder.accountType || 'N/A'}</span></p>
-                          <p className="text-xs font-bold text-white flex justify-between"><span>Number:</span> <span className="text-blue-400 font-mono">{info.number || info.accountNumber || info.account || info.withdrawal_account_number || 'N/A'}</span></p>
-                          <p className="text-xs font-bold text-white flex justify-between"><span>Name:</span> <span className="text-blue-400">{info.name || info.accountName || info.withdrawal_account_name || 'N/A'}</span></p>
+                          <p className="text-xs font-bold text-white flex justify-between"><span>Method:</span> <span className="text-blue-400 capitalize">{bank || 'N/A'}</span></p>
+                          <p className="text-xs font-bold text-white flex justify-between"><span>Number:</span> <span className="text-blue-400 font-mono">{number || 'N/A'}</span></p>
+                          <p className="text-xs font-bold text-white flex justify-between"><span>Name:</span> <span className="text-blue-400">{name || 'N/A'}</span></p>
                         </div>
                       </div>
                     );
@@ -664,8 +705,30 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
                  <div className="p-4 bg-white/5 rounded-2xl border border-white/10 space-y-3">
                     <div className="flex justify-between items-center text-sm">
                       <span className="text-slate-500 font-bold uppercase tracking-widest text-[10px]">Paying User:</span>
-                      <span className="text-white font-black">{selectedOrder?.currency === 'VND' ? '₫' : '৳'}{selectedOrder?.amount}</span>
+                      <span className="text-white font-black">{(selectedOrder?.currency === 'VND' || selectedOrder?.type === 'cash_in' || selectedOrder?.type === 'add_money') ? '₫' : selectedOrder?.currency === 'USDT' ? '$' : '৳'}{selectedOrder?.amount}</span>
                     </div>
+                 </div>
+
+                 <div className="space-y-4 pt-4">
+                   <div className="space-y-2 text-left">
+                     <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Paid From (Your Account)</Label>
+                     <Input 
+                       placeholder="e.g. My Bank / My Number / Card X"
+                       value={fromAccount}
+                       onChange={(e) => setFromAccount(e.target.value)}
+                       className="bg-white/5 border-white/10 rounded-xl"
+                     />
+                   </div>
+
+                   <div className="space-y-2 text-left">
+                     <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Transaction ID / Reference (Optional)</Label>
+                     <Input 
+                       placeholder="Enter transaction code"
+                       value={transactionId}
+                       onChange={(e) => setTransactionId(e.target.value)}
+                       className="bg-white/5 border-white/10 rounded-xl"
+                     />
+                   </div>
                  </div>
               </div>
               
@@ -688,6 +751,51 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
            </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Pop-up Warning */}
+      <AnimatePresence>
+        {showWarning && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-slate-950/90 backdrop-blur-xl"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 40 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 40 }}
+              className="relative w-full max-w-2xl bg-slate-900 border border-yellow-500/30 rounded-[2.5rem] p-8 md:p-12 shadow-[0_0_50px_rgba(234,179,8,0.15)] overflow-hidden"
+            >
+              <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-yellow-500 via-orange-500 to-yellow-500 animate-pulse" />
+              
+              <div className="text-center">
+                <div className="w-20 h-20 bg-yellow-500/10 rounded-3xl flex items-center justify-center mx-auto mb-8 animate-bounce">
+                  <AlertTriangle className="w-10 h-10 text-yellow-500" />
+                </div>
+                
+                <h2 className="text-2xl md:text-3xl font-black text-white mb-6 uppercase tracking-tight">
+                  {t('warning')}
+                </h2>
+                
+                <div className="bg-white/5 rounded-3xl p-6 md:p-8 border border-white/5 mb-8">
+                  <p className="text-lg md:text-xl leading-relaxed text-slate-200 font-medium whitespace-pre-wrap text-left">
+                    {t('operator_warning_message') || t('exchange_warning_message')}
+                  </p>
+                </div>
+
+                <Button 
+                  onClick={() => setShowWarning(false)}
+                  className="w-full h-16 bg-yellow-500 hover:bg-yellow-400 text-black text-xl font-black rounded-2xl shadow-xl shadow-yellow-500/20 transition-all active:scale-95"
+                >
+                  {t('i_agree')}
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -108,46 +108,52 @@ export const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = (
 
               <div className="space-y-6 lg:col-span-2 grid md:grid-cols-2 gap-6">
                 <div className="space-y-6">
-                  {tx.bankInfo && (
-                    <div>
-                      <h3 className="text-sm font-bold text-green-500 uppercase tracking-widest mb-4">Bank/Payment Info</h3>
-                      <div className="p-4 rounded-2xl bg-white/5 border border-white/5">
-                        <DetailRow label="Bank Name" value={tx.bankInfo.bankName} icon={Landmark} />
-                        <DetailRow label="Account Name" value={tx.bankInfo.accountName} icon={User} />
-                        <DetailRow label="Account #" value={tx.bankInfo.accountNumber} icon={CreditCard} isMonospace />
-                        {tx.bankInfo.qrCode && (
-                          <div className="mt-4 pt-4 border-t border-white/5 group">
-                             <p className="text-[10px] uppercase font-bold text-slate-500 mb-2">QR Code</p>
-                             <div 
-                               className="relative cursor-pointer overflow-hidden rounded-xl border border-white/10 bg-black/20"
-                               onClick={() => {
-                                 setViewerSrc(tx.bankInfo.qrCode);
-                                 setIsViewerOpen(true);
-                               }}
-                             >
-                               <img src={tx.bankInfo.qrCode} alt="QR Code" referrerPolicy="no-referrer" className="w-full h-auto opacity-80 group-hover:opacity-100 transition-opacity" />
-                               <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40 backdrop-blur-sm">
-                                 <Eye className="w-8 h-8 text-white" />
-                               </div>
-                             </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
+                  {(() => {
+                    const info = (tx.bankInfo && (tx.bankInfo.bankName || tx.bankInfo.accountNumber || tx.bankInfo.accountName)) ? tx.bankInfo : 
+                                 (tx.receiverInfo && (tx.receiverInfo.name || tx.receiverInfo.bankName || tx.receiverInfo.accountNumber)) ? tx.receiverInfo :
+                                 (tx.bank_info && (tx.bank_info.bank_name || tx.bank_info.account_number || tx.bank_info.account_name)) ? tx.bank_info :
+                                 (tx.receiver_info && (tx.receiver_info.name || tx.receiver_info.bank_name || tx.receiver_info.account_number)) ? tx.receiver_info :
+                                 tx;
+                    
+                    const bankName = info.bankName || info.bank_name || info.method || info.accountType || tx.account_type || tx.accountType;
+                    const accountNumber = info.accountNumber || info.account_number || info.number || info.account || info.withdrawal_account_number;
+                    const accountName = info.name || info.accountName || info.withdrawal_account_name || info.account_name;
+                    const branch = info.branch || info.bank_branch;
+                    const qrCode = info.qrCode || info.qr_code || tx.qrCode || tx.qr_code;
 
-                  {tx.receiverInfo && (
-                    <div>
-                      <h3 className="text-sm font-bold text-green-500 uppercase tracking-widest mb-4">Receiver Information</h3>
-                      <div className="p-4 rounded-2xl bg-white/5 border border-white/5">
-                        <DetailRow label="Receiver Name" value={tx.receiverInfo.name} icon={User} />
-                        <DetailRow label="Bank Name" value={tx.receiverInfo.bankName} icon={Landmark} />
-                        <DetailRow label="Account #" value={tx.receiverInfo.accountNumber} icon={Building2} isMonospace />
-                        <DetailRow label="Branch" value={tx.receiverInfo.branch} icon={Building2} />
-                        <DetailRow label="Amount (Target)" value={`${tx.targetAmount} ${tx.targetCurrency}`} icon={DollarSign} />
+                    if (!bankName && !accountNumber && !accountName && !qrCode) return null;
+
+                    return (
+                      <div>
+                        <h3 className="text-sm font-bold text-green-500 uppercase tracking-widest mb-4">Bank/Payment Information</h3>
+                        <div className="p-4 rounded-2xl bg-white/5 border border-white/5">
+                          <DetailRow label="Bank/Method" value={bankName} icon={Landmark} />
+                          <DetailRow label="Account Name" value={accountName} icon={User} />
+                          <DetailRow label="Account #" value={accountNumber} icon={CreditCard} isMonospace />
+                          {branch && <DetailRow label="Branch" value={branch} icon={Building2} />}
+                          {tx.targetAmount && <DetailRow label="Amount (Target)" value={`${tx.targetAmount} ${tx.targetCurrency}`} icon={DollarSign} />}
+                          
+                          {qrCode && (
+                            <div className="mt-4 pt-4 border-t border-white/5 group">
+                               <p className="text-[10px] uppercase font-bold text-slate-500 mb-2">QR Code</p>
+                               <div 
+                                 className="relative cursor-pointer overflow-hidden rounded-xl border border-white/10 bg-black/20"
+                                 onClick={() => {
+                                   setViewerSrc(qrCode);
+                                   setIsViewerOpen(true);
+                                 }}
+                               >
+                                 <img src={qrCode} alt="QR Code" referrerPolicy="no-referrer" className="w-full h-auto opacity-80 group-hover:opacity-100 transition-opacity" />
+                                 <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40 backdrop-blur-sm">
+                                   <Eye className="w-8 h-8 text-white" />
+                                 </div>
+                               </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
 
                 <div className="space-y-6">
@@ -162,17 +168,17 @@ export const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = (
                     </div>
                   )}
 
-                  {tx.proofUrl && (
+                  {(tx.proofUrl || tx.userProof || tx.proof_url) && (
                     <div>
                       <h3 className="text-sm font-bold text-orange-500 uppercase tracking-widest mb-4">User Payment Proof</h3>
                       <div 
                         className="relative cursor-pointer group rounded-2xl overflow-hidden border border-white/10 bg-white/5"
                         onClick={() => {
-                          setViewerSrc(tx.proofUrl);
+                          setViewerSrc(tx.proofUrl || tx.userProof || tx.proof_url);
                           setIsViewerOpen(true);
                         }}
                       >
-                        <img src={tx.proofUrl} alt="User Proof" referrerPolicy="no-referrer" className="w-full max-h-48 object-cover opacity-60 group-hover:opacity-100 transition-all" />
+                        <img src={tx.proofUrl || tx.userProof || tx.proof_url} alt="User Proof" referrerPolicy="no-referrer" className="w-full max-h-48 object-cover opacity-60 group-hover:opacity-100 transition-all" />
                         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40 backdrop-blur-sm">
                           <Eye className="w-8 h-8 text-white" />
                         </div>
@@ -180,35 +186,19 @@ export const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = (
                     </div>
                   )}
 
-                  {tx.receiverInfo?.qrCode && (
-                    <div>
-                      <h3 className="text-sm font-bold text-blue-400 uppercase tracking-widest mb-4">Receiver QR Code</h3>
-                      <div 
-                        className="relative cursor-pointer group rounded-2xl overflow-hidden border border-white/10 bg-white/5"
-                        onClick={() => {
-                          setViewerSrc(tx.receiverInfo.qrCode);
-                          setIsViewerOpen(true);
-                        }}
-                      >
-                        <img src={tx.receiverInfo.qrCode} alt="Receiver QR" referrerPolicy="no-referrer" className="w-full max-h-48 object-cover opacity-60 group-hover:opacity-100 transition-all" />
-                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40 backdrop-blur-sm">
-                          <Eye className="w-8 h-8 text-white" />
-                        </div>
-                      </div>
-                    </div>
-                  )}
 
-                  {tx.adminProof && (
+
+                  {(tx.adminProof || tx.admin_proof) && (
                     <div>
                       <h3 className="text-sm font-bold text-blue-500 uppercase tracking-widest mb-4">Admin Payout Proof</h3>
                       <div 
                         className="relative cursor-pointer group rounded-2xl overflow-hidden border border-white/10 bg-white/5"
                         onClick={() => {
-                          setViewerSrc(tx.adminProof);
+                          setViewerSrc(tx.adminProof || tx.admin_proof);
                           setIsViewerOpen(true);
                         }}
                       >
-                        <img src={tx.adminProof} alt="Admin Proof" referrerPolicy="no-referrer" className="w-full max-h-48 object-cover opacity-60 group-hover:opacity-100 transition-all border-2 border-blue-500/20" />
+                        <img src={tx.adminProof || tx.admin_proof} alt="Admin Proof" referrerPolicy="no-referrer" className="w-full max-h-48 object-cover opacity-60 group-hover:opacity-100 transition-all border-2 border-blue-500/20" />
                         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-blue-600/40 backdrop-blur-sm">
                           <Eye className="w-8 h-8 text-white" />
                         </div>

@@ -28,6 +28,7 @@ export default function OperatorLayout() {
   const [pendingOrdersCount, setPendingOrdersCount] = useState(0);
   const [countsByType, setCountsByType] = useState<Record<string, number>>({});
   const [operator, setOperator] = useState<any>(null);
+  const [ledgerBalance, setLedgerBalance] = useState<number | null>(null);
   const [expandedItems, setExpandedItems] = useState<string[]>(['/operator/orders']);
   const location = useLocation();
   const navigate = useNavigate();
@@ -38,6 +39,16 @@ export default function OperatorLayout() {
     
     const unsub = supabaseService.subscribeToDocument('sub_admins', operatorSession.id, (data) => {
       if (data) setOperator(data);
+    });
+
+    const unsubLedger = supabaseService.subscribeToCollection('sub_admin_wallet_transactions', [
+      where('sub_admin_id', '==', operatorSession.id && !isNaN(Number(operatorSession.id)) ? Number(operatorSession.id) : operatorSession.id)
+    ], (data) => {
+      const creditTypes = ['credit', 'deposit', 'refill', 'adjustment_add', 'bonus'];
+      const debitTypes = ['debit', 'withdraw', 'adjustment_sub', 'fee'];
+      const credit = data.filter(tx => creditTypes.includes(tx.type)).reduce((acc, tx) => acc + Number(tx.amount || 0), 0);
+      const debit = data.filter(tx => debitTypes.includes(tx.type)).reduce((acc, tx) => acc + Number(tx.amount || 0), 0);
+      setLedgerBalance(credit - debit);
     });
 
     // ... unsub notifications ...
@@ -98,12 +109,13 @@ export default function OperatorLayout() {
 
     return () => {
       unsub();
+      unsubLedger();
       unsubNotifications();
       unsubOrders();
     };
   }, [operatorSession.id]);
 
-  const allowedServices = operator?.allowed_services || [];
+  const allowedServices = operator?.allowedServices || [];
 
   const menuItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/operator/dashboard' },
@@ -262,7 +274,7 @@ export default function OperatorLayout() {
                 {operator?.username?.[0] || 'OP'}
               </div>
               <div className="flex flex-col min-w-0">
-                <span className="text-sm font-bold truncate">{operator?.full_name || operator?.username || 'Operator'}</span>
+                <span className="text-sm font-bold truncate">{operator?.fullName || operator?.username || 'Operator'}</span>
                 <span className="text-[10px] font-bold text-green-500 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
                   Online
@@ -271,7 +283,7 @@ export default function OperatorLayout() {
             </div>
             <div className="pt-3 border-t border-white/5">
                <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Wallet Balance</p>
-               <p className="text-sm font-black text-white">₫ {(operator?.wallet_balance || 0).toLocaleString()}</p>
+               <p className="text-sm font-black text-white">{operator?.balanceType === 'BDT' ? '৳' : operator?.balanceType === 'USDT' ? '$' : '₫'} {(ledgerBalance !== null ? ledgerBalance : (operator?.walletBalance || 0)).toLocaleString()}</p>
             </div>
           </div>
           <Button
@@ -309,9 +321,9 @@ export default function OperatorLayout() {
             </button>
             <div className="h-8 w-[1px] bg-white/5 mx-2" />
             <div className="text-right">
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-none mb-1">VND Balance</p>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-none mb-1">{operator?.balanceType || 'VND'} Balance</p>
               <p className="text-lg font-black text-blue-500 leading-none">
-                ₫{(operator?.wallet_balance || 0).toLocaleString()}
+                {operator?.balanceType === 'BDT' ? '৳' : operator?.balanceType === 'USDT' ? '$' : '₫'}{(ledgerBalance !== null ? ledgerBalance : (operator?.walletBalance || 0)).toLocaleString()}
               </p>
             </div>
           </div>
@@ -329,7 +341,9 @@ export default function OperatorLayout() {
             {operator && (
               <div className="flex flex-col items-end">
                 <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest leading-none mb-1">Wallet Balance</span>
-                <span className="text-sm font-black text-blue-500">₫ {(operator.wallet_balance || 0).toLocaleString()}</span>
+                <span className="text-sm font-black text-blue-500">
+                  {operator.balanceType === 'BDT' ? '৳' : operator.balanceType === 'USDT' ? '$' : '₫'} {(ledgerBalance !== null ? ledgerBalance : (operator.walletBalance || 0)).toLocaleString()}
+                </span>
               </div>
             )}
             <button className="p-1 relative">

@@ -102,7 +102,7 @@ export default function Appeal() {
         if (saId) {
           const { data: subAdmin } = await supabaseService.getDocument('sub_admins', saId);
           if (subAdmin) {
-            const currentBal = Number(subAdmin.vnd_balance || subAdmin.wallet_balance || 0);
+            const currentBal = Number(subAdmin.vndBalance || subAdmin.walletBalance || 0);
             const isAddMoney = tx.type === 'add_money' || tx.type === 'cash_in';
             const amount = tx.amount || 0;
             const totalToDeduct = tx.totalToDeduct || amount;

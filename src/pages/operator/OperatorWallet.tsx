@@ -35,6 +35,7 @@ export default function OperatorWallet() {
   const navigate = useNavigate();
   const [operator, setOperator] = useState<any>(null);
   const [transactions, setTransactions] = useState<any[]>([]);
+  const [filterType, setFilterType] = useState<'all' | 'debit' | 'credit'>('all');
   const [loading, setLoading] = useState(true);
   const [requestDialog, setRequestDialog] = useState<{ open: boolean, type: 'refill' | 'withdraw' }>({ open: false, type: 'refill' });
   const [requestForm, setRequestForm] = useState({
@@ -53,8 +54,34 @@ export default function OperatorWallet() {
   const [adminBanks, setAdminBanks] = useState<any[]>([]);
 
   useEffect(() => {
-    fetchData();
+    const sessionStr = sessionStorage.getItem('operator_session');
+    if (!sessionStr) return;
+    const session = JSON.parse(sessionStr);
+
     fetchAdminBanks();
+
+    // Subscribe to operator doc
+    const unsubOp = supabaseService.subscribeToDocument('sub_admins', session.id, (data) => {
+      if (data) setOperator(data);
+    });
+
+    // Subscribe to wallet transactions
+    const unsubTx = supabaseService.subscribeToCollection('sub_admin_wallet_transactions', [
+      where('sub_admin_id', '==', session.id && !isNaN(Number(session.id)) ? Number(session.id) : session.id),
+      orderBy('created_at', 'desc')
+    ], (updated) => {
+      const processed = updated.map(tx => ({
+        ...tx,
+        created_at: tx.created_at?.toDate ? tx.created_at.toDate().toISOString() : tx.created_at
+      }));
+      setTransactions(processed);
+      setLoading(false);
+    });
+
+    return () => {
+      unsubOp();
+      unsubTx();
+    };
   }, []);
 
   const [isViewerOpen, setIsViewerOpen] = useState(false);
@@ -67,32 +94,35 @@ export default function OperatorWallet() {
     if (data) setAdminBanks(data);
   };
 
-  const fetchData = async () => {
-    const sessionStr = sessionStorage.getItem('operator_session');
-    if (!sessionStr) return;
-    
-    const session = JSON.parse(sessionStr);
-    
-    // Fetch operator
-    const { data: opData } = await supabaseService.getDocument('sub_admins', session.id);
-    if (opData) setOperator(opData);
+  const flow = getTotalFlow();
 
-    // Fetch wallet transactions
-    supabaseService.subscribeToCollection('sub_admin_wallet_transactions', [
-      where('sub_admin_id', '==', session.id && !isNaN(Number(session.id)) ? Number(session.id) : session.id),
-      orderBy('created_at', 'desc')
-    ], (updated) => setTransactions(updated));
-    
-    setLoading(false);
-  };
+  // Sync ledger balance to DB to fix discrepancies
+  useEffect(() => {
+    if (operator && transactions.length > 0) {
+      const ledgerBalance = flow.credit - flow.debit;
+      // Check multiple possible field names just in case
+      const currentDbBalance = operator.walletBalance ?? operator.wallet_balance ?? operator.vndBalance ?? operator.vnd_balance ?? 0;
+      
+      if (Math.abs(currentDbBalance - ledgerBalance) > 1) { // 1 unit threshold
+        const targetId = !isNaN(Number(operator.id)) ? Number(operator.id) : operator.id;
+        supabaseService.updateDocument('sub_admins', targetId, {
+          walletBalance: ledgerBalance,
+          wallet_balance: ledgerBalance,
+          vndBalance: ledgerBalance,
+          vnd_balance: ledgerBalance,
+          updatedAt: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+      }
+    }
+  }, [operator?.id, transactions, flow.credit, flow.debit]);
 
-  const getTodayFlow = () => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    const todayTxs = transactions.filter(tx => new Date(tx.created_at) >= today);
-    const credit = todayTxs.filter(tx => tx.type === 'credit').reduce((acc, tx) => acc + Number(tx.amount), 0);
-    const debit = todayTxs.filter(tx => tx.type === 'debit').reduce((acc, tx) => acc + Number(tx.amount), 0);
+  function getTotalFlow() {
+    const creditTypes = ['credit', 'deposit', 'refill', 'adjustment_add', 'bonus'];
+    const debitTypes = ['debit', 'withdraw', 'adjustment_sub', 'fee'];
+
+    const credit = transactions.filter(tx => creditTypes.includes(tx.type)).reduce((acc, tx) => acc + Number(tx.amount || 0), 0);
+    const debit = transactions.filter(tx => debitTypes.includes(tx.type)).reduce((acc, tx) => acc + Number(tx.amount || 0), 0);
     
     return { credit, debit };
   };
@@ -111,6 +141,13 @@ export default function OperatorWallet() {
       }
 
       const numAmount = Number(requestForm.amount);
+      const ledgerBalance = flow.credit - flow.debit;
+      
+      if (requestDialog.type === 'withdraw' && numAmount > ledgerBalance) {
+        toast.error('Insufficient balance for withdrawal');
+        setIsSubmitting(false);
+        return;
+      }
       
       let proofUrl = '';
       if (proofFile) {
@@ -147,8 +184,11 @@ export default function OperatorWallet() {
       setIsSubmitting(false);
     }
   };
-
-  const flow = getTodayFlow();
+  
+  const filteredTransactions = transactions.filter(tx => {
+    if (filterType === 'all') return true;
+    return tx.type === filterType;
+  });
 
   if (loading) {
     return <div className="min-h-[400px] flex items-center justify-center">
@@ -184,7 +224,7 @@ export default function OperatorWallet() {
                       <span className="text-[10px] sm:text-xs font-black text-slate-500 uppercase tracking-[0.2em] sm:tracking-[0.3em]">Current Working Balance</span>
                    </div>
                    <div className="flex items-baseline gap-2">
-                     <span className="text-3xl sm:text-6xl font-black text-white tracking-tighter shadow-blue-500/20">{operator?.balance_type === 'BDT' ? '৳' : operator?.balance_type === 'USDT' ? '$' : '₫'}{(operator?.wallet_balance || 0).toLocaleString()}</span>
+                     <span className="text-3xl sm:text-6xl font-black text-white tracking-tighter shadow-blue-500/20">{operator?.balanceType === 'BDT' ? '৳' : operator?.balanceType === 'USDT' ? '$' : '₫'}{(flow.credit - flow.debit).toLocaleString()}</span>
                    </div>
                    <div className="inline-flex items-center gap-2 px-3 py-1 bg-green-500/10 border border-green-500/20 rounded-full">
                       <ShieldCheck className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-green-500" />
@@ -230,15 +270,15 @@ export default function OperatorWallet() {
                     <History className="w-5 h-5 sm:w-6 sm:h-6 text-white/50" />
                     <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-white/80" />
                  </div>
-                 <h4 className="text-white/80 text-[10px] font-bold uppercase tracking-widest">Today's Wallet Flow</h4>
+                 <h4 className="text-white/80 text-[10px] font-bold uppercase tracking-widest">Total Wallet Flow</h4>
                  <div className="space-y-2">
                     <div className="flex justify-between items-center">
                        <span className="text-white/60 text-[10px] sm:text-xs font-bold tracking-tight">Total Credit (+)</span>
-                       <span className="text-base sm:text-lg font-black text-white">+{operator?.balance_type || '₫'}{flow.credit.toLocaleString()}</span>
+                       <span className="text-base sm:text-lg font-black text-white">+{operator?.balanceType || '₫'}{flow.credit.toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between items-center pt-2 border-t border-white/10">
                        <span className="text-white/60 text-[10px] sm:text-xs font-bold tracking-tight">Total Debit (-)</span>
-                       <span className="text-base sm:text-lg font-black text-white">-{operator?.balance_type || '₫'}{flow.debit.toLocaleString()}</span>
+                       <span className="text-base sm:text-lg font-black text-white">-{operator?.balanceType || '₫'}{flow.debit.toLocaleString()}</span>
                     </div>
                  </div>
               </div>
@@ -260,10 +300,24 @@ export default function OperatorWallet() {
              Wallet Ledger
           </h3>
           <div className="flex gap-2">
-             <Button variant="dark" className="h-9 px-4 text-[9px] font-black border border-white/5 rounded-xl uppercase tracking-widest flex-1 sm:flex-none">
+             <Button 
+               onClick={() => setFilterType(filterType === 'debit' ? 'all' : 'debit')}
+               variant={filterType === 'debit' ? 'blue' : 'dark'} 
+               className={cn(
+                 "h-9 px-4 text-[9px] font-black border rounded-xl uppercase tracking-widest flex-1 sm:flex-none transition-all",
+                 filterType === 'debit' ? "border-blue-500 shadow-lg shadow-blue-500/20" : "border-white/5"
+               )}
+             >
                 Debit
              </Button>
-             <Button variant="dark" className="h-9 px-4 text-[9px] font-black border border-white/5 rounded-xl uppercase tracking-widest flex-1 sm:flex-none">
+             <Button 
+               onClick={() => setFilterType(filterType === 'credit' ? 'all' : 'credit')}
+               variant={filterType === 'credit' ? 'blue' : 'dark'} 
+               className={cn(
+                 "h-9 px-4 text-[9px] font-black border rounded-xl uppercase tracking-widest flex-1 sm:flex-none transition-all",
+                 filterType === 'credit' ? "border-blue-500 shadow-lg shadow-blue-500/20" : "border-white/5"
+               )}
+             >
                 Credit
              </Button>
           </div>
@@ -283,11 +337,17 @@ export default function OperatorWallet() {
                    </tr>
                  </thead>
                  <tbody className="divide-y divide-white/5 font-medium text-xs sm:text-sm">
-                    {transactions.map((tx, idx) => (
-                      <tr key={idx} className="hover:bg-white/[0.02] transition-colors">
-                         <td className="px-6 py-4">
-                            <span className="font-bold text-slate-400">{new Date(tx.created_at).toLocaleString()}</span>
-                         </td>
+                    {filteredTransactions.map((tx, idx) => {
+                      const txDate = tx.created_at?.toDate ? tx.created_at.toDate() : new Date(tx.created_at);
+                      const isValidDate = !isNaN(txDate.getTime());
+                      
+                      return (
+                       <tr key={idx} className="hover:bg-white/[0.02] transition-colors">
+                          <td className="px-6 py-4">
+                             <span className="font-bold text-slate-400">
+                               {isValidDate ? txDate.toLocaleString() : 'Processing...'}
+                             </span>
+                          </td>
                          <td className="px-6 py-4">
                             <span className={cn(
                               "px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold uppercase tracking-wider inline-block",
@@ -300,7 +360,7 @@ export default function OperatorWallet() {
                             <span className={cn(
                               tx.type === 'credit' ? "text-green-500" : "text-red-500"
                             )}>
-                               {tx.type === 'credit' ? '+' : '-'}{operator?.balance_type === 'BDT' ? '৳' : operator?.balance_type === 'USDT' ? '$' : '₫'}{Number(tx.amount || 0).toLocaleString()}
+                               {tx.type === 'credit' ? '+' : '-'}{operator?.balanceType === 'BDT' ? '৳' : operator?.balanceType === 'USDT' ? '$' : '₫'}{Number(tx.amount || 0).toLocaleString()}
                             </span>
                          </td>
                          <td className="px-6 py-4">
@@ -327,10 +387,11 @@ export default function OperatorWallet() {
                             )}
                          </td>
                          <td className="px-6 py-4 text-right">
-                             <span className="font-black text-white">{operator?.balance_type === 'BDT' ? '৳' : operator?.balance_type === 'USDT' ? '$' : '₫'}{(tx.balance_after || 0).toLocaleString()}</span>
+                             <span className="font-black text-white">{operator?.balanceType === 'BDT' ? '৳' : operator?.balanceType === 'USDT' ? '$' : '₫'}{(tx.balance_after || 0).toLocaleString()}</span>
                          </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                  </tbody>
               </table>
            </div>
@@ -597,17 +658,17 @@ export default function OperatorWallet() {
 
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 bg-white/5 border border-white/5 rounded-2xl">
-                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 italic">Type</p>
-                  <p className={cn(
-                    "text-xs font-black uppercase tracking-widest italic",
-                    selectedTx?.type === 'credit' ? "text-green-500" : "text-red-500"
-                  )}>{selectedTx?.type}</p>
-                </div>
-                <div className="p-4 bg-white/5 border border-white/5 rounded-2xl">
-                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 italic">Amount</p>
-                  <p className="text-sm font-black text-white italic">{operator?.balance_type === 'BDT' ? '৳' : operator?.balance_type === 'USDT' ? '$' : '₫'}{Number(selectedTx?.amount || 0).toLocaleString()}</p>
-                </div>
+                   <div className="space-y-4">
+                     <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 italic">Type</p>
+                     <p className={cn(
+                       "text-xs font-black uppercase tracking-widest italic",
+                       selectedTx?.type === 'credit' ? "text-green-500" : "text-red-500"
+                     )}>{selectedTx?.type}</p>
+                   </div>
+                   <div className="space-y-4">
+                     <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 italic">Amount</p>
+                     <p className="text-sm font-black text-white italic">{operator?.balanceType === 'BDT' ? '৳' : operator?.balanceType === 'USDT' ? '$' : '₫'}{Number(selectedTx?.amount || 0).toLocaleString()}</p>
+                   </div>
               </div>
 
               <div className="p-4 bg-white/5 border border-white/5 rounded-2xl space-y-2">

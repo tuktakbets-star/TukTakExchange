@@ -350,7 +350,7 @@ export const supabaseService = {
   subscribeToDocument(path: string, id: string, callback: (data: any) => void) {
     const { table, pkName } = this.resolvePath(path);
     const channel = (supabase as any)
-      .channel(`${table}:${id}`)
+      .channel(`${table}:${id}:${Math.random().toString(36).slice(2)}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table, filter: `${pkName}=eq.${id}` },

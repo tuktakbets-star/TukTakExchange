@@ -140,10 +140,12 @@ export default function AdminSubAdmins() {
     setLoading(true);
     try {
       const amount = Number(depositAmount);
-      const newBalance = (selectedSubAdmin.wallet_balance || 0) + amount;
+      const currentBalance = (selectedSubAdmin.walletBalance ?? selectedSubAdmin.wallet_balance ?? 0);
+      const newBalance = currentBalance + amount;
 
       // 1. Update sub admin balance
       await supabaseService.updateDocument('sub_admins', selectedSubAdmin.id, {
+        walletBalance: newBalance,
         wallet_balance: newBalance
       });
 
@@ -178,7 +180,7 @@ export default function AdminSubAdmins() {
       }
 
       const amount = Number(request.amount);
-      let newBalance = Number(subAdmin?.wallet_balance || 0);
+      let newBalance = Number(subAdmin?.walletBalance ?? subAdmin?.wallet_balance ?? 0);
       
       if (action === 'approved') {
         if (request.type === 'refill') {
@@ -194,6 +196,7 @@ export default function AdminSubAdmins() {
 
         // 1. Update sub admin balance
         await supabaseService.updateDocument('sub_admins', request.sub_admin_id, {
+          walletBalance: newBalance,
           wallet_balance: newBalance
         });
 
@@ -258,7 +261,7 @@ export default function AdminSubAdmins() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {[
           { label: 'Total Operators', value: subAdmins.length, icon: User, color: 'blue' },
-          { label: 'Total team Balance', value: `৳${subAdmins.reduce((acc, curr) => acc + (curr.wallet_balance || 0), 0).toLocaleString()}`, icon: Wallet, color: 'green' },
+          { label: 'Total team Balance', value: `${subAdmins[0]?.balanceType === 'BDT' ? '৳' : subAdmins[0]?.balanceType === 'USDT' ? '$' : '₫'}${subAdmins.reduce((acc, curr) => acc + (curr.walletBalance ?? curr.wallet_balance ?? 0), 0).toLocaleString()}`, icon: Wallet, color: 'green' },
           { label: 'Currently Active', value: subAdmins.filter(s => s.status === 'active').length, icon: ShieldCheck, color: 'cyan' },
         ].map((stat, i) => (
           <div key={i} className="p-8 bg-[#161b22] border border-white/5 rounded-[2.5rem] relative overflow-hidden group">
@@ -347,13 +350,13 @@ export default function AdminSubAdmins() {
                                     {(sub.username || 'U')[0]}
                                  </div>
                                  <div className="flex flex-col">
-                                    <span className="text-sm font-bold text-white tracking-tight">{sub.full_name}</span>
+                                    <span className="text-sm font-bold text-white tracking-tight">{sub.fullName}</span>
                                     <span className="text-xs font-bold text-slate-600 mt-1 italic">@{sub.username}</span>
                                  </div>
                               </div>
                            </td>
                            <td className="px-8 py-6">
-                              <span className="text-lg font-black text-white">৳{(sub.wallet_balance || 0).toLocaleString()}</span>
+                              <span className="text-lg font-black text-white">{sub.balanceType === 'BDT' ? '৳' : sub.balanceType === 'USDT' ? '$' : '₫'}{(sub.walletBalance ?? sub.wallet_balance ?? 0).toLocaleString()}</span>
                            </td>
                            <td className="px-8 py-6 text-center">
                               <span className={cn(
@@ -369,7 +372,7 @@ export default function AdminSubAdmins() {
                               <div className="flex items-center justify-center">
                                  <div className={cn(
                                    "w-2.5 h-2.5 rounded-full ring-4 shadow-lg",
-                                   sub.is_online ? "bg-green-500 ring-green-500/10 animate-pulse" : "bg-slate-800 ring-transparent"
+                                   sub.isOnline ? "bg-green-500 ring-green-500/10 animate-pulse" : "bg-slate-800 ring-transparent"
                                  )} />
                               </div>
                            </td>
@@ -646,7 +649,7 @@ export default function AdminSubAdmins() {
               <div className="p-6 bg-white/5 rounded-2xl border border-white/10 flex items-center justify-between">
                 <div>
                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Current Balance</p>
-                  <p className="text-xl font-black text-white mt-1">৳{(selectedSubAdmin?.wallet_balance || 0).toLocaleString()}</p>
+                  <p className="text-xl font-black text-white mt-1">{selectedSubAdmin?.balanceType === 'BDT' ? '৳' : selectedSubAdmin?.balanceType === 'USDT' ? '$' : '₫'}{(selectedSubAdmin?.walletBalance ?? selectedSubAdmin?.wallet_balance ?? 0).toLocaleString()}</p>
                 </div>
                 <div className="w-12 h-12 bg-green-600/20 rounded-xl flex items-center justify-center">
                   <Wallet className="w-6 h-6 text-green-500" />

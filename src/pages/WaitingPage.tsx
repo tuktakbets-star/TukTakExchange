@@ -117,7 +117,7 @@ export default function WaitingPage() {
       if (saId && tx.sub_admin_action !== 'finalize_completed') {
         const { data: subAdmin } = await supabaseService.getDocument('sub_admins', saId);
         if (subAdmin) {
-          const currentBal = Number(subAdmin.wallet_balance || 0);
+          const currentBal = Number(subAdmin.walletBalance || 0);
           
           // Logic: Add Money/Cash In = Debit (Decrease), Exchange/Withdraw/Recharge = Credit (Increase)
           const isAddMoney = tx.type === 'add_money' || tx.type === 'cash_in';
