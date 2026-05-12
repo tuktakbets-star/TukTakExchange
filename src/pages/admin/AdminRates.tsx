@@ -42,7 +42,9 @@ export default function AdminRates() {
   }, []);
 
   const [tieredRates, setTieredRates] = useState<any[]>([{ min: 0, max: 0, rate: 0 }]);
+  const [tieredFees, setTieredFees] = useState<any[]>([{ min: 0, max: 0, fee: 0, type: 'percent' as 'percent' | 'flat' }]);
   const [selectedRateId, setSelectedRateId] = useState<string | null>(null);
+  const [activeRateTab, setActiveRateTab] = useState<'rate' | 'fee'>('rate');
 
   const handleUpdateRate = async (e: React.FormEvent<HTMLFormElement>, id?: string) => {
     e.preventDefault();
@@ -50,6 +52,8 @@ export default function AdminRates() {
     const target = (formData.get('target') as string)?.toUpperCase().trim();
     const rate = parseFloat(formData.get('rate') as string);
     const date = formData.get('date') as string;
+    const withdrawFee = parseFloat(formData.get('withdrawFee') as string) || 0;
+    const rechargeFee = parseFloat(formData.get('rechargeFee') as string) || 0;
 
     try {
       if (id) {
@@ -57,7 +61,10 @@ export default function AdminRates() {
           rate, 
           updatedAt: new Date().toISOString(),
           effectiveDate: date,
-          tieredRates: selectedRateId === id ? tieredRates : undefined
+          tieredRates: selectedRateId === id ? tieredRates : undefined,
+          tieredFees: selectedRateId === id ? tieredFees : undefined,
+          withdrawFee,
+          rechargeFee
         });
         if (!success) throw error;
         toast.success(t('rate_updated_success'));
@@ -68,12 +75,16 @@ export default function AdminRates() {
           rate,
           effectiveDate: date,
           updatedAt: new Date().toISOString(),
-          tieredRates: tieredRates
+          tieredRates: tieredRates,
+          tieredFees: tieredFees,
+          withdrawFee,
+          rechargeFee
         });
         if (!docId) throw new Error('Failed to add document');
         toast.success(t('new_rate_added'));
         (e.target as HTMLFormElement).reset();
         setTieredRates([{ min: 0, max: 0, rate: 0 }]);
+        setTieredFees([{ min: 0, max: 0, fee: 0, type: 'percent' }]);
       }
 
       // Sync with adminSettings global_settings rates
@@ -178,6 +189,19 @@ export default function AdminRates() {
                     className="h-12 bg-white/5 border-white/10 rounded-xl text-xs" 
                   />
                 </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] uppercase tracking-widest text-slate-500">Service Fees (% / Flat)</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="relative">
+                       <Input name="withdrawFee" type="number" step="any" defaultValue={rate.withdrawFee || 0} className="h-12 bg-white/5 border-white/10 rounded-xl font-bold text-xs pl-8" />
+                       <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[8px] font-black text-slate-600 uppercase">W/D</span>
+                    </div>
+                    <div className="relative">
+                       <Input name="rechargeFee" type="number" step="any" defaultValue={rate.rechargeFee || 0} className="h-12 bg-white/5 border-white/10 rounded-xl font-bold text-xs pl-8" />
+                       <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[8px] font-black text-slate-600 uppercase">REC</span>
+                    </div>
+                  </div>
+                </div>
                 <div className="flex gap-2">
                   <Button 
                     type="button" 
@@ -192,6 +216,7 @@ export default function AdminRates() {
                        } else {
                          setSelectedRateId(rate.id);
                          setTieredRates(rate.tieredRates || [{ min: 0, max: 0, rate: 0 }]);
+                         setTieredFees(rate.tieredFees || [{ min: 0, max: 0, fee: 0, type: 'percent' }]);
                        }
                     }}
                   >
@@ -210,72 +235,182 @@ export default function AdminRates() {
                   </Button>
                 </div>
                 {selectedRateId === rate.id && (
-                  <div className="col-span-full mt-4 p-4 bg-black/20 rounded-2xl space-y-4 border border-white/5">
-                    <div className="flex items-center justify-between">
-                       <h5 className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Rate Tiers for {rate.target}</h5>
-                       <Button 
-                        type="button" 
-                        size="sm" 
-                        variant="ghost" 
-                        onClick={() => setTieredRates([...tieredRates, { min: 0, max: 0, rate: 0 }])}
-                        className="h-7 text-[10px] font-bold uppercase"
-                       >
-                         + Add Tier
-                       </Button>
+                  <div className="col-span-full mt-4 p-6 bg-black/40 rounded-3xl space-y-6 border border-white/10 shadow-2xl animate-in zoom-in-95">
+                    <div className="flex p-1 bg-white/5 rounded-xl border border-white/5 w-fit">
+                      <button
+                        type="button"
+                        onClick={() => setActiveRateTab('rate')}
+                        className={cn(
+                          "px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all",
+                          activeRateTab === 'rate' ? "bg-red-600 text-white shadow-lg" : "text-slate-500 hover:text-white"
+                        )}
+                      >
+                        Rate Tiers
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveRateTab('fee')}
+                        className={cn(
+                          "px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all",
+                          activeRateTab === 'fee' ? "bg-red-600 text-white shadow-lg" : "text-slate-500 hover:text-white"
+                        )}
+                      >
+                        Service Fees (Amount Based)
+                      </button>
                     </div>
-                    {tieredRates.map((tier, tidx) => (
-                      <div key={tidx} className="grid grid-cols-4 gap-2 items-end">
-                        <div className="space-y-1">
-                          <Label className="text-[8px] uppercase text-slate-600">Min VND</Label>
-                          <Input 
-                            type="number" 
-                            value={tier.min} 
-                            onChange={(e) => {
-                              const nt = [...tieredRates];
-                              nt[tidx].min = parseFloat(e.target.value);
-                              setTieredRates(nt);
-                            }}
-                            className="h-9 bg-white/5 border-white/5 text-xs" 
-                          />
+
+                    {activeRateTab === 'rate' ? (
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                           <h5 className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Exchange Rate adjustments based on amount</h5>
+                           <Button 
+                            type="button" 
+                            size="sm" 
+                            variant="ghost" 
+                            onClick={() => setTieredRates([...tieredRates, { min: 0, max: 0, rate: 0 }])}
+                            className="h-7 text-[10px] font-bold uppercase text-red-500"
+                           >
+                             + Add Rate Tier
+                           </Button>
                         </div>
-                        <div className="space-y-1">
-                          <Label className="text-[8px] uppercase text-slate-600">Max VND (0=∞)</Label>
-                          <Input 
-                            type="number" 
-                            value={tier.max} 
-                            onChange={(e) => {
-                              const nt = [...tieredRates];
-                              nt[tidx].max = parseFloat(e.target.value);
-                              setTieredRates(nt);
-                            }}
-                            className="h-9 bg-white/5 border-white/5 text-xs" 
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-[8px] uppercase text-slate-600">Rate</Label>
-                          <Input 
-                            type="number" 
-                            step="any"
-                            value={tier.rate} 
-                            onChange={(e) => {
-                              const nt = [...tieredRates];
-                              nt[tidx].rate = parseFloat(e.target.value);
-                              setTieredRates(nt);
-                            }}
-                            className="h-9 bg-white/5 border-white/5 text-xs font-bold" 
-                          />
-                        </div>
-                        <Button 
-                          type="button" 
-                          variant="ghost" 
-                          size="icon" 
-                          onClick={() => setTieredRates(tieredRates.filter((_, i) => i !== tidx))}
-                          className="h-9 w-9 text-slate-500 hover:text-red-500"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </Button>
+                        {tieredRates.map((tier, tidx) => (
+                          <div key={tidx} className="grid grid-cols-4 gap-3 items-end bg-white/5 p-3 rounded-2xl border border-white/5">
+                            <div className="space-y-1">
+                              <Label className="text-[8px] uppercase text-slate-600 font-black">Min Amount (VND)</Label>
+                              <Input 
+                                type="number" 
+                                value={tier.min} 
+                                onChange={(e) => {
+                                  const nt = [...tieredRates];
+                                  nt[tidx].min = parseFloat(e.target.value);
+                                  setTieredRates(nt);
+                                }}
+                                className="h-10 bg-black/20 border-white/10 text-xs font-bold" 
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-[8px] uppercase text-slate-600 font-black">Max Amount (0=∞)</Label>
+                              <Input 
+                                type="number" 
+                                value={tier.max} 
+                                onChange={(e) => {
+                                  const nt = [...tieredRates];
+                                  nt[tidx].max = parseFloat(e.target.value);
+                                  setTieredRates(nt);
+                                }}
+                                className="h-10 bg-black/20 border-white/10 text-xs font-bold" 
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-[8px] uppercase text-slate-600 font-black">Applied Rate</Label>
+                              <Input 
+                                type="number" 
+                                step="any"
+                                value={tier.rate} 
+                                onChange={(e) => {
+                                  const nt = [...tieredRates];
+                                  nt[tidx].rate = parseFloat(e.target.value);
+                                  setTieredRates(nt);
+                                }}
+                                className="h-10 bg-white/5 border-white/10 text-xs font-black text-red-500" 
+                              />
+                            </div>
+                            <Button 
+                              type="button" 
+                              variant="ghost" 
+                              size="icon" 
+                              onClick={() => setTieredRates(tieredRates.filter((_, i) => i !== tidx))}
+                              className="h-10 w-10 text-slate-500 hover:text-red-500 hover:bg-red-500/10 rounded-xl"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                           <h5 className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Transaction Fees based on Amount</h5>
+                           <Button 
+                            type="button" 
+                            size="sm" 
+                            variant="ghost" 
+                            onClick={() => setTieredFees([...tieredFees, { min: 0, max: 0, fee: 0, type: 'percent' }])}
+                            className="h-7 text-[10px] font-bold uppercase text-red-500"
+                           >
+                             + Add Fee Tier
+                           </Button>
+                        </div>
+                        {tieredFees.map((tier, tidx) => (
+                          <div key={tidx} className="grid grid-cols-5 gap-3 items-end bg-white/5 p-3 rounded-2xl border border-white/5">
+                            <div className="space-y-1">
+                              <Label className="text-[8px] uppercase text-slate-600 font-black">Min (VND)</Label>
+                              <Input 
+                                type="number" 
+                                value={tier.min} 
+                                onChange={(e) => {
+                                  const nt = [...tieredFees];
+                                  nt[tidx].min = parseFloat(e.target.value);
+                                  setTieredFees(nt);
+                                }}
+                                className="h-10 bg-black/20 border-white/10 text-xs font-bold" 
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-[8px] uppercase text-slate-600 font-black">Max (0=∞)</Label>
+                              <Input 
+                                type="number" 
+                                value={tier.max} 
+                                onChange={(e) => {
+                                  const nt = [...tieredFees];
+                                  nt[tidx].max = parseFloat(e.target.value);
+                                  setTieredFees(nt);
+                                }}
+                                className="h-10 bg-black/20 border-white/10 text-xs font-bold" 
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-[8px] uppercase text-slate-600 font-black">Fee Value</Label>
+                              <Input 
+                                type="number" 
+                                step="any"
+                                value={tier.fee} 
+                                onChange={(e) => {
+                                  const nt = [...tieredFees];
+                                  nt[tidx].fee = parseFloat(e.target.value);
+                                  setTieredFees(nt);
+                                }}
+                                className="h-10 bg-white/5 border-white/10 text-xs font-black text-blue-500" 
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-[8px] uppercase text-slate-600 font-black">Type</Label>
+                              <select
+                                value={tier.type}
+                                onChange={(e) => {
+                                  const nt = [...tieredFees];
+                                  nt[tidx].type = e.target.value as 'percent' | 'flat';
+                                  setTieredFees(nt);
+                                }}
+                                className="w-full h-10 bg-black/20 border border-white/10 rounded-xl px-2 text-[10px] font-bold text-slate-400 outline-none"
+                              >
+                                <option value="percent">Percentage (%)</option>
+                                <option value="flat">Flat Fee (VND)</option>
+                              </select>
+                            </div>
+                            <Button 
+                              type="button" 
+                              variant="ghost" 
+                              size="icon" 
+                              onClick={() => setTieredFees(tieredFees.filter((_, i) => i !== tidx))}
+                              className="h-10 w-10 text-slate-500 hover:text-red-500 hover:bg-red-500/10 rounded-xl"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </form>

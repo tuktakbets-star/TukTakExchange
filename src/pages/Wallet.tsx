@@ -245,15 +245,17 @@ export default function Wallet() {
 
       const tx = {
         uid: profile?.uid,
+        user_name: profile?.full_name || profile?.displayName || "Customer",
         type: 'withdraw',
         status: 'pending',
         amount: Number(amount),
         currency: currency,
+        country: withdrawCountry,
         fee: Number(withdrawFee),
         total_to_deduct: Number(amount) + Number(withdrawFee),
         createdAt: new Date().toISOString(),
         description: `Withdraw ${currency} to ${withdrawBankName}`,
-        bankInfo: {
+        bank_info: {
           bankName: withdrawBankName,
           accountNumber: withdrawAccountNumber,
           accountName: withdrawAccountName,
@@ -263,6 +265,18 @@ export default function Wallet() {
 
       // 1. Create Transaction
       const docId = await firebaseService.addDocument('transactions', tx);
+
+      if (docId) {
+        // --- SEND TELEGRAM NOTIFICATION DIRECTLY ---
+        try {
+          fetch('/api/telegram-notifier', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...tx, id: docId })
+          }).catch(e => console.error('Telegram Notify Error:', e));
+        } catch (e) {}
+        // -------------------------------------------
+      }
 
       // 2. Lock Balance (Hidden Deduction)
       await firebaseService.updateWalletBalance(profile?.uid!, currency, 0, Number(amount) + Number(withdrawFee));

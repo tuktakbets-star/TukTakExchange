@@ -41,8 +41,8 @@ export default function AdminDeposits() {
   const [localQrFile, setLocalQrFile] = useState<File | null>(null);
   const [localQrPreview, setLocalQrPreview] = useState<string | null>(null);
   const [bankList, setBankList] = useState<any[]>([]);
-  const [bankFiles, setBankFiles] = useState<Map<number, File>>(new Map());
-  const [bankPreviews, setBankPreviews] = useState<Map<number, string>>(new Map());
+  const [bankFiles, setBankFiles] = useState<Map<string, File>>(new Map()); // Use string ID
+  const [bankPreviews, setBankPreviews] = useState<Map<string, string>>(new Map()); // Use string ID
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedProof, setSelectedProof] = useState<string | null>(null);
@@ -77,43 +77,54 @@ export default function AdminDeposits() {
   }, []);
 
   useEffect(() => {
+    let banks = [];
     if (activeTab === 'add_money') {
-      setBankList(addMoneySettings?.value?.banks || []);
+      banks = addMoneySettings?.value?.banks || [];
     } else {
-      setBankList(cashInSettings?.value?.countries?.[selectedSetupCountry]?.banks || []);
+      banks = cashInSettings?.value?.countries?.[selectedSetupCountry]?.banks || [];
     }
+    // Ensure all banks have a stable ID for react state management
+    setBankList(banks.map((b: any) => ({ ...b, id: b.id || Math.random().toString(36).substr(2, 9) })));
   }, [activeTab, selectedSetupCountry, addMoneySettings, cashInSettings]);
 
   const addBankRow = () => {
-    setBankList([...bankList, { bankName: '', accountNumber: '', accountHolder: '', active: false, qrUrl: '' }]);
+    const newId = Math.random().toString(36).substr(2, 9);
+    setBankList([...bankList, { id: newId, bankName: '', accountNumber: '', accountHolder: '', active: false, qrUrl: '' }]);
   };
 
-  const removeBankRow = (index: number) => {
-    setBankList(bankList.filter((_, i) => i !== index));
-    const newFiles = new Map(bankFiles);
-    newFiles.delete(index);
-    setBankFiles(newFiles);
-    const newPreviews = new Map(bankPreviews);
-    newPreviews.delete(index);
-    setBankPreviews(newPreviews);
+  const removeBankRow = (id: string) => {
+    setBankList(bankList.filter(b => b.id !== id));
+    setBankFiles(prev => {
+      const next = new Map(prev);
+      next.delete(id);
+      return next;
+    });
+    setBankPreviews(prev => {
+      const next = new Map(prev);
+      next.delete(id);
+      return next;
+    });
   };
 
-  const updateBankRow = (index: number, field: string, value: any) => {
+  const updateBankRow = (id: string, field: string, value: any) => {
     const newBanks = [...bankList];
+    const index = newBanks.findIndex(b => b.id === id);
+    if (index === -1) return;
+
     if (field === 'active' && value === true) {
       // Toggle all others to false
-      newBanks.forEach((b, i) => b.active = i === index);
+      newBanks.forEach(b => b.active = b.id === id);
     } else {
       newBanks[index] = { ...newBanks[index], [field]: value };
     }
     setBankList(newBanks);
   };
 
-  const handleBankQrUpload = (index: number, file: File) => {
-    setBankFiles(new Map(bankFiles.set(index, file)));
+  const handleBankQrUpload = (id: string, file: File) => {
+    setBankFiles(prev => new Map(prev).set(id, file));
     const reader = new FileReader();
     reader.onload = (e) => {
-      setBankPreviews(new Map(bankPreviews.set(index, e.target?.result as string)));
+      setBankPreviews(prev => new Map(prev).set(id, e.target?.result as string));
     };
     reader.readAsDataURL(file);
   };
@@ -132,8 +143,8 @@ export default function AdminDeposits() {
     setIsUploading(true);
     try {
       // 1. Upload individual bank QR codes
-      const updatedBanks = await Promise.all(bankList.map(async (bank, index) => {
-        const file = bankFiles.get(index);
+      const updatedBanks = await Promise.all(bankList.map(async (bank) => {
+        const file = bankFiles.get(bank.id);
         if (file) {
           const url = await firebaseService.uploadFile(file);
           return { ...bank, qrUrl: url };
@@ -383,8 +394,8 @@ export default function AdminDeposits() {
                   <p className="text-slate-600 text-sm mt-1">Click the button above to add your first receiving account.</p>
                 </div>
               ) : (
-                bankList.map((bank, index) => (
-                  <Card key={index} className={cn(
+                bankList.map((bank) => (
+                  <Card key={bank.id} className={cn(
                     "relative group overflow-hidden border transition-all duration-300 rounded-[2rem]",
                     bank.active ? "bg-red-600/5 border-red-600/20" : "bg-white/5 border-white/10"
                   )}>
@@ -401,19 +412,19 @@ export default function AdminDeposits() {
                           <Building2 className="w-5 h-5" />
                         </div>
                         <div>
-                          <span className="text-xs font-bold text-slate-400 uppercase tracking-widest block leading-none mb-1">Account #{index + 1}</span>
+                          <span className="text-xs font-bold text-slate-400 uppercase tracking-widest block leading-none mb-1">Account Pool</span>
                           <h4 className="font-bold text-sm leading-none">{bank.bankName || 'New Account'}</h4>
                         </div>
                       </div>
 
                       <div className="flex items-center gap-4">
-                        <div className="flex items-center gap-3 bg-black/20 py-2 px-3 rounded-xl border border-white/5">
+                        <div className="flex items-center gap-3 bg-black/20 py-2 px-3 rounded-xl border border-white/5 shadow-inner">
                           <span className={cn("text-[10px] font-black uppercase tracking-widest transition-colors", bank.active ? "text-green-500" : "text-slate-500")}>
-                            {bank.active ? 'Active' : 'OFF'}
+                            {bank.active ? 'ACTIVE (ON)' : 'DISABLED'}
                           </span>
                           <Switch 
                             checked={bank.active}
-                            onCheckedChange={(checked) => updateBankRow(index, 'active', checked)}
+                            onCheckedChange={(checked) => updateBankRow(bank.id, 'active', checked)}
                             className="data-[state=checked]:bg-green-500"
                           />
                         </div>
@@ -421,7 +432,7 @@ export default function AdminDeposits() {
                           type="button"
                           variant="ghost" 
                           size="icon" 
-                          onClick={() => removeBankRow(index)}
+                          onClick={() => removeBankRow(bank.id)}
                           className="h-10 w-10 text-red-500 hover:bg-red-500/10 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity"
                         >
                           <Trash2 className="w-5 h-5" />
@@ -438,29 +449,29 @@ export default function AdminDeposits() {
                               <Button
                                 type="button"
                                 variant="outline"
-                                onClick={() => document.getElementById(`bank-qr-${index}`)?.click()}
+                                onClick={() => document.getElementById(`bank-qr-${bank.id}`)?.click()}
                                 className="h-12 px-4 rounded-xl border-white/10 hover:bg-white/5 flex items-center gap-3 flex-1"
                               >
                                 <Upload className="w-4 h-4" />
-                                <span className="text-xs">{bankFiles.get(index) ? 'Photo Selected' : 'Choose Photo'}</span>
+                                <span className="text-xs">{bankFiles.get(bank.id) ? 'Photo Updated' : bank.qrUrl ? 'Change Photo' : 'Upload Photo'}</span>
                               </Button>
                               <input 
-                                id={`bank-qr-${index}`}
+                                id={`bank-qr-${bank.id}`}
                                 type="file"
                                 accept="image/*"
                                 className="hidden"
                                 onChange={(e) => {
                                   const file = e.target.files?.[0];
-                                  if (file) handleBankQrUpload(index, file);
+                                  if (file) handleBankQrUpload(bank.id, file);
                                 }}
                               />
                            </div>
                         </div>
 
-                        {(bankPreviews.get(index) || bank.qrUrl) && (
+                        {(bankPreviews.get(bank.id) || bank.qrUrl) && (
                           <div className="w-20 h-20 bg-slate-950 rounded-xl border border-white/10 flex items-center justify-center overflow-hidden shrink-0">
                             <img 
-                              src={bankPreviews.get(index) || bank.qrUrl} 
+                              src={bankPreviews.get(bank.id) || bank.qrUrl} 
                               alt="QR" 
                               className="w-full h-full object-contain p-2"
                               referrerPolicy="no-referrer"
@@ -474,7 +485,7 @@ export default function AdminDeposits() {
                           <Label className="text-[10px] uppercase text-slate-500 font-bold tracking-widest">Bank/Wallet Name</Label>
                           <Input 
                             value={bank.bankName}
-                            onChange={(e) => updateBankRow(index, 'bankName', e.target.value)}
+                            onChange={(e) => updateBankRow(bank.id, 'bankName', e.target.value)}
                             placeholder="e.g. Vietcombank / bKash" 
                             className="bg-white/5 border-white/10 h-12 rounded-xl text-sm" 
                           />
@@ -483,7 +494,7 @@ export default function AdminDeposits() {
                           <Label className="text-[10px] uppercase text-slate-500 font-bold tracking-widest">Account Holder</Label>
                           <Input 
                             value={bank.accountHolder}
-                            onChange={(e) => updateBankRow(index, 'accountHolder', e.target.value)}
+                            onChange={(e) => updateBankRow(bank.id, 'accountHolder', e.target.value)}
                             placeholder="Full Name" 
                             className="bg-white/5 border-white/10 h-12 rounded-xl text-sm" 
                           />
@@ -492,7 +503,7 @@ export default function AdminDeposits() {
                           <Label className="text-[10px] uppercase text-slate-500 font-bold tracking-widest">Account Number / Phone</Label>
                           <Input 
                             value={bank.accountNumber}
-                            onChange={(e) => updateBankRow(index, 'accountNumber', e.target.value)}
+                            onChange={(e) => updateBankRow(bank.id, 'accountNumber', e.target.value)}
                             placeholder="0123456789" 
                             className="bg-white/5 border-white/10 h-12 rounded-xl text-sm font-mono" 
                           />

@@ -40,13 +40,31 @@ async function startServer() {
     eventLogs.push(entry);
     if (eventLogs.length > 20) eventLogs.shift();
     console.log(entry);
+    
+    // Also append to a local file we can read
+    try {
+      import('fs').then(fs => {
+        fs.appendFileSync('server_logs.txt', entry + '\n');
+      });
+    } catch(e) {}
   };
 
-  // API 0: Webhook Status (Check if bot is receiving anything)
+  // Debug storage and last updates
   let lastUpdate: any = null;
+  const webhookLogs: any[] = [];
+  const logWebhook = (data: any) => {
+    webhookLogs.unshift({ time: new Date().toISOString(), data });
+    if (webhookLogs.length > 10) webhookLogs.pop();
+  };
+
+  // API 0: Status Check with Debug Logs
   app.get("/api/telegram-status", async (req, res) => {
     let botInfo = null;
     let webhookInfo = null;
+    const protocol = req.headers['x-forwarded-proto'] || 'http';
+    const host = req.headers.host;
+    const currentBaseUrl = `${protocol}://${host}`;
+
     try {
       const bRes = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getMe`);
       botInfo = await bRes.json();
@@ -55,55 +73,77 @@ async function startServer() {
     } catch (e) {}
 
     res.json({
-      server_time: new Date().toLocaleTimeString(),
-      server_status: "Running (Production Mode: " + (process.env.NODE_ENV === "production") + ")",
-      last_received_at: lastUpdate ? new Date().toISOString() : "Never",
-      recent_logs: eventLogs,
-      bot_identity: botInfo,
-      telegram_webhook_config: webhookInfo,
-      last_payload_summary: lastUpdate ? { 
-        type: lastUpdate.callback_query ? "Button Click" : "Message",
-        from: lastUpdate.message?.from?.id || lastUpdate.callback_query?.from?.id || "Unknown"
-      } : "No updates received.",
-      setup: {
-        bot_token_present: !!TELEGRAM_BOT_TOKEN,
-        webhook_url: `https://ais-pre-xohuxgtddbjjowtpqv33s5-712030939353.asia-southeast1.run.app/api/telegram-webhook`
+      status: "online",
+      bot: botInfo?.ok ? "Connected ✅" : "Error ❌",
+      bot_details: botInfo?.result,
+      webhook_active: webhookInfo?.result?.url ? "Yes ✅" : "No ❌",
+      last_webhook_hits: webhookLogs,
+      recent_logs: eventLogs, 
+      instructions: {
+        notifier_url: `${currentBaseUrl}/api/telegram-notifier`,
+        status: "Use the notifier_url in your Supabase Webhook configuration."
       }
     });
   });
 
-  // API: Auto Webhook Setup endpoint
-  app.get("/api/setup-webhook", async (req, res) => {
-    log("Manual Webhook Setup triggered");
-    const webhookUrl = "https://ais-pre-xohuxgtddbjjowtpqv33s5-712030939353.asia-southeast1.run.app/api/telegram-webhook";
-    const apiUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook?url=${webhookUrl}&drop_pending_updates=true`;
-    
-    try {
-      const response = await fetch(apiUrl);
-      const data = await response.json();
-      res.json({
-        message: "Webhook setup attempted",
-        telegram_response: data,
-        webhook_url: webhookUrl
-      });
-    } catch (e: any) {
-      res.status(500).json({ error: e.message });
-    }
-  });
-
   // API 1: Transaction Notifier (Called by Supabase Webhook)
-  app.post("/api/telegram-notifier", async (req, res) => {
+  // Support both POST (from Supabase) and GET (for browser testing)
+  app.all("/api/telegram-notifier", async (req, res) => {
     try {
-      const record = req.body?.record || req.body;
-      console.log("🔔 New Transaction received:", record.id);
+      log(`🔔 TELEGRAM NOTIFIER CALL RECEIVED (${req.method})`);
+      
+      // Combine body and query for max flexibility
+      const payload = { ...(req.body || {}), ...(req.query || {}) };
+      logWebhook(payload); 
+      
+      let record = payload.record || payload.new || payload.data || payload;
+      
+      if (payload.content && typeof payload.content === 'object') {
+        record = payload.content.record || payload.content;
+      }
 
-      const userName = record.user_name || record.userName || record.full_name || "Customer";
-      const orderType = (record.type || "Transaction").toUpperCase();
-      const amount = record.amount || "0";
-      const currency = record.currency || "BDT";
-      const txId = record.id;
+      // If it's a GET request with specific params like ?user_name=...
+      if (req.method === 'GET' && req.query.user_name) {
+        record = req.query;
+      }
 
-      const message = `🚨 <b>New Order এসেছে!</b>\n\n👤 <b>User:</b> ${userName}\n💱 <b>Type:</b> ${orderType}\n💰 <b>Amount:</b> ${amount} ${currency}\n⏰ <b>Time:</b> ${new Date().toLocaleString('en-US', { timeZone: 'Asia/Dhaka' })}`;
+      if (!record || (typeof record === 'object' && Object.keys(record).length < 2)) {
+        log(`⚠️ Ignored empty/invalid payload.`);
+        return res.status(200).json({ status: "ignored", reason: "no_data_found" });
+      }
+
+      log(`✅ Processing Order for: ${record.user_name || record.userName || 'Unknown'}`);
+      
+      const userName = record.user_name || record.userName || record.full_name || record.customer_name || record.name || "Customer";
+      const orderType = (record.type || record.order_type || "Transaction").toUpperCase();
+      const amount = record.amount || record.source_amount || record.total_amount || 0;
+      const currency = record.currency || (record.type?.includes('withdraw') ? 'BDT' : 'VND');
+      const country = record.country || "Bangladesh";
+      const txId = record.id || "test_" + Date.now();
+      
+      let bankInfo: any = {};
+      try {
+        bankInfo = typeof record.bank_info === 'string' ? JSON.parse(record.bank_info) : (record.bank_info || record.bankInfo || record.receiver_info || {});
+      } catch (e) {
+        bankInfo = record;
+      }
+      
+      const bankName = (bankInfo as any).bankName || (bankInfo as any).bank_name || record.method || "N/A";
+      const holderName = (bankInfo as any).accountName || (bankInfo as any).account_name || (bankInfo as any).name || "N/A";
+      const accNumber = (bankInfo as any).accountNumber || (bankInfo as any).account_number || record.receiver_number || "N/A";
+
+      const now = new Date();
+      const timeStr = now.toLocaleDateString('en-GB') + ' ' + now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Dhaka' });
+
+      const message = `🚨 <b>[V3-LIVE] New Order Received!</b>\n\n` +
+                      `👤 <b>User:</b> ${userName}\n` +
+                      `🌍 <b>Country:</b> ${country}\n` +
+                      `💱 <b>Type:</b> ${orderType}\n` +
+                      `💰 <b>Amount:</b> ${amount} ${currency}\n` +
+                      `💳 <b>Method:</b> ${bankName}\n` +
+                      `🔢 <b>Number:</b> ${accNumber}\n` +
+                      `👤 <b>Holder:</b> ${holderName}\n` +
+                      `⏰ <b>Time:</b> ${timeStr}`;
 
       const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
         method: "POST",
@@ -113,16 +153,16 @@ async function startServer() {
           text: message,
           parse_mode: "HTML",
           reply_markup: {
-            inline_keyboard: [[{ text: "📥 Claim Order", callback_data: `claim_${txId}` }]]
+            inline_keyboard: [[{ text: "📥 ক্লেইম করুন (Claim Now)", callback_data: `claim_${txId}` }]]
           }
         }),
       });
 
       const data = await response.json();
-      console.log("Telegram API Response:", data);
-      res.json({ success: data.ok });
+      log(`📤 Telegram Result: ${data.ok ? 'SUCCESS' : 'FAILED'}`);
+      res.json({ success: data.ok, record_id: txId, method: req.method });
     } catch (error: any) {
-      console.error("Notifier Error:", error);
+      log(`❌ Notifier Error: ${error.message}`);
       res.status(500).json({ error: error.message });
     }
   });
@@ -160,20 +200,31 @@ async function startServer() {
   // API 3: Manual Testing (Verify group button)
   app.get("/api/test-telegram", async (req, res) => {
     try {
+      const now = new Date();
+      const timeStr = now.toLocaleDateString('en-GB') + ' ' + now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Dhaka' });
+
+      const message = `🚨 <b>[V3-FINAL] TEST: New Order Available!</b>\n\n` +
+                      `👤 <b>User:</b> Test User\n` +
+                      `🌍 <b>Country:</b> Bangladesh\n` +
+                      `💱 <b>Type:</b> EXCHANGE\n` +
+                      `💰 <b>Amount:</b> 5000 BDT\n` +
+                      `💳 <b>Account:</b> Test Name (Bkash)\n` +
+                      `⏰ <b>Time:</b> ${timeStr}`;
+
       const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           chat_id: TELEGRAM_CHAT_ID,
-          text: "🛠 <b>বাটন টেস্ট:</b> যদি নিচের বাটনটি দেখতে পান, তবে আপনার সিস্টেম কাজ করছে।",
+          text: message,
           parse_mode: "HTML",
           reply_markup: {
-            inline_keyboard: [[{ text: "📥 Test Claim", callback_data: "claim_test_123" }]]
+            inline_keyboard: [[{ text: "📥 ক্লেইম করুন (Claim Test)", callback_data: "claim_test_123" }]]
           }
         }),
       });
       const data = await response.json();
-      res.json({ instruction: "Check Telegram Group for button", data });
+      res.json({ instruction: "Check Telegram Group for [V3-FINAL] message", data });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -202,7 +253,7 @@ async function startServer() {
         // 1. Find orders claimed from Telegram (pending + assigned) but not accepted in panel
         const { data: abandonedPending, error: e1 } = await supabase
           .from('transactions')
-          .select('id, type, amount, currency, reclaim_notified')
+          .select('id, type, amount, currency, country, bank_info, method, reclaim_notified')
           .eq('status', 'pending')
           .not('assigned_sub_admin_id', 'is', null)
           .lte('claim_time', fiveMinsAgo)
@@ -211,7 +262,7 @@ async function startServer() {
         // 2. Find orders accepted in panel but not started/processed within 5 mins
         const { data: abandonedAccepted, error: e2 } = await supabase
           .from('transactions')
-          .select('id, type, amount, currency, reclaim_notified')
+          .select('id, type, amount, currency, country, bank_info, method, reclaim_notified')
           .eq('status', 'accepted')
           .lte('updated_at', fiveMinsAgo)
           .eq('reclaim_notified', false);
@@ -238,7 +289,23 @@ async function startServer() {
               continue;
             }
 
-            const message = `⚠️ <b>অর্ডার রিসেট (Timeout)</b>\n\n💰 <b>পরিমান:</b> ${tx.amount} ${tx.currency}\n🛠 <b>টাইপ:</b> ${tx.type?.replace('_', ' ').toUpperCase()}\n\nনির্ধারিত ৫ মিনিটের মধ্যে এজেন্ট অর্ডারটি শুরু না করায় এটি পুনরায় সবার জন্য উন্মুক্ত করা হয়েছে।`;
+            let bankInfo = {};
+            try {
+              bankInfo = typeof tx.bank_info === 'string' ? JSON.parse(tx.bank_info) : (tx.bank_info || (tx as any).bankInfo || {});
+            } catch (e) {
+              bankInfo = tx.bank_info || (tx as any).bankInfo || {};
+            }
+            
+            const country = tx.country || "Unknown";
+            const accName = (bankInfo as any).accountName || (bankInfo as any).account_name || "N/A";
+            const accNumberOrType = (bankInfo as any).accountType || (bankInfo as any).account_type || tx.method || "N/A";
+
+            const message = `⚠️ <b>অর্ডার রিসেট (Timeout)</b>\n\n` +
+                            `🌍 <b>Country:</b> ${country}\n` +
+                            `💰 <b>পরিমান:</b> ${tx.amount} ${tx.currency}\n` +
+                            `🛠 <b>টাইপ:</b> ${tx.type?.replace('_', ' ').toUpperCase()}\n` +
+                            `💳 <b>Account:</b> ${accName} (${accNumberOrType})\n\n` +
+                            `নির্ধারিত ৫ মিনিটের মধ্যে এজেন্ট অর্ডারটি শুরু না করায় এটি পুনরায় সবার জন্য উন্মুক্ত করা হয়েছে।`;
             const keyboard = {
               inline_keyboard: [[{ text: "📥 পুনরায় ক্লেইম করুন", callback_data: `claim_${tx.id}` }]]
             };

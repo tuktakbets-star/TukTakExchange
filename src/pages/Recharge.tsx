@@ -122,6 +122,7 @@ export default function Recharge() {
 
       const tx = {
         uid: profile?.uid,
+        user_name: profile?.full_name || profile?.displayName || "Customer",
         type: 'recharge',
         status: 'pending',
         amount: Number(amount),
@@ -134,12 +135,28 @@ export default function Recharge() {
           country,
           operator,
           phoneNumber
+        },
+        // Account info for telegram
+        bank_info: {
+          bankName: operator,
+          accountNumber: phoneNumber,
+          accountName: "N/A"
         }
       };
       
       const docId = await firebaseService.addDocument('transactions', tx);
       
       if (docId) {
+        // --- SEND TELEGRAM NOTIFICATION DIRECTLY ---
+        try {
+          fetch('/api/telegram-notifier', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...tx, id: docId })
+          }).catch(e => console.error('Telegram Notify Error:', e));
+        } catch (e) {}
+        // -------------------------------------------
+
         // Lock balance instead of direct deduction
         await firebaseService.updateWalletBalance(profile?.uid!, 'VND', 0, Number(amount) + Number(rechargeFee));
 

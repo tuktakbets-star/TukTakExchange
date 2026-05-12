@@ -18,29 +18,54 @@
 
 ---
 
-### ধাপ ৩: সুপাবেস Webhook (অর্ডারের জন্য জরুরি)
-গ্রুপে বাটনসহ মেসেজ আসার জন্য Supabase-এ একটি হুক থাকা জরুরি:
-১. Supabase ড্যাশবোর্ডে **Database** > **Webhooks** এ যান।
-২. **`notify_telegram`** নামে একটি Webhook বানান। (যদি অলরেডি থাকে তবে চেক করুন লিঙ্ক ঠিক আছে কিনা)।
-৩. **URL:** `https://ais-pre-xohuxgtddbjjowtpqv33s5-712030939353.asia-southeast1.run.app/api/telegram-notifier`
-৪. **Events:** শুধুমাত্র `INSERT` চেক করুন।
-৫. **Table:** `transactions`
+### ধাপ ৩: সুপাবেস (Supabase) ক্লিন-আপ (পুরাতন সব ট্রিকার মোছা)
+আপনার গ্রুপে এখনো পুরাতন মেসেজ আসার কারণ হলো আগের কিছু ট্রিকার ডাটাবেসে রয়ে গেছে। এগুলো মুছতে নিচের ধাপটি অনুসরণ করুন:
+
+১. Supabase ড্যাশবোর্ডে **SQL Editor** এ যান।
+২. **`Nuclear Cleanup`** নামে একটি নতুন কুয়েরি (New Query) খুলুন এবং নিচের কোডটি পেস্ট করে **Run** করুন:
+   ```sql
+   -- ১. আগে সব পরিচিত ট্রিকার ডিলিট করুন
+   DROP TRIGGER IF EXISTS "alpha_final_v3" ON transactions;
+   DROP TRIGGER IF EXISTS "v4_final_fix" ON transactions;
+   DROP TRIGGER IF EXISTS "v4_final_test" ON transactions;
+   DROP TRIGGER IF EXISTS "trigger_new_order_telegram" ON transactions;
+   DROP TRIGGER IF EXISTS "notify_v2" ON transactions;
+   DROP TRIGGER IF EXISTS "supabase_functions_notify_order" ON transactions;
+   DROP TRIGGER IF EXISTS "notify_telegram" ON transactions;
+
+   -- ২. ডিলিট হয়েছে কি না চেক করুন (ফলাফল বা রেজাল্ট খালি হতে হবে)
+   SELECT trigger_name 
+   FROM information_schema.triggers 
+   WHERE event_object_table = 'transactions';
+   ```
 
 ---
 
-### ধাপ ৫: একাধিক সাব-অ্যাডমিন (Multiple Sub-Admins)
-আপনার যদি ৬-৭ জন সাব-অ্যাডমিন থাকে, তবে তারা সবাই আলাদাভাবে অর্ডার ক্লেইম করতে পারবে। নিয়মটি হলো:
-১. প্রধান অ্যাডমিন প্যানেল থেকে **Sub-Admins** সেকশনে গিয়ে প্রতিটি ব্যক্তির জন্য আলাদা আলাদা অ্যাকাউন্ট (Username) খুলুন।
-২. প্রতিটি সাব-অ্যাডমিন তাদের নিজস্ব টেলিগ্রাম আইডি থেকে বটে প্রবেশ করবে।
-৩. প্রত্যেকে নিজের ইউজারনেম দিয়ে রেজিস্ট্রেশন করবে। 
-   - উদাহরণ: সাব-অ্যাডমিন ১ লিখবে `/start_admin1`, সাব-অ্যাডমিন ২ লিখবে `/start_admin2` ইত্যাদি।
-৪. এভাবে সবাই নিবন্ধিত হয়ে গেলে, গ্রুপে যখন কোনো অর্ডার আসবে, যে সবার আগে ক্লেইম বাটনে চাপ দিবে, অর্ডারটি তার নামেই ক্লেইম হয়ে যাবে।
+### ধাপ ৪: নতুন Webhook সেটআপ (V3 Final)
+এখনই নতুন ডিজাইনের মেসেজ এবং ক্লেইম বাটন পেতে নিচের কাজটি নির্ভুলভাবে করুন:
+
+১. Supabase-এ **Database > Webhooks** এ যান। যদি আগে কোনো হুক থেকে থাকে তবে তা **Delete** করে দিন।
+২. এরপর **`CREATE NEW WEBHOOK`** এ ক্লিক করুন।
+৩. **Name:** `v3_live_notifier`
+৪. **Table:** `transactions`
+৫. **Events:** শুধুমাত্র `Insert` (অর্ডার ক্রিয়েট হলে মেসেজ যাবে)
+৬. **Webhook Type:** `HTTP Request`
+৭. **Method:** `POST`
+৮. **URL (হুবহু নিচের লিঙ্কটি কপি করে পেস্ট করুন):**
+   `https://ais-dev-xohuxgtddbjjowtpqv33s5-712030939353.asia-southeast1.run.app/api/telegram-notifier`
+৯. **Confirm / Save** করুন।
 
 ---
 
-### ধাপ ৬: বর্তমান অবস্থা চেক করা (Status Check)
-যদি বট কাজ না করে, তবে এই লিঙ্কটি ব্রাউজারে রান করে স্ক্রিনশট দিন:
-👉 [চেক বর্তমান স্ট্যাটাস](https://ais-pre-xohuxgtddbjjowtpqv33s5-712030939353.asia-southeast1.run.app/api/telegram-status)
+### ধাপ ৫: সব কিছু পরীক্ষা করা (Testing)
+সব কাজ শেষ হলে নিচের ধাপগুলো একে একে করুন:
+
+১. **ডিজাইন টেস্ট:** [এখানে ক্লিক করুন](https://ais-dev-xohuxgtddbjjowtpqv33s5-712030939353.asia-southeast1.run.app/api/test-telegram) - যদি গ্রুপে মেসেজ আসে, তবে বট একদম ঠিক আছে।
+২. **সার্ভার টেস্ট:** [এখানে ক্লিক করুন](https://ais-dev-xohuxgtddbjjowtpqv33s5-712030939353.asia-southeast1.run.app/api/telegram-notifier?user_name=Testing_Manual&amount=1000&type=deposit) - এটি ব্রাউজারে রান করলে যদি গ্রুপে নতুন মেসেজ আসে, তবে বুঝবেন **Notifier URL** ঠিক আছে।
+৩. **Webhook Debugging:** যদি উপরের দুটি ঠিক থাকে কিন্তু রিয়েল অর্ডারে মেসেজ না আসে, তবে Supabase-এ আপনার তৈরি করা Webhook এর পাশে **"History"** বাটনে ক্লিক করে দেখুন কোনো এরর দেখাচ্ছে কি না।
+
+যদি কোনো সমস্যা হয়, তবে এই নিচের লিঙ্কটি ব্রাউজারে রান করে আমাকে এর স্ক্রিনশট দিন:
+👉 [চেক বর্তমান স্ট্যাটাস ও লগ](https://ais-dev-xohuxgtddbjjowtpqv33s5-712030939353.asia-southeast1.run.app/api/telegram-status)
 
 ---
 

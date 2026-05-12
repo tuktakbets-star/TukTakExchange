@@ -190,6 +190,17 @@ export default function OperatorAddMoney({ type = 'add_money' }: { type?: 'add_m
         updated_at: new Date().toISOString()
       });
 
+      // 5. Log Sub-Admin Activity
+      await supabaseService.addDocument('sub_admin_logs', {
+        sub_admin_id: operator.id,
+        action_type: type,
+        order_id: selectedOrder.id,
+        user_id: selectedOrder.uid,
+        amount: amount,
+        status: 'completed',
+        timestamp: new Date().toISOString()
+      });
+
       toast.success(`Transaction completed! User balance updated automatically.`, { id: 'paid' });
       setIsPaidConfirmOpen(false);
       fetchData();
@@ -215,6 +226,18 @@ export default function OperatorAddMoney({ type = 'add_money' }: { type?: 'add_m
         assigned_sub_admin_id: operator.id,
         sub_admin_action: 'rejected',
         sub_admin_actioned_at: new Date().toISOString()
+      });
+
+      // Log Rejection
+      await supabaseService.addDocument('sub_admin_logs', {
+        sub_admin_id: operator.id,
+        action_type: type,
+        order_id: selectedOrder.id,
+        user_id: selectedOrder.uid,
+        amount: selectedOrder.amount,
+        status: 'rejected',
+        note: rejectionReason,
+        timestamp: new Date().toISOString()
       });
       
       toast.success('Order rejected', { id: 'reject' });

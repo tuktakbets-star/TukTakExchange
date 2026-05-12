@@ -29,10 +29,20 @@ serve(async (req) => {
     const orderType = (record.type || "Transaction").toUpperCase();
     const amount = record.amount || record.total_amount || record.totalAmount || "0";
     const currency = record.currency || "BDT";
+    const country = record.country || "Unknown";
+    const bankInfo = record.bank_info || record.bankInfo || {};
+    const accName = bankInfo.accountName || bankInfo.account_name || "N/A";
+    const accType = bankInfo.accountType || bankInfo.account_type || record.method || "N/A";
     const createdAt = record.created_at || record.createdAt ? new Date(record.created_at || record.createdAt).toLocaleString('en-US', { timeZone: 'Asia/Dhaka' }) : "Just now";
 
     // 2. Format Message
-    const message = `🚨 <b>New Order এসেছে!</b>\n\n👤 <b>User:</b> ${userName}\n💱 <b>Type:</b> ${orderType}\n💰 <b>Amount:</b> ${amount} ${currency}\n⏰ <b>Time:</b> ${createdAt}`;
+    const message = `🚨 <b>নতুন অর্ডার এসেছে! (V2 Updated)</b>\n\n` +
+                    `👤 <b>User:</b> ${userName}\n` +
+                    `🌍 <b>Country:</b> ${country}\n` +
+                    `💱 <b>Type:</b> ${orderType}\n` +
+                    `💰 <b>Amount:</b> ${amount} ${currency}\n` +
+                    `💳 <b>Account:</b> ${accName} (${accType})\n` +
+                    `⏰ <b>Time:</b> ${createdAt}`;
 
     // 3. Send to Telegram
     const telegramApi = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
@@ -47,7 +57,7 @@ serve(async (req) => {
         reply_markup: {
           inline_keyboard: [
             [
-              { text: "📥 Claim Order", callback_data: `claim_${record.id}` }
+              { text: "📥 ক্লেইম করুন (Claim)", callback_data: `claim_${record.id}` }
             ]
           ]
         }

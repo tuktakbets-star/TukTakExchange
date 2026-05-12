@@ -246,8 +246,8 @@ export default function ExchangeMoney() {
         account_type: accountType,
         fee: Number(fee),
         total_to_deduct: Number(amount) + Number(fee),
-        receiver_info: {
-          name: receiverName,
+        bank_info: {
+          accountName: receiverName,
           bankName: receiverBankName || accountType, // Fallback to account type if bank name empty
           accountNumber: receiverAccountNumber,
           branch: receiverBranch,
@@ -267,6 +267,16 @@ export default function ExchangeMoney() {
       if (!docId) {
         throw new Error('Database failed to create transaction record');
       }
+
+      // --- SEND TELEGRAM NOTIFICATION DIRECTLY ---
+      try {
+        fetch('/api/telegram-notifier', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...tx, id: docId })
+        }).catch(e => console.error('Telegram Notify Error:', e));
+      } catch (e) {}
+      // -------------------------------------------
 
       // Lock balance immediately (Hidden deduction)
       const wallet = wallets.find(w => w.currency === sourceCurrency);

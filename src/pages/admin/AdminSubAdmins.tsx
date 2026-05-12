@@ -41,7 +41,7 @@ export default function AdminSubAdmins() {
   const [isAdminBankModalOpen, setIsAdminBankModalOpen] = useState(false);
   const [selectedSubAdmin, setSelectedSubAdmin] = useState<any>(null);
   const [selectedRequest, setSelectedRequest] = useState<any>(null);
-  const [tempServices, setTempServices] = useState<string[]>([]);
+  const [editingServices, setEditingServices] = useState<string[] | null>(null);
   const [adminBankSettings, setAdminBankSettings] = useState<any>({
     bankName: '',
     accountNumber: '',
@@ -141,11 +141,14 @@ export default function AdminSubAdmins() {
 
   const handleUpdateServices = async (subId: string, services: string[]) => {
     try {
-      await supabaseService.updateDocument('sub_admins', subId, { allowed_services: services });
+      await supabaseService.updateDocument('sub_admins', subId, { 
+        allowed_services: services,
+        allowedServices: services 
+      });
       toast.success('Services updated successfully');
       fetchSubAdmins();
       // Update selected sub admin state to reflect changes in modal
-      setSelectedSubAdmin((prev: any) => ({ ...prev, allowed_services: services }));
+      setSelectedSubAdmin((prev: any) => ({ ...prev, allowed_services: services, allowedServices: services }));
     } catch (error) {
       toast.error('Failed to update services');
     }
@@ -172,6 +175,7 @@ export default function AdminSubAdmins() {
         current_country: newSubAdmin.currentCountry,
         balance_type: newSubAdmin.balanceType,
         allowed_services: newSubAdmin.allowedServices,
+        allowedServices: newSubAdmin.allowedServices,
         wallet_balance: 0,
         status: 'active',
         is_online: false,
@@ -256,11 +260,20 @@ export default function AdminSubAdmins() {
   const handleRequestAction = async (request: any, action: 'approved' | 'rejected') => {
     setLoading(true);
     try {
+      const subAdminId = request.subAdminId || request.sub_admin_id;
+      
+      if (!subAdminId) {
+        toast.error('Invalid request: Missing Operator ID');
+        setLoading(false);
+        return;
+      }
+
       // Fetch sub admin directly to avoid "not found" due to stale or filtered state
-      const { data: subAdmin } = await supabaseService.getDocument('sub_admins', request.subAdminId);
+      const { data: subAdmin } = await supabaseService.getDocument('sub_admins', subAdminId);
       
       if (!subAdmin && action === 'approved') {
-        toast.error('Sub Admin not found in global records');
+        toast.error('Operator record not found in system');
+        setLoading(false);
         return;
       }
 
@@ -280,26 +293,30 @@ export default function AdminSubAdmins() {
         }
 
         // 1. Update sub admin balance
-        await supabaseService.updateDocument('sub_admins', request.subAdminId, {
+        await supabaseService.updateDocument('sub_admins', subAdminId, {
           walletBalance: newBalance,
-          wallet_balance: newBalance
+          wallet_balance: newBalance,
+          vndBalance: newBalance,
+          vnd_balance: newBalance,
+          updatedAt: new Date().toISOString(),
+          updated_at: new Date().toISOString()
         });
 
         // 2. Record transaction with proof_url and extra metadata
         await supabaseService.addDocument('sub_admin_wallet_transactions', {
-          sub_admin_id: request.subAdminId,
+          sub_admin_id: subAdminId,
           type: request.type === 'refill' ? 'credit' : 'debit',
           amount: amount,
           reason: `${request.type === 'refill' ? 'Refill' : 'Withdrawal'} approved: ${request.accountType || ''} ${request.withdrawalAccountNumber || ''}`,
           balance_after: newBalance,
-          proof_url: request.proofUrl || '',
+          proof_url: request.proofUrl || request.proof_url || '',
           metadata: {
-            account_type: request.accountType,
-            account_name: request.withdrawalAccountName,
-            account_number: request.withdrawalAccountNumber,
-            tx_id: request.txId,
+            account_type: request.accountType || request.account_type,
+            account_name: request.withdrawalAccountName || request.withdrawal_account_name,
+            account_number: request.withdrawalAccountNumber || request.withdrawal_account_number,
+            tx_id: request.txId || request.tx_id,
             country: request.country,
-            balance_type: request.balanceType
+            balance_type: request.balanceType || request.balance_type
           },
           created_at: new Date().toISOString()
         });
@@ -476,6 +493,7 @@ export default function AdminSubAdmins() {
                                  <Button 
                                     onClick={() => {
                                       setSelectedSubAdmin(sub);
+                                      setEditingServices(null);
                                       setIsDetailsModalOpen(true);
                                     }}
                                     variant="dark" 
@@ -877,40 +895,49 @@ export default function AdminSubAdmins() {
                       { id: 'withdraw', label: 'Withdraw' },
                       { id: 'recharge', label: 'Recharge' }
                     ].map((service) => {
-                      const isAllowed = (tempServices.length > 0 ? tempServices : (selectedSubAdmin?.allowed_services || [])).includes(service.id);
+                      const userServices = selectedSubAdmin?.allowedServices || selectedSubAdmin?.allowed_services || [];
+                      const isAllowed = (editingServices !== null ? editingServices : userServices).includes(service.id);
                       return (
                         <button
                           key={service.id}
                           type="button"
                           onClick={() => {
-                            const current = tempServices.length > 0 ? tempServices : (selectedSubAdmin?.allowed_services || []);
+                            const current = editingServices !== null ? editingServices : userServices;
                             const next = isAllowed 
                               ? current.filter((s: string) => s !== service.id)
                               : [...current, service.id];
-                            setTempServices(next);
+                            setEditingServices(next);
                           }}
                           className={cn(
-                            "px-4 py-3 rounded-xl border text-[10px] font-bold uppercase tracking-widest transition-all text-center flex items-center justify-center gap-2",
+                            "px-4 py-4 rounded-2xl border text-[10px] font-black uppercase tracking-[0.1em] transition-all text-center flex flex-col items-center justify-center gap-2 min-h-[80px]",
                             isAllowed
-                              ? "bg-blue-600/20 border-blue-500 text-blue-400 shadow-[0_0_20px_rgba(59,130,246,0.1)]"
-                              : "bg-white/5 border-white/10 text-slate-500 hover:border-white/20"
+                              ? "bg-green-600 border-green-400 text-white shadow-[0_15px_40px_rgba(34,197,94,0.3)] ring-4 ring-green-600/10 scale-[1.02] z-10"
+                              : "bg-slate-950/40 border-white/5 text-slate-600 grayscale opacity-40 hover:opacity-100 hover:grayscale-0 hover:bg-white/5 hover:border-white/10"
                           )}
                         >
+                          <span className={cn(
+                             "w-6 h-6 rounded-full flex items-center justify-center mb-1",
+                             isAllowed ? "bg-white/20" : "bg-white/5"
+                          )}>
+                             {isAllowed ? <ShieldCheck className="w-4 h-4 text-white" /> : <div className="w-1.5 h-1.5 bg-slate-700 rounded-full" />}
+                          </span>
                           {service.label}
-                          {isAllowed && <ShieldCheck className="w-3 h-3" />}
+                          {isAllowed && (
+                            <span className="absolute top-2 right-2 px-1.5 py-0.5 bg-green-500 rounded text-[6px] font-black text-white">ACTIVE</span>
+                          )}
                         </button>
                       );
                     })}
                  </div>
-                 {tempServices.length > 0 && (
+                 {editingServices !== null && (
                    <Button 
                      onClick={() => {
-                       handleUpdateServices(selectedSubAdmin.id, tempServices);
-                       setTempServices([]);
+                       handleUpdateServices(selectedSubAdmin.id, editingServices);
+                       setEditingServices(null);
                      }}
-                     className="w-full h-10 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-xs"
+                     className="w-full h-14 bg-green-600 hover:bg-green-500 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-green-600/20 animate-in fade-in slide-in-from-bottom-2"
                    >
-                     Save Services Changes
+                     Apply Service Changes
                    </Button>
                  )}
               </div>

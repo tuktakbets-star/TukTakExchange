@@ -199,6 +199,18 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
         sub_admin_action: 'rejected',
         sub_admin_actioned_at: new Date().toISOString()
       });
+
+      // Log Rejection
+      await supabaseService.addDocument('sub_admin_logs', {
+        sub_admin_id: operator.id,
+        action_type: mode,
+        order_id: selectedOrder.id,
+        user_id: selectedOrder.uid,
+        amount: selectedOrder.amount,
+        status: 'rejected',
+        note: rejectionReason,
+        timestamp: new Date().toISOString()
+      });
       
       toast.success('Order rejected', { id: 'reject' });
       setIsRejectModalOpen(false);
