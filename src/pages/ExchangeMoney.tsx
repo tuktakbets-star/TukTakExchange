@@ -99,14 +99,16 @@ export default function ExchangeMoney() {
     'Bangladesh': 'BDT',
     'India': 'INR',
     'Pakistan': 'PKR',
-    'Nepal': 'NPR'
+    'Nepal': 'NPR',
+    'Vietnam': 'VND'
   };
 
   const accountTypesMap: Record<string, string[]> = {
     'Bangladesh': ['bKash', 'Nagad', 'Bank Transfer', 'Rocket', 'upay'],
     'India': ['UPI', 'IMPS', 'Digital eRupee', 'Paytm'],
     'Pakistan': ['Easypaisa-PK Only', 'Meezan Bank', 'NayaPay', 'SadaPay'],
-    'Nepal': ['Esewa', 'Khalti', 'IME Pay']
+    'Nepal': ['Esewa', 'Khalti', 'IME Pay'],
+    'Vietnam': ['Bank Transfer', 'MoMo', 'ZaloPay']
   };
 
   useEffect(() => {
@@ -119,6 +121,18 @@ export default function ExchangeMoney() {
       }
     }
   }, [receiverCountry]);
+
+  useEffect(() => {
+    // Auto-fill bank name if it's a mobile wallet
+    if (accountType && accountType !== 'Bank Transfer') {
+      const allWalletTypes = Object.values(accountTypesMap).flat().filter(t => t !== 'Bank Transfer');
+      if (!receiverBankName || allWalletTypes.includes(receiverBankName)) {
+        setReceiverBankName(accountType);
+      }
+    } else if (accountType === 'Bank Transfer' && Object.values(accountTypesMap).flat().includes(receiverBankName)) {
+      setReceiverBankName('');
+    }
+  }, [accountType]);
 
   // Updated: Use tiered rates based on the sending amount AND account type
   const rateDoc = rates?.find(r => r.target?.toUpperCase() === targetCurrency?.toUpperCase());
@@ -139,7 +153,7 @@ export default function ExchangeMoney() {
   });
 
   // Calculate Rate
-  const currentRate = applicableTier ? Number(applicableTier.rate) : (Number(rateDoc?.rate) || 0);
+  const currentRate = applicableTier && Number(applicableTier.rate) > 0 ? Number(applicableTier.rate) : (Number(rateDoc?.rate) || 0);
 
   // Sync calculations reactively to handle rate updates (tiers)
   // Manual amount handlers handle cross-calculations now
@@ -158,8 +172,17 @@ export default function ExchangeMoney() {
       setTargetAmount('');
       return;
     }
-    if (currentRate > 0) {
-      const calculated = (Number(val) / currentRate).toFixed(2);
+    // Recalculate rate based on the new amount immediately for accurate calculation
+    const amountNum = Number(val) || 0;
+    const tier = tieredRates.find((t: any) => {
+      const min = Number(t.min) || 0;
+      const max = Number(t.max) || 0;
+      return amountNum >= min && (max === 0 || amountNum <= max);
+    });
+    const calculatedRate = tier && Number(tier.rate) > 0 ? Number(tier.rate) : (Number(rateDoc?.rate) || 0);
+
+    if (calculatedRate > 0) {
+      const calculated = (Number(val) / calculatedRate).toFixed(2);
       setTargetAmount(calculated);
     }
   };
@@ -171,6 +194,9 @@ export default function ExchangeMoney() {
       setAmount('');
       return;
     }
+    
+    // For backwards calculation from target, we use the currentRate
+    // but try to find the VND amount that would result in this target
     if (currentRate > 0) {
       const calculated = (Number(val) * currentRate).toFixed(0);
       setAmount(calculated);
@@ -388,6 +414,7 @@ export default function ExchangeMoney() {
                           </SelectTrigger>
                           <SelectContent className="bg-slate-900 border-slate-800 text-white">
                             <SelectItem value="Bangladesh">Bangladesh</SelectItem>
+                            <SelectItem value="Vietnam">Vietnam</SelectItem>
                             <SelectItem value="India">India</SelectItem>
                             <SelectItem value="Pakistan">Pakistan</SelectItem>
                             <SelectItem value="Nepal">Nepal</SelectItem>
@@ -501,11 +528,11 @@ export default function ExchangeMoney() {
                   exit={{ opacity: 0, x: -20 }}
                   className="space-y-6"
                 >
-                  <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label>{t('country') || 'Country'}</Label>
-                      <Select value={receiverCountry} onValueChange={setReceiverCountry}>
-                        <SelectTrigger className="bg-white/5 border-white/10 h-12 rounded-xl">
+                      <Select value={receiverCountry} onValueChange={setReceiverCountry} disabled>
+                        <SelectTrigger className="bg-white/5 border-white/10 h-12 rounded-xl opacity-70 cursor-not-allowed">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent className="bg-slate-900 border-slate-800 text-white">
@@ -519,6 +546,23 @@ export default function ExchangeMoney() {
                     </div>
 
                     <div className="space-y-2">
+                      <Label>Account Type</Label>
+                      <Select value={accountType} onValueChange={setAccountType} disabled>
+                        <SelectTrigger className="bg-white/5 border-white/10 h-12 rounded-xl opacity-70 cursor-not-allowed">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-slate-900 border-slate-800 text-white">
+                          {(accountTypesMap[receiverCountry] || []).map(type => (
+                            <SelectItem key={type} value={type}>{type}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+
+                    <div className="space-y-2">
                       <Label>Receiver Bank Name</Label>
                       <div className="relative">
                         <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
@@ -526,7 +570,8 @@ export default function ExchangeMoney() {
                           placeholder="e.g. Dutch Bangla Bank, SBI, etc." 
                           value={receiverBankName}
                           onChange={(e) => setReceiverBankName(e.target.value)}
-                          className="bg-white/5 border-white/10 h-12 pl-12 rounded-xl"
+                          className="bg-white/5 border-white/10 h-12 pl-12 rounded-xl disabled:opacity-70 disabled:cursor-not-allowed"
+                          disabled={accountType !== 'Bank Transfer'}
                         />
                       </div>
                     </div>

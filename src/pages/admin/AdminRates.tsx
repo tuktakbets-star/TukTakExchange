@@ -88,7 +88,7 @@ export default function AdminRates() {
       }
 
       // Sync with adminSettings global_settings rates
-      const { data: currentSettingsList } = await firebaseService.getCollection('adminSettings', [
+      const currentSettingsList = await firebaseService.getCollection('adminSettings', [
         where('key', '==', 'global_settings')
       ]);
       
@@ -125,7 +125,19 @@ export default function AdminRates() {
     setIsConfirmOpen(true);
   };
 
-  const currentRate = rates.find(r => r.target?.toUpperCase() === calcTarget?.toUpperCase())?.rate || 0;
+  const selectedRateDoc = rates.find(r => r.target?.toUpperCase() === calcTarget?.toUpperCase());
+  const selectedTieredRates = Array.isArray(selectedRateDoc?.tiered_rates) ? selectedRateDoc.tiered_rates : 
+                              (Array.isArray(selectedRateDoc?.tieredRates) ? selectedRateDoc.tieredRates : []);
+  
+  const applicableTierForCalc = selectedTieredRates.find((t: any) => {
+    const min = Number(t.min) || 0;
+    const max = Number(t.max) || 0;
+    return calcAmount >= min && (max === 0 || calcAmount <= max);
+  });
+  
+  const currentRate = applicableTierForCalc && Number(applicableTierForCalc.rate) > 0 
+                     ? Number(applicableTierForCalc.rate) 
+                     : (Number(selectedRateDoc?.rate) || 0);
   const result = currentRate > 0 ? calcAmount / currentRate : 0;
 
   return (

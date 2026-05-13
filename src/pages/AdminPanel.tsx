@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { firebaseService } from '../lib/firebaseService';
+import { firebaseService, where } from '../lib/firebaseService';
 import { 
   Users, 
   ArrowUpRight, 
@@ -128,11 +128,39 @@ export default function AdminPanel() {
     }
   };
 
-  const handleUpdateRate = async (id: string, newRate: number) => {
+  const handleUpdateRate = async (id: string, newRate: number, currencyPair: string) => {
     try {
-      await firebaseService.updateDocument('rates', id, { rate: newRate, updatedAt: new Date().toISOString() });
-      toast.success('Rate updated');
+      // Use setDocument to handle both new and existing rate docs
+      const success = await firebaseService.setDocument('rates', id, { 
+        rate: newRate, 
+        target: currencyPair,
+        base: 'VND',
+        updatedAt: new Date().toISOString() 
+      });
+      
+      if (success) {
+        toast.success('Rate updated');
+      } else {
+        toast.error('Failed to update rate');
+      }
+
+      // Sync with adminSettings global_settings rates
+      const currentSettingsList = await firebaseService.getCollection('adminSettings', [
+        where('key', '==', 'global_settings')
+      ]);
+      
+      const globalSettings = currentSettingsList?.[0];
+      if (globalSettings) {
+        const updatedRates = { ...(globalSettings.value?.rates || {}) };
+        updatedRates[currencyPair] = newRate;
+        
+        await firebaseService.updateDocument('adminSettings', globalSettings.id, {
+          value: { ...globalSettings.value, rates: updatedRates },
+          updatedAt: new Date().toISOString()
+        });
+      }
     } catch (error) {
+      console.error('Rate update error:', error);
       toast.error('Failed to update rate');
     }
   };
@@ -527,11 +555,22 @@ export default function AdminPanel() {
                         <div className="flex items-center gap-4">
                           <Input 
                             type="number" 
+                            id={`rate-input-${curr}`}
                             defaultValue={rateDoc?.rate || 0.0045} 
                             className="w-32 bg-white/5 border-white/10 h-12 text-center font-bold"
-                            onBlur={(e) => handleUpdateRate(rateDoc?.id || curr, parseFloat(e.target.value))}
+                            onBlur={(e) => handleUpdateRate(rateDoc?.id || curr, parseFloat(e.target.value), curr)}
                           />
-                          <Button className="bg-red-600 h-12 px-6">Update</Button>
+                          <Button 
+                            className="bg-red-600 h-12 px-6"
+                            onClick={() => {
+                              const input = document.getElementById(`rate-input-${curr}`) as HTMLInputElement;
+                              if (input) {
+                                handleUpdateRate(rateDoc?.id || curr, parseFloat(input.value), curr);
+                              }
+                            }}
+                          >
+                            Update
+                          </Button>
                         </div>
                       </div>
                     );

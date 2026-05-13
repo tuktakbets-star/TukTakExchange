@@ -66,18 +66,23 @@ export default function ExchangeRates() {
   const currentRate = currentRateObj?.rate || 0;
   const convertedAmount = currentRate > 0 ? parseFloat(calcAmount) / currentRate : 0;
 
-  const handleUpdateRate = async (pair: string) => {
+  const handleUpdateRate = async (pair: string, rateObj: any) => {
     if (!editValue || isNaN(Number(editValue))) {
       toast.error(t('invalid_rate'));
       return;
     }
     try {
-      await firebaseService.updateDocument('rates', pair, {
+      const success = await firebaseService.setDocument('rates', pair, {
+        ...rateObj,
         rate: Number(editValue),
         updatedAt: new Date().toISOString()
       });
-      toast.success(t('rate_updated_success'));
-      setEditingPair(null);
+      if (success) {
+        toast.success(t('rate_updated_success'));
+        setEditingPair(null);
+      } else {
+        toast.error(t('rate_update_failed'));
+      }
     } catch (error) {
       toast.error(t('rate_update_failed'));
     }
@@ -177,7 +182,7 @@ export default function ExchangeRates() {
                         onChange={(e) => setEditValue(e.target.value)}
                         className="bg-white/5 border-white/10 h-9 text-sm"
                       />
-                      <Button size="icon" className="h-9 w-9 bg-green-600 hover:bg-green-500" onClick={() => handleUpdateRate(rate.id)}>
+                      <Button size="icon" className="h-9 w-9 bg-green-600 hover:bg-green-500" onClick={() => handleUpdateRate(rate.id, rate)}>
                         <Save className="w-4 h-4" />
                       </Button>
                       <Button size="icon" variant="ghost" className="h-9 w-9 text-slate-400" onClick={() => setEditingPair(null)}>

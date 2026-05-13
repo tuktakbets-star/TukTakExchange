@@ -184,13 +184,18 @@ export default function AdminMessages() {
                 selectedUser?.id === chat.id ? "bg-red-600 text-white shadow-lg shadow-red-600/20" : "text-slate-400 hover:bg-white/5 hover:text-white"
               )}
             >
-              <Avatar className="h-12 w-12 border-2 border-white/10">
+              <Avatar className={cn("h-12 w-12 border-2", chat.userRole === 'sub_admin' ? "border-amber-500" : "border-white/10")}>
                 <AvatarImage src={`https://picsum.photos/seed/${chat.id}/100/100`} />
-                <AvatarFallback className="bg-slate-800 text-slate-300 font-bold">{chat.userName?.charAt(0)}</AvatarFallback>
+                <AvatarFallback className={cn("font-bold", chat.userRole === 'sub_admin' ? "bg-amber-500/20 text-amber-500" : "bg-slate-800 text-slate-300")}>{chat.userName?.charAt(0)}</AvatarFallback>
               </Avatar>
               <div className="flex-1 min-w-0 text-left">
                 <div className="flex justify-between items-baseline mb-1">
-                  <p className="font-bold text-sm truncate">{chat.userName}</p>
+                  <div className="flex flex-col">
+                    <p className="font-bold text-sm truncate">{chat.userName}</p>
+                    {chat.userRole === 'sub_admin' && (
+                      <span className="text-[8px] font-black uppercase tracking-widest text-amber-500 bg-amber-500/10 px-1 rounded-sm w-fit">Sub Admin</span>
+                    )}
+                  </div>
                   {chat.lastMessageAt && (
                     <span className={cn("text-[10px]", selectedUser?.id === chat.id ? "text-white/60" : "text-slate-500")}>
                       {chat.lastMessageAt?.toDate ? new Date(chat.lastMessageAt.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
