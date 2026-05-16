@@ -58,6 +58,12 @@ export default function ExchangeMoney() {
   const [receiverBankName, setReceiverBankName] = useState('');
   const [receiverAccountNumber, setReceiverAccountNumber] = useState('');
   const [receiverBranch, setReceiverBranch] = useState('');
+  const [receiverIfsc, setReceiverIfsc] = useState('');
+  const [receiverEmail, setReceiverEmail] = useState('');
+  const [receiverPhone, setReceiverPhone] = useState('');
+  const [receiverAccountTypeSelect, setReceiverAccountTypeSelect] = useState('Savings');
+  const [receiverNote, setReceiverNote] = useState('');
+  const [otherDetails, setOtherDetails] = useState('');
   const [receiverQrFile, setReceiverQrFile] = useState<File | null>(null);
   const [description, setDescription] = useState('');
   const [password, setPassword] = useState('');
@@ -224,9 +230,63 @@ export default function ExchangeMoney() {
       }
       setStep(2);
     } else if (step === 2) {
-      if (!receiverBankName || !receiverAccountNumber || !receiverName) {
-        toast.error('Please fill in bank and receiver details');
-        return;
+      // Validate based on Country and Account Type
+      if (receiverCountry === 'Bangladesh') {
+        if (['bKash', 'Nagad', 'Rocket', 'upay'].includes(accountType)) {
+          if (!receiverAccountNumber || !receiverName) {
+            toast.error('Please fill in Wallet Number and Receiver Name');
+            return;
+          }
+        } else {
+          if (!receiverBankName || !receiverAccountNumber || !receiverName) {
+            toast.error('Please fill in Bank Name, Account Number and Holder Name');
+            return;
+          }
+        }
+      } else if (receiverCountry === 'India') {
+        if (accountType === 'UPI') {
+          if (!receiverName || !receiverAccountNumber) { // Using AccountNumber as UPI ID field or dedicated?
+            toast.error('Please fill in Holder Name and UPI ID');
+            return;
+          }
+        } else if (['IMPS', 'Bank Transfer'].includes(accountType)) {
+          if (!receiverName || !receiverBankName || !receiverAccountNumber || !receiverIfsc) {
+            toast.error('Please fill in Holder Name, Bank Name, Account Number and IFSC Code');
+            return;
+          }
+        } else if (accountType === 'Digital eRupee') {
+          if (!receiverName || !receiverAccountNumber) { // AccountNumber as VPA
+            toast.error('Please fill in Holder Name and Digital eRupee wallet VPA');
+            return;
+          }
+        } else if (accountType === 'Paytm') {
+          if (!receiverName || !receiverAccountNumber) {
+            toast.error('Please fill in Holder Name and Account Number');
+            return;
+          }
+        }
+      } else if (receiverCountry === 'Pakistan') {
+        if (!receiverName || !receiverAccountNumber) {
+          toast.error('Please fill in Holder Name and Account Number');
+          return;
+        }
+      } else if (receiverCountry === 'Nepal') {
+        if (accountType === 'Esewa') {
+          if (!receiverName || !receiverEmail || !receiverPhone) {
+            toast.error('Please fill in Holder Name, Email and Phone Number');
+            return;
+          }
+        } else if (accountType === 'Khalti') {
+          if (!receiverName || !receiverPhone) {
+            toast.error('Please fill in Holder Name and Phone Number');
+            return;
+          }
+        } else if (accountType === 'IME Pay') {
+          if (!receiverName || !receiverPhone) {
+            toast.error('Please fill in Holder Name and IMEpay Mobile Number');
+            return;
+          }
+        }
       }
       setStep(3);
     }
@@ -277,6 +337,12 @@ export default function ExchangeMoney() {
           bankName: receiverBankName || accountType, // Fallback to account type if bank name empty
           accountNumber: receiverAccountNumber,
           branch: receiverBranch,
+          otherDetails: otherDetails,
+          email: receiverEmail,
+          phone: receiverPhone,
+          ifsc: receiverIfsc,
+          accountTypeSelect: receiverAccountTypeSelect,
+          note: receiverNote,
           qrCode: qrUrl,
           accountType: accountType // Store account type explicitly
         },
@@ -528,108 +594,378 @@ export default function ExchangeMoney() {
                   exit={{ opacity: 0, x: -20 }}
                   className="space-y-6"
                 >
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>{t('country') || 'Country'}</Label>
-                      <Select value={receiverCountry} onValueChange={setReceiverCountry} disabled>
-                        <SelectTrigger className="bg-white/5 border-white/10 h-12 rounded-xl opacity-70 cursor-not-allowed">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent className="bg-slate-900 border-slate-800 text-white">
-                          <SelectItem value="Bangladesh">Bangladesh</SelectItem>
-                          <SelectItem value="Vietnam">Vietnam</SelectItem>
-                          <SelectItem value="India">India</SelectItem>
-                          <SelectItem value="Pakistan">Pakistan</SelectItem>
-                          <SelectItem value="Nepal">Nepal</SelectItem>
-                        </SelectContent>
-                      </Select>
+                  {/* Step Header with locked info */}
+                  <div className="p-6 bg-blue-500/5 border border-blue-500/10 rounded-[2rem] flex items-center justify-between mb-8">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-blue-500/10 rounded-2xl flex items-center justify-center text-blue-500 shadow-lg">
+                        <Globe className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-black uppercase text-slate-500 tracking-[0.2em]">{t('target_country')}</p>
+                        <p className="text-xl font-black text-white">{receiverCountry}</p>
+                      </div>
                     </div>
-
-                    <div className="space-y-2">
-                      <Label>Account Type</Label>
-                      <Select value={accountType} onValueChange={setAccountType} disabled>
-                        <SelectTrigger className="bg-white/5 border-white/10 h-12 rounded-xl opacity-70 cursor-not-allowed">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent className="bg-slate-900 border-slate-800 text-white">
-                          {(accountTypesMap[receiverCountry] || []).map(type => (
-                            <SelectItem key={type} value={type}>{type}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                    <div className="h-10 w-px bg-white/5" />
+                    <div className="text-right">
+                      <p className="text-[10px] font-black uppercase text-slate-500 tracking-[0.2em]">{t('account_type')}</p>
+                      <p className="text-xl font-black text-brand-blue">{accountType}</p>
                     </div>
                   </div>
 
-                  <div className="space-y-4">
+                  <div className="space-y-6">
+                    {/* Render fields conditionally based on Country and Account Type */}
+                    
+                    {/* BANGLADESH */}
+                    {receiverCountry === 'Bangladesh' && (
+                      <>
+                        {['bKash', 'Nagad', 'Rocket', 'upay'].includes(accountType) ? (
+                          <div className="space-y-4">
+                            <div className="p-4 rounded-xl bg-blue-500/10 border border-blue-500/20">
+                              <p className="text-xs font-bold text-blue-400 uppercase tracking-widest leading-loose">
+                                Notice: {accountType} Personal only. Merchant or Agent numbers are not accepted.
+                              </p>
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Wallet Type</Label>
+                              <Input 
+                                value={`${accountType} Personal`}
+                                disabled
+                                className="bg-white/5 border-white/10 h-12 rounded-xl opacity-70"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Wallet Number</Label>
+                              <Input 
+                                placeholder="098765432"
+                                value={receiverAccountNumber}
+                                onChange={(e) => setReceiverAccountNumber(e.target.value)}
+                                className="bg-white/5 border-white/10 h-12 rounded-xl"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Receiver Name</Label>
+                              <Input 
+                                placeholder="Receiver Name"
+                                value={receiverName}
+                                onChange={(e) => setReceiverName(e.target.value)}
+                                className="bg-white/5 border-white/10 h-12 rounded-xl"
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="space-y-4">
+                            <div className="space-y-2">
+                              <Label>Account Holder Name</Label>
+                              <Input 
+                                placeholder="Full Name as per Bank Account"
+                                value={receiverName}
+                                onChange={(e) => setReceiverName(e.target.value)}
+                                className="bg-white/5 border-white/10 h-12 rounded-xl"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Bank Name</Label>
+                              <Input 
+                                placeholder="e.g. Dutch Bangla Bank, City Bank etc."
+                                value={receiverBankName}
+                                onChange={(e) => setReceiverBankName(e.target.value)}
+                                className="bg-white/5 border-white/10 h-12 rounded-xl"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Bank Account Number</Label>
+                              <Input 
+                                placeholder="Bank Account Number"
+                                value={receiverAccountNumber}
+                                onChange={(e) => setReceiverAccountNumber(e.target.value)}
+                                className="bg-white/5 border-white/10 h-12 rounded-xl"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Branch / District (Optional)</Label>
+                              <Input 
+                                placeholder="Branch / District"
+                                value={receiverBranch}
+                                onChange={(e) => setReceiverBranch(e.target.value)}
+                                className="bg-white/5 border-white/10 h-12 rounded-xl"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
 
-                    <div className="space-y-2">
-                      <Label>Receiver Bank Name</Label>
-                      <div className="relative">
-                        <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                        <Input 
-                          placeholder="e.g. Dutch Bangla Bank, SBI, etc." 
-                          value={receiverBankName}
-                          onChange={(e) => setReceiverBankName(e.target.value)}
-                          className="bg-white/5 border-white/10 h-12 pl-12 rounded-xl disabled:opacity-70 disabled:cursor-not-allowed"
-                          disabled={accountType !== 'Bank Transfer'}
-                        />
+                    {/* INDIA */}
+                    {receiverCountry === 'India' && (
+                      <div className="space-y-4">
+                        {accountType === 'UPI' && (
+                          <>
+                            <div className="space-y-2">
+                              <Label>Holder Name</Label>
+                              <Input 
+                                placeholder="Full Name of the Holder"
+                                value={receiverName}
+                                onChange={(e) => setReceiverName(e.target.value)}
+                                className="bg-white/5 border-white/10 h-12 rounded-xl"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>UPI ID</Label>
+                              <Input 
+                                placeholder="example@upi"
+                                value={receiverAccountNumber}
+                                onChange={(e) => setReceiverAccountNumber(e.target.value)}
+                                className="bg-white/5 border-white/10 h-12 rounded-xl"
+                              />
+                            </div>
+                          </>
+                        )}
+                        {['IMPS', 'Bank Transfer'].includes(accountType) && (
+                          <>
+                            <div className="space-y-2">
+                              <Label>Holder Name</Label>
+                              <Input 
+                                placeholder="Full Name of the Holder"
+                                value={receiverName}
+                                onChange={(e) => setReceiverName(e.target.value)}
+                                className="bg-white/5 border-white/10 h-12 rounded-xl"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Bank Name</Label>
+                              <Input 
+                                placeholder="Bank Name"
+                                value={receiverBankName}
+                                onChange={(e) => setReceiverBankName(e.target.value)}
+                                className="bg-white/5 border-white/10 h-12 rounded-xl"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Bank Account Number</Label>
+                              <Input 
+                                placeholder="Account Number"
+                                value={receiverAccountNumber}
+                                onChange={(e) => setReceiverAccountNumber(e.target.value)}
+                                className="bg-white/5 border-white/10 h-12 rounded-xl"
+                              />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                              <div className="space-y-2">
+                                <Label>IFSC Code</Label>
+                                <Input 
+                                  placeholder="IFSC Code"
+                                  value={receiverIfsc}
+                                  onChange={(e) => setReceiverIfsc(e.target.value)}
+                                  className="bg-white/5 border-white/10 h-12 rounded-xl uppercase"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label>Account Type</Label>
+                                <Select value={receiverAccountTypeSelect} onValueChange={setReceiverAccountTypeSelect}>
+                                  <SelectTrigger className="bg-white/5 border-white/10 h-12 rounded-xl">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent className="bg-slate-900 border-slate-800 text-white">
+                                    <SelectItem value="Savings">Savings</SelectItem>
+                                    <SelectItem value="Current">Current</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Account Opening Branch (Optional)</Label>
+                              <Input 
+                                placeholder="Branch Name"
+                                value={receiverBranch}
+                                onChange={(e) => setReceiverBranch(e.target.value)}
+                                className="bg-white/5 border-white/10 h-12 rounded-xl"
+                              />
+                            </div>
+                          </>
+                        )}
+                        {accountType === 'Digital eRupee' && (
+                          <>
+                            <div className="space-y-2">
+                              <Label>Digital eRupee wallet VPA</Label>
+                              <Input 
+                                placeholder="Digital eRupee VPA"
+                                value={receiverAccountNumber}
+                                onChange={(e) => setReceiverAccountNumber(e.target.value)}
+                                className="bg-white/5 border-white/10 h-12 rounded-xl"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Holder Name</Label>
+                              <Input 
+                                placeholder="Full Name of the Holder"
+                                value={receiverName}
+                                onChange={(e) => setReceiverName(e.target.value)}
+                                className="bg-white/5 border-white/10 h-12 rounded-xl"
+                              />
+                            </div>
+                          </>
+                        )}
+                        {accountType === 'Paytm' && (
+                          <>
+                            <div className="space-y-2">
+                              <Label>Holder Name</Label>
+                              <Input 
+                                placeholder="Full Name to match account"
+                                value={receiverName}
+                                onChange={(e) => setReceiverName(e.target.value)}
+                                className="bg-white/5 border-white/10 h-12 rounded-xl"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Account Number</Label>
+                              <Input 
+                                placeholder="Paytm Account or Phone Number"
+                                value={receiverAccountNumber}
+                                onChange={(e) => setReceiverAccountNumber(e.target.value)}
+                                className="bg-white/5 border-white/10 h-12 rounded-xl"
+                              />
+                            </div>
+                          </>
+                        )}
                       </div>
-                    </div>
-                    <div className="space-y-2">
-                        <Label>Receiver Name</Label>
-                        <Input 
-                          placeholder="Full Name as per Bank Account" 
-                          value={receiverName}
-                          onChange={(e) => setReceiverName(e.target.value)}
-                          className="bg-white/5 border-white/10 h-12 rounded-xl"
-                        />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Account Number</Label>
-                      <div className="relative">
-                        <FileText className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                        <Input 
-                          placeholder="Account Number" 
-                          value={receiverAccountNumber}
-                          onChange={(e) => setReceiverAccountNumber(e.target.value)}
-                          className="bg-white/5 border-white/10 h-12 pl-12 rounded-xl"
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Branch Name / IFSC / Routing (Optional)</Label>
-                      <Input 
-                        placeholder="Branch or Code" 
-                        value={receiverBranch}
-                        onChange={(e) => setReceiverBranch(e.target.value)}
-                        className="bg-white/5 border-white/10 h-12 rounded-xl"
-                      />
-                    </div>
+                    )}
 
-                    <div className="space-y-2">
-                        <Label className="text-slate-400">Upload Receiver QR Code (Optional)</Label>
-                        <div 
-                          className="border-2 border-dashed border-white/10 rounded-xl p-4 text-center hover:border-brand-blue/50 transition-colors cursor-pointer"
-                          onClick={() => document.getElementById('qr-upload')?.click()}
-                        >
-                          <input 
-                            id="qr-upload" 
-                            type="file" 
-                            className="hidden" 
-                            onChange={(e) => setReceiverQrFile(e.target.files?.[0] || null)}
+                    {/* PAKISTAN */}
+                    {receiverCountry === 'Pakistan' && (
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <Label>Holder Name</Label>
+                          <Input 
+                            placeholder="Account Holder Name"
+                            value={receiverName}
+                            onChange={(e) => setReceiverName(e.target.value)}
+                            className="bg-white/5 border-white/10 h-12 rounded-xl"
                           />
-                          {receiverQrFile ? (
-                            <div className="flex items-center justify-center gap-2 text-brand-blue">
-                              <CheckCircle2 className="w-5 h-5" />
-                              <span className="text-sm font-bold">{receiverQrFile.name}</span>
-                            </div>
-                          ) : (
-                            <div className="flex flex-col items-center gap-2">
-                              <QrCode className="w-6 h-6 text-slate-500" />
-                              <span className="text-xs text-slate-500 font-bold tracking-widest uppercase">Upload QR Photo</span>
-                            </div>
-                          )}
                         </div>
+                        <div className="space-y-2">
+                          <Label>Account Number</Label>
+                          <Input 
+                            placeholder="Account or Wallet Number"
+                            value={receiverAccountNumber}
+                            onChange={(e) => setReceiverAccountNumber(e.target.value)}
+                            className="bg-white/5 border-white/10 h-12 rounded-xl"
+                          />
+                        </div>
+                        {accountType === 'Easypaisa-PK Only' && (
+                          <div className="space-y-2">
+                            <Label>Other payment details (Optional)</Label>
+                            <Input 
+                              placeholder="For international transfer etc."
+                              value={otherDetails}
+                              onChange={(e) => setOtherDetails(e.target.value)}
+                              className="bg-white/5 border-white/10 h-12 rounded-xl"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* NEPAL */}
+                    {receiverCountry === 'Nepal' && (
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <Label>Holder Name</Label>
+                          <Input 
+                            placeholder="Holder Name"
+                            value={receiverName}
+                            onChange={(e) => setReceiverName(e.target.value)}
+                            className="bg-white/5 border-white/10 h-12 rounded-xl"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>{accountType === 'IME Pay' ? 'IMEpay Mobile Number' : 'Phone Number'}</Label>
+                          <Input 
+                            placeholder="Mobile Number"
+                            value={receiverPhone}
+                            onChange={(e) => setReceiverPhone(e.target.value)}
+                            className="bg-white/5 border-white/10 h-12 rounded-xl"
+                          />
+                        </div>
+                        {accountType === 'Esewa' && (
+                          <div className="space-y-2">
+                            <Label>Email Address</Label>
+                            <Input 
+                              placeholder="Email Address"
+                              value={receiverEmail}
+                              onChange={(e) => setReceiverEmail(e.target.value)}
+                              className="bg-white/5 border-white/10 h-12 rounded-xl"
+                            />
+                          </div>
+                        )}
+                        {['Esewa'].includes(accountType) && (
+                          <div className="space-y-2">
+                            <Label>Note (Optional)</Label>
+                            <Input 
+                              placeholder="Any additional notes"
+                              value={receiverNote}
+                              onChange={(e) => setReceiverNote(e.target.value)}
+                              className="bg-white/5 border-white/10 h-12 rounded-xl"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* VIETNAM */}
+                    {receiverCountry === 'Vietnam' && (
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <Label>Receiver Name</Label>
+                          <Input 
+                            value={receiverName}
+                            onChange={(e) => setReceiverName(e.target.value)}
+                            className="bg-white/5 border-white/10 h-12 rounded-xl"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Account Number</Label>
+                          <Input 
+                            value={receiverAccountNumber}
+                            onChange={(e) => setReceiverAccountNumber(e.target.value)}
+                            className="bg-white/5 border-white/10 h-12 rounded-xl"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Bank/Wallet Name</Label>
+                          <Input 
+                            value={receiverBankName}
+                            onChange={(e) => setReceiverBankName(e.target.value)}
+                            className="bg-white/5 border-white/10 h-12 rounded-xl"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* QR Code Upload - Common for many */}
+                    <div className="space-y-2">
+                      <Label className="text-slate-400">QR Code Photo (Optional)</Label>
+                      <div 
+                        className="border-2 border-dashed border-white/10 rounded-xl p-4 text-center hover:border-brand-blue/50 transition-colors cursor-pointer"
+                        onClick={() => document.getElementById('qr-upload')?.click()}
+                      >
+                        <input 
+                          id="qr-upload" 
+                          type="file" 
+                          className="hidden" 
+                          onChange={(e) => setReceiverQrFile(e.target.files?.[0] || null)}
+                        />
+                        {receiverQrFile ? (
+                          <div className="flex items-center justify-center gap-2 text-brand-blue">
+                            <CheckCircle2 className="w-5 h-5" />
+                            <span className="text-sm font-bold">{receiverQrFile.name}</span>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-center gap-2">
+                            <QrCode className="w-6 h-6 text-slate-500" />
+                            <span className="text-xs text-slate-500 font-bold tracking-widest uppercase">Upload QR Photo</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -665,45 +1001,78 @@ export default function ExchangeMoney() {
                       </div>
                     </div>
 
-                    <div className="p-6 rounded-2xl bg-white/5 border border-white/5 space-y-4 shadow-xl">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-slate-400">Country</span>
-                        <span className="font-bold">{receiverCountry}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-slate-400">Account Type</span>
-                        <span className="font-bold text-brand-blue">{accountType}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-slate-400">Receiver Name</span>
-                        <span className="font-bold">{receiverName}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-slate-400">Account Type</span>
-                        <span className="font-bold text-brand-blue">{accountType}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-slate-400">Bank / Wallet Name</span>
-                        <span className="font-bold">{receiverBankName || accountType}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-slate-400">Account Number</span>
-                        <span className="font-mono font-bold">{receiverAccountNumber}</span>
-                      </div>
-                      {receiverBranch && (
+                      <div className="p-6 rounded-2xl bg-white/5 border border-white/5 space-y-4 shadow-xl">
                         <div className="flex justify-between text-sm">
-                            <span className="text-slate-400">Branch/IFSC</span>
-                            <span className="font-bold">{receiverBranch}</span>
+                          <span className="text-slate-400">Country</span>
+                          <span className="font-bold">{receiverCountry}</span>
                         </div>
-                      )}
-                      <div className="pt-4 border-t border-white/5 flex justify-between text-sm font-bold">
-                        <span className="text-slate-400">Service Fee</span>
-                        <span className="flex items-center gap-1">
-                          <Calculator className="w-3 h-3 text-brand-blue" />
-                          {fee.toLocaleString()} {sourceCurrency}
-                        </span>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-slate-400">Account Type</span>
+                          <span className="font-bold text-brand-blue">{accountType}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-slate-400">Receiver / Holder Details</span>
+                          <div className="text-right">
+                            <p className="font-bold">{receiverName}</p>
+                            <p className="text-xs text-slate-500">{receiverAccountNumber}</p>
+                          </div>
+                        </div>
+                        {receiverBankName && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-slate-400">Bank Name</span>
+                            <span className="font-bold">{receiverBankName}</span>
+                          </div>
+                        )}
+                        {receiverIfsc && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-slate-400">IFSC Code</span>
+                            <span className="font-bold uppercase">{receiverIfsc}</span>
+                          </div>
+                        )}
+                        {receiverEmail && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-slate-400">Email</span>
+                            <span className="font-bold">{receiverEmail}</span>
+                          </div>
+                        )}
+                        {receiverPhone && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-slate-400">Phone</span>
+                            <span className="font-bold">{receiverPhone}</span>
+                          </div>
+                        )}
+                        {receiverBranch && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-slate-400">Branch</span>
+                            <span className="font-bold">{receiverBranch}</span>
+                          </div>
+                        )}
+                        {receiverAccountTypeSelect && ['IMPS', 'Bank Transfer'].includes(accountType) && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-slate-400">Account Type</span>
+                            <span className="font-bold">{receiverAccountTypeSelect}</span>
+                          </div>
+                        )}
+                        {otherDetails && (
+                          <div className="flex flex-col gap-1 text-sm border-t border-white/5 pt-2">
+                            <span className="text-slate-400">Other Details</span>
+                            <p className="text-xs text-slate-300 italic">{otherDetails}</p>
+                          </div>
+                        )}
+                        {receiverNote && (
+                          <div className="flex flex-col gap-1 text-sm border-t border-white/5 pt-2">
+                            <span className="text-slate-400">Note</span>
+                            <p className="text-xs text-slate-300 italic">{receiverNote}</p>
+                          </div>
+                        )}
+                        <div className="pt-4 border-t border-white/5 flex justify-between text-sm font-bold">
+                          <span className="text-slate-400">Service Fee</span>
+                          <span className="flex items-center gap-1">
+                            <Calculator className="w-3 h-3 text-brand-blue" />
+                            {fee.toLocaleString()} {sourceCurrency}
+                          </span>
+                        </div>
                       </div>
-                    </div>
                   </div>
 
                   <div className="flex gap-4">

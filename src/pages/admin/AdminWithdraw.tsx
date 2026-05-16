@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { firebaseService } from '../../lib/firebaseService';
+import { supabaseService } from '../../lib/supabaseService';
 import { useTranslation } from 'react-i18next';
 import { 
   ArrowUpRight, 
@@ -34,10 +34,10 @@ export default function AdminWithdraw() {
   const [confirmConfig, setConfirmConfig] = useState<any>(null);
 
   useEffect(() => {
-    const unsubTX = firebaseService.subscribeToCollection('transactions', [], (data) => {
-      setRequests(data.filter(tx => tx.type === 'withdraw'));
+    const unsubTX = supabaseService.subscribeToCollection('transactions', [], (data) => {
+      setRequests(data.filter((tx: any) => tx.type === 'withdraw'));
     });
-    const unsubUsers = firebaseService.subscribeToCollection('users', [], (data) => setUsers(data));
+    const unsubUsers = supabaseService.subscribeToCollection('users', [], (data) => setUsers(data));
 
     setLoading(false);
     return () => {
@@ -48,9 +48,9 @@ export default function AdminWithdraw() {
 
   const handleAccept = async (tx: any) => {
     try {
-      await firebaseService.updateDocument('transactions', tx.id, { 
+      await supabaseService.updateDocument('transactions', tx.id, { 
         status: 'accepted', 
-        updatedAt: new Date().toISOString() 
+        updated_at: new Date().toISOString() 
       });
       toast.success('Withdrawal Accepted');
     } catch (error) {
@@ -75,22 +75,21 @@ export default function AdminWithdraw() {
             toast.error('Payment proof is required');
             return;
           }
-          await firebaseService.updateDocument('transactions', tx.id, { 
+          await supabaseService.updateDocument('transactions', tx.id, { 
             status: 'waiting_confirmation', 
-            paidAt: new Date().toISOString(),
             paid_at: new Date().toISOString(),
-            adminProof: proofUrl,
-            updatedAt: new Date().toISOString() 
+            admin_proof: proofUrl,
+            updated_at: new Date().toISOString() 
           });
 
-          await firebaseService.addDocument('notifications', {
+          await supabaseService.addDocument('notifications', {
             uid: tx.uid,
             title: 'Withdrawal Paid',
             message: `Admin has sent ${tx.amount} ${tx.currency} to your bank. Please check your account and confirm receipt.`,
             type: 'transaction',
-            txId: tx.id,
+            tx_id: tx.id,
             read: false,
-            createdAt: new Date().toISOString()
+            created_at: new Date().toISOString()
           });
 
           toast.success('Marked as Paid and receipt uploaded');
@@ -112,51 +111,52 @@ export default function AdminWithdraw() {
           const proofUrl = data?.proofUrl || 'https://picsum.photos/seed/proof/800/600';
           
           // 1. Finalize Balance Deduction (Move from pendingLocked to real deduction)
-          const amount = tx.amount || 0;
-          const totalToDeduct = tx.total_to_deduct || tx.totalToDeduct || amount;
-          await firebaseService.updateWalletBalance(tx.uid, tx.currency, -totalToDeduct, -totalToDeduct);
+          const amount = Number(tx.amount || 0);
+          const totalToDeduct = Number(tx.total_to_deduct || tx.totalToDeduct || amount);
+          await supabaseService.updateWalletBalance(tx.uid, tx.currency, -totalToDeduct, -totalToDeduct);
 
           // 2. CRITICAL: Update sub-admin balance if assigned
           if (tx.assignedSubAdminId || tx.assigned_sub_admin_id) {
             const saId = tx.assignedSubAdminId || tx.assigned_sub_admin_id;
-            const { data: subAdmin } = await firebaseService.getDocument('sub_admins', saId);
+            const { data: subAdmin } = await supabaseService.getDocument('sub_admins', saId);
             if (subAdmin) {
-              const currentBalance = subAdmin.walletBalance || subAdmin.wallet_balance || subAdmin.vndBalance || subAdmin.vnd_balance || 0;
+              const currentBalance = Number(subAdmin.walletBalance || subAdmin.wallet_balance || subAdmin.vndBalance || subAdmin.vnd_balance || 0);
               const newSaBalance = currentBalance + totalToDeduct;
               
-              await firebaseService.updateDocument('sub_admins', saId, {
-                walletBalance: newSaBalance,
+              await supabaseService.updateDocument('sub_admins', saId, {
                 wallet_balance: newSaBalance,
-                updatedAt: new Date().toISOString()
+                updated_at: new Date().toISOString()
               });
               
-              await firebaseService.addDocument('sub_admin_wallet_transactions', {
-                subAdminId: saId,
+              await supabaseService.addDocument('sub_admin_wallet_transactions', {
                 sub_admin_id: saId,
                 type: 'credit',
                 amount: totalToDeduct,
                 reason: `Withdrawal #${tx.id} completed by admin`,
-                orderId: tx.id,
-                balanceAfter: newSaBalance,
-                createdAt: new Date().toISOString()
+                order_id: tx.id,
+                balance_after: newSaBalance,
+                created_at: new Date().toISOString()
               });
             }
           }
 
-          await firebaseService.updateDocument('transactions', tx.id, { 
+          await supabaseService.updateDocument('transactions', tx.id, { 
             status: 'completed', 
-            adminProof: proofUrl,
-            updatedAt: new Date().toISOString() 
+            admin_proof: proofUrl,
+            updated_at: new Date().toISOString() 
           });
 
-          await firebaseService.addDocument('notifications', {
+          // 3. Process Sub-Admin Commission
+          await supabaseService.processSubAdminCommission(tx);
+
+          await supabaseService.addDocument('notifications', {
             uid: tx.uid,
             title: 'Withdrawal Completed',
             message: `Your withdrawal of ${tx.amount} ${tx.currency} has been processed.`,
             type: 'transaction',
-            txId: tx.id,
+            tx_id: tx.id,
             read: false,
-            createdAt: new Date().toISOString()
+            created_at: new Date().toISOString()
           });
 
           toast.success(t('completed'));
@@ -176,26 +176,26 @@ export default function AdminWithdraw() {
       onConfirm: async () => {
         try {
           const reason = 'Invalid bank details';
-          const amount = tx.amount || 0;
-          const totalToDeduct = tx.total_to_deduct || tx.totalToDeduct || amount;
+          const amount = Number(tx.amount || 0);
+          const totalToDeduct = Number(tx.total_to_deduct || tx.totalToDeduct || amount);
 
           // 1. Refund Locked Balance
-          await firebaseService.updateWalletBalance(tx.uid, tx.currency, 0, -totalToDeduct);
+          await supabaseService.updateWalletBalance(tx.uid, tx.currency, 0, -totalToDeduct);
 
-          await firebaseService.updateDocument('transactions', tx.id, { 
+          await supabaseService.updateDocument('transactions', tx.id, { 
             status: 'failed', 
-            rejectionReason: reason,
-            updatedAt: new Date().toISOString() 
+            rejection_reason: reason,
+            updated_at: new Date().toISOString() 
           });
 
-          await firebaseService.addDocument('notifications', {
+          await supabaseService.addDocument('notifications', {
             uid: tx.uid,
             title: 'Withdrawal Rejected',
             message: `Your withdrawal request was rejected. Reason: ${reason}. Amount has been refunded.`,
             type: 'transaction',
-            txId: tx.id,
+            tx_id: tx.id,
             read: false,
-            createdAt: new Date().toISOString()
+            created_at: new Date().toISOString()
           });
 
           toast.success(t('completed'));
@@ -210,7 +210,7 @@ export default function AdminWithdraw() {
   const handleDeleteTransaction = async (txId: string) => {
     if (!confirm('Are you sure you want to delete this transaction record? This only removes the record from the history, it does not refund balance.')) return;
     try {
-      await firebaseService.deleteDocument('transactions', txId);
+      await supabaseService.deleteDocument('transactions', txId);
       toast.success('Transaction record deleted');
     } catch (error) {
       toast.error('Failed to delete transaction');

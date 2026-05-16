@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { firebaseService, where, orderBy, onSnapshot, db, collection, query } from '../../lib/firebaseService';
+import { supabaseService, where } from '../../lib/supabaseService';
 import { useTranslation } from 'react-i18next';
 import { 
   TrendingUp, 
@@ -33,7 +33,7 @@ export default function AdminRates() {
   const [confirmConfig, setConfirmConfig] = useState<any>(null);
 
   useEffect(() => {
-    const unsubRates = firebaseService.subscribeToCollection('rates', [], (data) => {
+    const unsubRates = supabaseService.subscribeToCollection('rates', [], (data) => {
       console.log('[AdminRates] Data received:', data);
       setRates(data);
       setLoading(false);
@@ -57,30 +57,30 @@ export default function AdminRates() {
 
     try {
       if (id) {
-        const { success, error } = await firebaseService.updateDocument('rates', id, { 
+        const { success, error } = await supabaseService.updateDocument('rates', id, { 
           rate, 
-          updatedAt: new Date().toISOString(),
-          effectiveDate: date,
-          tieredRates: selectedRateId === id ? tieredRates : undefined,
-          tieredFees: selectedRateId === id ? tieredFees : undefined,
-          withdrawFee,
-          rechargeFee
+          updated_at: new Date().toISOString(),
+          effective_date: date,
+          tiered_rates: selectedRateId === id ? tieredRates : undefined,
+          tiered_fees: selectedRateId === id ? tieredFees : undefined,
+          withdraw_fee: withdrawFee,
+          recharge_fee: rechargeFee
         });
         if (!success) throw error;
         toast.success(t('rate_updated_success'));
       } else {
-        const docId = await firebaseService.addDocument('rates', {
+        const res = await supabaseService.addDocument('rates', {
           base: 'VND',
           target,
           rate,
-          effectiveDate: date,
-          updatedAt: new Date().toISOString(),
-          tieredRates: tieredRates,
-          tieredFees: tieredFees,
-          withdrawFee,
-          rechargeFee
+          effective_date: date,
+          updated_at: new Date().toISOString(),
+          tiered_rates: tieredRates,
+          tiered_fees: tieredFees,
+          withdraw_fee: withdrawFee,
+          recharge_fee: rechargeFee
         });
-        if (!docId) throw new Error('Failed to add document');
+        if (!res.id) throw new Error('Failed to add document');
         toast.success(t('new_rate_added'));
         (e.target as HTMLFormElement).reset();
         setTieredRates([{ min: 0, max: 0, rate: 0 }]);
@@ -88,7 +88,7 @@ export default function AdminRates() {
       }
 
       // Sync with adminSettings global_settings rates
-      const currentSettingsList = await firebaseService.getCollection('adminSettings', [
+      const currentSettingsList = await supabaseService.getCollection('admin_settings', [
         where('key', '==', 'global_settings')
       ]);
       
@@ -97,9 +97,9 @@ export default function AdminRates() {
         const updatedRates = { ...(globalSettings.value?.rates || {}) };
         updatedRates[target] = rate;
         
-        await firebaseService.updateDocument('adminSettings', globalSettings.id, {
+        await supabaseService.updateDocument('admin_settings', globalSettings.id, {
           value: { ...globalSettings.value, rates: updatedRates },
-          updatedAt: new Date().toISOString()
+          updated_at: new Date().toISOString()
         });
       }
     } catch (error) {
@@ -111,11 +111,11 @@ export default function AdminRates() {
   const handleDeleteRate = async (id: string) => {
     setConfirmConfig({
       title: t('delete_rate_confirm'),
-      description: t('delete_rate_confirm_msg'), // Make sure to add this translation key or just use description
+      description: t('delete_rate_confirm_msg'),
       variant: 'danger',
       onConfirm: async () => {
         try {
-          await firebaseService.deleteDocument('rates', id);
+          await supabaseService.deleteDocument('rates', id);
           toast.success(t('rate_deleted_success'));
         } catch (error) {
           toast.error(t('delete_failed'));

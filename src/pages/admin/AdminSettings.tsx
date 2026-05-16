@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { firebaseService } from '../../lib/firebaseService';
+import { supabaseService } from '../../lib/supabaseService';
 import { useTranslation } from 'react-i18next';
 import { 
   Settings as SettingsIcon, 
@@ -49,8 +49,8 @@ export default function AdminSettings() {
   });
 
   useEffect(() => {
-    const unsub = firebaseService.subscribeToCollection('adminSettings', [], (data) => {
-      const globalSettings = data.find(s => s.key === 'global_settings');
+    const unsub = supabaseService.subscribeToCollection('admin_settings', [], (data) => {
+      const globalSettings = data.find((s: any) => s.key === 'global_settings');
       if (globalSettings) {
         setSettings(globalSettings);
         if (globalSettings.value?.serviceFees) {
@@ -137,9 +137,16 @@ export default function AdminSettings() {
 
     try {
       if (settings) {
-        await firebaseService.updateDocument('adminSettings', settings.id, { value, updatedAt: new Date().toISOString() });
+        await supabaseService.updateDocument('admin_settings', settings.id, { 
+          value, 
+          updated_at: new Date().toISOString() 
+        });
       } else {
-        await firebaseService.addDocument('adminSettings', { key: 'global_settings', value, updatedAt: new Date().toISOString() });
+        await supabaseService.addDocument('admin_settings', { 
+          key: 'global_settings', 
+          value, 
+          updated_at: new Date().toISOString() 
+        });
       }
       toast.success(t('global_settings_updated'));
     } catch (error) {

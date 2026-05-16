@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { firebaseService } from '../../lib/firebaseService';
+import { supabaseService } from '../../lib/supabaseService';
 import { useTranslation } from 'react-i18next';
 import { 
   Wallet, 
@@ -51,18 +51,16 @@ export default function AdminDeposits() {
   const [confirmConfig, setConfirmConfig] = useState<any>(null);
 
   useEffect(() => {
-    const unsubTX = firebaseService.subscribeToCollection('transactions', [], (data) => {
-      setRequests(data.filter(tx => tx.type === 'deposit' || tx.type === 'cash_in' || tx.type === 'add_money'));
+    const unsubTX = supabaseService.subscribeToCollection('transactions', [], (data) => {
+      setRequests(data.filter((tx: any) => tx.type === 'deposit' || tx.type === 'cash_in' || tx.type === 'add_money'));
     });
-    const unsubUsers = firebaseService.subscribeToCollection('users', [], (data) => {
-      // Map 'id' to 'uid' if necessary for backward compatibility in the app logic
-      const mapped = data.map((u: any) => ({ ...u, uid: u.id || u.uid }));
-      setUsers(mapped);
+    const unsubUsers = supabaseService.subscribeToCollection('users', [], (data) => {
+      setUsers(data);
     });
-    const unsubWallets = firebaseService.subscribeToCollection('wallets', [], (data) => setWallets(data));
-    const unsubSettings = firebaseService.subscribeToCollection('adminSettings', [], (data) => {
-      const amInfo = data.find(s => s.key === 'add_money_settings');
-      const ciInfo = data.find(s => s.key === 'cash_in_settings');
+    const unsubWallets = supabaseService.subscribeToCollection('wallets', [], (data) => setWallets(data));
+    const unsubSettings = supabaseService.subscribeToCollection('admin_settings', [], (data) => {
+      const amInfo = data.find((s: any) => s.key === 'add_money_settings');
+      const ciInfo = data.find((s: any) => s.key === 'cash_in_settings');
       if (amInfo) setAddMoneySettings(amInfo);
       if (ciInfo) setCashInSettings(ciInfo);
     });
@@ -146,7 +144,7 @@ export default function AdminDeposits() {
       const updatedBanks = await Promise.all(bankList.map(async (bank) => {
         const file = bankFiles.get(bank.id);
         if (file) {
-          const url = await firebaseService.uploadFile(file);
+          const url = await supabaseService.uploadFile(file);
           return { ...bank, qrUrl: url };
         }
         return bank;
@@ -193,9 +191,9 @@ export default function AdminDeposits() {
       }
 
       if (currentSettings) {
-        await firebaseService.updateDocument('adminSettings', currentSettings.id, { value, updatedAt: new Date().toISOString() });
+        await supabaseService.updateDocument('admin_settings', currentSettings.id, { value, updated_at: new Date().toISOString() });
       } else {
-        await firebaseService.addDocument('adminSettings', { key: settingsKey, value, updatedAt: new Date().toISOString() });
+        await supabaseService.addDocument('admin_settings', { key: settingsKey, value, updated_at: new Date().toISOString() });
       }
       
       // Clear local file states
@@ -217,21 +215,21 @@ export default function AdminDeposits() {
       description: t('approve_deposit_confirm_msg'),
       onConfirm: async () => {
         try {
-          await firebaseService.updateWalletBalance(tx.uid, tx.currency, tx.amount, 0);
+          await supabaseService.updateWalletBalance(tx.uid, tx.currency, Number(tx.amount), 0);
 
-          await firebaseService.updateDocument('transactions', tx.id, { 
+          await supabaseService.updateDocument('transactions', tx.id, { 
             status: 'completed', 
-            updatedAt: new Date().toISOString() 
+            updated_at: new Date().toISOString() 
           });
 
-          await firebaseService.addDocument('notifications', {
+          await supabaseService.addDocument('notifications', {
             uid: tx.uid,
             title: 'Deposit Approved',
             message: `Your deposit of ${tx.amount} ${tx.currency} has been approved.`,
             type: 'transaction',
-            txId: tx.id,
+            tx_id: tx.id,
             read: false,
-            createdAt: new Date().toISOString()
+            created_at: new Date().toISOString()
           });
 
           toast.success(t('completed'));
@@ -251,20 +249,20 @@ export default function AdminDeposits() {
       variant: 'danger',
       onConfirm: async () => {
         try {
-          await firebaseService.updateDocument('transactions', tx.id, { 
+          await supabaseService.updateDocument('transactions', tx.id, { 
             status: 'failed', 
-            rejectionReason: 'Invalid payment proof',
-            updatedAt: new Date().toISOString() 
+            rejection_reason: 'Invalid payment proof',
+            updated_at: new Date().toISOString() 
           });
 
-          await firebaseService.addDocument('notifications', {
+          await supabaseService.addDocument('notifications', {
             uid: tx.uid,
             title: 'Deposit Rejected',
             message: `Your deposit request was rejected. Reason: Invalid payment proof`,
             type: 'transaction',
-            txId: tx.id,
+            tx_id: tx.id,
             read: false,
-            createdAt: new Date().toISOString()
+            created_at: new Date().toISOString()
           });
 
           toast.success(t('completed'));

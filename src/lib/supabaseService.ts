@@ -235,10 +235,22 @@ export const supabaseService = {
         .update(camelToSnake(data))
         .eq(pkName, id);
       
-      if (error) throw error;
+      if (error) {
+        console.error(`Supabase Error [UPDATE] ${path}/${id}:`, error);
+        if (error.code === '42501') {
+          toast.error(`Permission denied on "${table}". Check your RLS policies.`);
+        } else if (error.message?.includes('payload too large')) {
+          toast.error('Data too large. Try uploading a smaller image.');
+        } else {
+          toast.error(`Database error: ${error.message}`);
+        }
+        return { success: false, error };
+      }
+      
       return { success: true, error: null };
     } catch (error: any) {
       console.error(`Supabase Error [UPDATE] ${path}/${id}:`, error);
+      toast.error(`Unexpected update error: ${error.message || 'Unknown error'}`);
       return { success: false, error };
     }
   },
@@ -393,7 +405,7 @@ export const supabaseService = {
         .maybeSingle();
 
       if (wallet) {
-        await (supabase as any)
+        const { error } = await (supabase as any)
           .from('wallets')
           .update({
             balance: (wallet.balance || 0) + balanceDelta,
@@ -401,8 +413,9 @@ export const supabaseService = {
             updated_at: new Date().toISOString()
           })
           .eq('id', walletId);
+        if (error) throw error;
       } else if (balanceDelta > 0) {
-        await (supabase as any)
+        const { error } = await (supabase as any)
           .from('wallets')
           .insert({
             id: walletId,
@@ -410,11 +423,16 @@ export const supabaseService = {
             currency,
             balance: balanceDelta,
             pending_locked: lockedDelta,
-            updated_at: new Date().toISOString()
+            updated_at: new Date().toISOString(),
+            created_at: new Date().toISOString()
           });
+        if (error) throw error;
       }
-    } catch (error) {
+      return true;
+    } catch (error: any) {
       console.error(`Supabase Error [Update Wallet] ${walletId}:`, error);
+      toast.error(`Wallet update failed: ${error.message}`);
+      return false;
     }
   },
 
@@ -452,6 +470,93 @@ export const supabaseService = {
         redirectTo: window.location.origin + '/dashboard'
       }
     });
+  },
+
+  async processSubAdminCommission(tx: any, latestBalance?: number) {
+    if (!tx || (!tx.assignedSubAdminId && !tx.assigned_sub_admin_id)) return;
+    
+    const saId = tx.assignedSubAdminId || tx.assigned_sub_admin_id;
+    
+    // We still need the config from the document
+    const { data: subAdmin } = await this.getDocument('sub_admins', saId);
+    if (!subAdmin) return;
+    
+    const commissions = subAdmin.service_commissions || subAdmin.serviceCommissions || {};
+    const serviceType = tx.type?.toLowerCase() || 'exchange';
+    
+    // Check both snake_case and camelCase for the service type config
+    const camelServiceType = serviceType.replace(/(_\w)/g, (m: string) => m[1].toUpperCase());
+    const config = commissions[serviceType] || commissions[camelServiceType];
+    
+    console.log(`[Commission] Service: ${serviceType}, Config Found:`, config);
+    
+    // Support both 'value' and 'rate' keys for flexibility
+    const configValue = Number(config?.value ?? config?.rate ?? 0);
+    if (!config || configValue <= 0) {
+      console.warn(`[Commission] No valid configuration value found for ${serviceType}.`);
+      return;
+    }
+    
+    let commissionAmount = 0;
+    let calculationAmount = Number(tx.amount || tx.source_amount || tx.sourceAmount || 0);
+    
+    // If it's an exchange, we might want to calculate commission based on the VND amount specifically if defined
+    // Or if the sub-admin works in BDT, maybe they want commission on BDT?
+    // Let's check if there's a specific amount field that's more appropriate
+    if (serviceType === 'exchange' || serviceType === 'exchange_money') {
+       calculationAmount = Number(tx.amount || 0); // Always VND base for exchange calculation
+    } else if (serviceType === 'cash_in' || serviceType === 'cashin') {
+       calculationAmount = Number(tx.sourceAmount || tx.source_amount || tx.bdtAmount || tx.amount || 0);
+    } else if (serviceType === 'recharge') {
+       calculationAmount = Number(tx.sourceAmount || tx.source_amount || tx.bdtAmount || tx.amount || 0);
+    } else if (serviceType === 'add_money') {
+       calculationAmount = Number(tx.amount || 0);
+    }
+
+    if (config.type === 'percent' || config.type === 'percentage') {
+      commissionAmount = (calculationAmount * configValue) / 100;
+    } else {
+      commissionAmount = configValue;
+    }
+    
+    console.log(`[Commission] Calculation Base: ${calculationAmount}, Value: ${configValue}, Result: ${commissionAmount}`);
+    
+    if (commissionAmount <= 0) {
+      console.warn(`[Commission] Calculated amount is 0 or less.`);
+      return;
+    }
+    
+    // Update sub admin balance
+    const currentBalance = latestBalance !== undefined ? latestBalance : (subAdmin.walletBalance || subAdmin.wallet_balance || 0);
+    const newBalance = currentBalance + commissionAmount;
+    
+    await this.updateDocument('sub_admins', saId, {
+      walletBalance: newBalance,
+      wallet_balance: newBalance,
+      updatedAt: new Date().toISOString()
+    });
+    
+    // Record commission transaction
+    await this.addDocument('sub_admin_wallet_transactions', {
+      subAdminId: saId,
+      sub_admin_id: saId,
+      type: 'commission',
+      amount: commissionAmount,
+      reason: `Commission for ${serviceType} #${tx.id}`,
+      orderId: tx.id,
+      balanceAfter: newBalance,
+      createdAt: new Date().toISOString()
+    });
+
+    // ALSO update the transaction record itself with the commission amount for history tracking
+    await this.updateDocument('transactions', tx.id, {
+      commission_amount: commissionAmount,
+      commission_processed: true,
+      updated_at: new Date().toISOString()
+    });
+
+    console.log(`[Commission] Order #${tx.id} updated with commission_amount: ${commissionAmount}`);
+    return commissionAmount;
   },
 
   async signOut() {

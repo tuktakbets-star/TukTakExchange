@@ -14,7 +14,8 @@ import {
   User,
   Key,
   Mail,
-  Phone
+  Phone,
+  Calculator
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -39,7 +40,9 @@ export default function AdminSubAdmins() {
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isRequestDetailsModalOpen, setIsRequestDetailsModalOpen] = useState(false);
   const [isAdminBankModalOpen, setIsAdminBankModalOpen] = useState(false);
+  const [isCommissionModalOpen, setIsCommissionModalOpen] = useState(false);
   const [selectedSubAdmin, setSelectedSubAdmin] = useState<any>(null);
+  const [editingCommissions, setEditingCommissions] = useState<any>({});
   const [selectedRequest, setSelectedRequest] = useState<any>(null);
   const [editingServices, setEditingServices] = useState<string[] | null>(null);
   const [adminBankSettings, setAdminBankSettings] = useState<any>({
@@ -50,6 +53,7 @@ export default function AdminSubAdmins() {
   });
   const [history, setHistory] = useState<any[]>([]);
   const [depositAmount, setDepositAmount] = useState('');
+  const [ledgerBalances, setLedgerBalances] = useState<Record<string, number>>({});
   const [newSubAdmin, setNewSubAdmin] = useState({
     fullName: '',
     username: '',
@@ -70,6 +74,34 @@ export default function AdminSubAdmins() {
     fetchSubAdmins();
     fetchRequests();
     fetchAdminBankSettings();
+
+    // Subscribe to transactions to calculate real-time ledger balances for all operators
+    const unsubLedger = supabaseService.subscribeToCollection('sub_admin_wallet_transactions', [], (data) => {
+      const creditTypes = ['credit', 'deposit', 'refill', 'adjustment_add', 'bonus', 'commission'];
+      const debitTypes = ['debit', 'withdraw', 'adjustment_sub', 'fee'];
+      
+      const balances: Record<string, number> = {};
+      
+      (data || []).forEach(tx => {
+        const saId = tx.sub_admin_id || tx.subAdminId;
+        if (!saId) return;
+        
+        if (!balances[saId]) balances[saId] = 0;
+        
+        const amount = Number(tx.amount || 0);
+        if (creditTypes.includes(tx.type)) {
+          balances[saId] += amount;
+        } else if (debitTypes.includes(tx.type)) {
+          balances[saId] -= amount;
+        }
+      });
+      
+      setLedgerBalances(balances);
+    });
+
+    return () => {
+      unsubLedger();
+    };
   }, []);
 
   const fetchAdminBankSettings = async () => {
@@ -139,11 +171,41 @@ export default function AdminSubAdmins() {
     }
   };
 
+   const handleUpdateCommissions = async () => {
+    if (!selectedSubAdmin) return;
+    setLoading(true);
+    try {
+      // Force all keys to be snake_case for DB storage to be consistent
+      const commissionsToSave: any = {};
+      Object.keys(editingCommissions).forEach(k => {
+        const snakeKey = k.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+        commissionsToSave[snakeKey] = editingCommissions[k];
+      });
+
+      const res = await supabaseService.updateDocument('sub_admins', selectedSubAdmin.id, {
+        service_commissions: commissionsToSave,
+        serviceCommissions: commissionsToSave,
+        updated_at: new Date().toISOString()
+      });
+      
+      if (res.success) {
+        toast.success('Service commissions updated');
+        setIsCommissionModalOpen(false);
+        fetchSubAdmins();
+      }
+    } catch (error) {
+      toast.error('Failed to update commissions');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleUpdateServices = async (subId: string, services: string[]) => {
     try {
       await supabaseService.updateDocument('sub_admins', subId, { 
         allowed_services: services,
-        allowedServices: services 
+        allowedServices: services,
+        updated_at: new Date().toISOString()
       });
       toast.success('Services updated successfully');
       fetchSubAdmins();
@@ -176,6 +238,20 @@ export default function AdminSubAdmins() {
         balance_type: newSubAdmin.balanceType,
         allowed_services: newSubAdmin.allowedServices,
         allowedServices: newSubAdmin.allowedServices,
+        service_commissions: {
+          add_money: { type: 'percent', value: 0 },
+          cash_in: { type: 'percent', value: 0 },
+          exchange: { type: 'percent', value: 0 },
+          withdraw: { type: 'percent', value: 0 },
+          recharge: { type: 'percent', value: 0 }
+        },
+        serviceCommissions: {
+          add_money: { type: 'percent', value: 0 },
+          cash_in: { type: 'percent', value: 0 },
+          exchange: { type: 'percent', value: 0 },
+          withdraw: { type: 'percent', value: 0 },
+          recharge: { type: 'percent', value: 0 }
+        },
         wallet_balance: 0,
         status: 'active',
         is_online: false,
@@ -363,7 +439,7 @@ export default function AdminSubAdmins() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {[
           { label: 'Total Operators', value: subAdmins.length, icon: User, color: 'blue' },
-          { label: 'Total team Balance', value: `${subAdmins[0]?.balanceType === 'BDT' ? '৳' : subAdmins[0]?.balanceType === 'USDT' ? '$' : '₫'}${subAdmins.reduce((acc, curr) => acc + (curr.walletBalance ?? curr.wallet_balance ?? 0), 0).toLocaleString()}`, icon: Wallet, color: 'green' },
+          { label: 'Total team Balance', value: `${subAdmins[0]?.balanceType === 'BDT' ? '৳' : subAdmins[0]?.balanceType === 'USDT' ? '$' : '₫'}${subAdmins.reduce((acc, curr) => acc + (ledgerBalances[curr.id] ?? curr.walletBalance ?? curr.wallet_balance ?? 0), 0).toLocaleString()}`, icon: Wallet, color: 'green' },
           { label: 'Currently Active', value: subAdmins.filter(s => s.status === 'active').length, icon: ShieldCheck, color: 'cyan' },
         ].map((stat, i) => (
           <div key={i} className="p-8 bg-[#161b22] border border-white/5 rounded-[2.5rem] relative overflow-hidden group">
@@ -468,7 +544,7 @@ export default function AdminSubAdmins() {
                               </div>
                            </td>
                            <td className="px-8 py-6">
-                              <span className="text-lg font-black text-white">{sub.balanceType === 'BDT' ? '৳' : sub.balanceType === 'USDT' ? '$' : '₫'}{(sub.walletBalance ?? sub.wallet_balance ?? 0).toLocaleString()}</span>
+                              <span className="text-lg font-black text-white">{sub.balanceType === 'BDT' ? '৳' : sub.balanceType === 'USDT' ? '$' : '₫'}{(ledgerBalances[sub.id] ?? sub.walletBalance ?? sub.wallet_balance ?? 0).toLocaleString()}</span>
                            </td>
                            <td className="px-8 py-6 text-center">
                               <span className={cn(
@@ -500,6 +576,36 @@ export default function AdminSubAdmins() {
                                     className="h-9 w-9 p-0 rounded-xl hover:bg-blue-600/10 hover:text-blue-500 group-hover:ring-1 ring-blue-500/20"
                                  >
                                     <Eye className="w-4 h-4" />
+                                 </Button>
+                                 <Button 
+                                    onClick={() => {
+                                      setSelectedSubAdmin(sub);
+                                      const defaults: any = {
+                                        add_money: { type: 'percent', value: 0 },
+                                        cash_in: { type: 'percent', value: 0 },
+                                        exchange: { type: 'percent', value: 0 },
+                                        withdraw: { type: 'percent', value: 0 },
+                                        recharge: { type: 'percent', value: 0 }
+                                      };
+                                      const rawComms = sub.service_commissions || sub.serviceCommissions || {};
+                                      const normalizedComms: any = {};
+                                      // map ANY camelCase keys back to snake_case for editing
+                                      Object.keys(rawComms).forEach(k => {
+                                        const snakeKey = k.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+                                        normalizedComms[snakeKey] = rawComms[k];
+                                      });
+
+                                      setEditingCommissions({
+                                        ...defaults,
+                                        ...normalizedComms
+                                      });
+                                      setIsCommissionModalOpen(true);
+                                    }}
+                                    variant="dark" 
+                                    className="h-9 w-9 p-0 rounded-xl hover:bg-red-600/10 hover:text-red-500 group-hover:ring-1 ring-red-500/20"
+                                    title="Manage Commissions"
+                                 >
+                                    <Calculator className="w-4 h-4" />
                                  </Button>
                                  <Button 
                                     onClick={() => {
@@ -741,9 +847,9 @@ export default function AdminSubAdmins() {
                    <option value="BDT">BDT Balance</option>
                    <option value="USDT">USDT Asset</option>
                  </select>
-              </div>
+               </div>
 
-              <div className="space-y-4 pt-2">
+               <div className="space-y-4 pt-2">
                  <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Allowed Services (Service Limitations)</Label>
                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                    {[
@@ -796,7 +902,7 @@ export default function AdminSubAdmins() {
               <div className="p-6 bg-white/5 rounded-2xl border border-white/10 flex items-center justify-between">
                 <div>
                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Current Balance</p>
-                  <p className="text-xl font-black text-white mt-1">{selectedSubAdmin?.balanceType === 'BDT' ? '৳' : selectedSubAdmin?.balanceType === 'USDT' ? '$' : '₫'}{(selectedSubAdmin?.walletBalance ?? selectedSubAdmin?.wallet_balance ?? 0).toLocaleString()}</p>
+                  <p className="text-xl font-black text-white mt-1">{selectedSubAdmin?.balanceType === 'BDT' ? '৳' : selectedSubAdmin?.balanceType === 'USDT' ? '$' : '₫'}{(ledgerBalances[selectedSubAdmin?.id] ?? selectedSubAdmin?.walletBalance ?? selectedSubAdmin?.wallet_balance ?? 0).toLocaleString()}</p>
                 </div>
                 <div className="w-12 h-12 bg-green-600/20 rounded-xl flex items-center justify-center">
                   <Wallet className="w-6 h-6 text-green-500" />
@@ -1191,6 +1297,95 @@ export default function AdminSubAdmins() {
                   Close Details
                 </Button>
               )}
+           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Service Commissions Modal */}
+      <Dialog open={isCommissionModalOpen} onOpenChange={setIsCommissionModalOpen}>
+        <DialogContent className="max-w-2xl bg-slate-900 border-slate-800 text-white rounded-[2.5rem] p-0 overflow-hidden shadow-2xl">
+           <div className="p-8 bg-gradient-to-br from-red-600/20 to-pink-600/20 border-b border-white/5 relative">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 blur-3xl rounded-full translate-x-16 -translate-y-16" />
+              <DialogTitle className="text-2xl font-display font-black tracking-tight">Service Commissions</DialogTitle>
+              <p className="text-sm text-red-500/80 font-bold mt-1 uppercase tracking-widest">Set profit rates for @{selectedSubAdmin?.username}</p>
+           </div>
+           
+           <div className="p-8 space-y-6 max-h-[60vh] overflow-y-auto custom-scrollbar">
+              <div className="grid grid-cols-1 gap-6">
+                 {[
+                   { id: 'add_money', label: 'Add Money' },
+                   { id: 'cash_in', label: 'Cash In' },
+                   { id: 'exchange', label: 'Exchange' },
+                   { id: 'withdraw', label: 'Withdraw' },
+                   { id: 'recharge', label: 'Recharge' }
+                 ].filter(s => (selectedSubAdmin?.allowed_services || selectedSubAdmin?.allowedServices || []).includes(s.id))
+                  .map((service) => (
+                   <div key={service.id} className="p-6 bg-white/5 rounded-2xl border border-white/10 space-y-4">
+                      <div className="flex items-center justify-between">
+                         <Label className="text-xs font-black uppercase tracking-widest text-slate-300">{service.label}</Label>
+                         <div className="flex bg-slate-950 rounded-xl p-1 gap-1">
+                            <button 
+                              type="button"
+                              onClick={() => setEditingCommissions({
+                                ...editingCommissions,
+                                [service.id]: { ...editingCommissions[service.id], type: 'percent' }
+                              })}
+                              className={cn(
+                                "px-3 py-1 rounded-lg text-[8px] font-black uppercase transition-all",
+                                editingCommissions[service.id]?.type === 'percent' ? "bg-red-600 text-white" : "text-slate-500 hover:text-white"
+                              )}
+                            >
+                               Percent (%)
+                            </button>
+                            <button 
+                              type="button"
+                              onClick={() => setEditingCommissions({
+                                ...editingCommissions,
+                                [service.id]: { ...editingCommissions[service.id], type: 'fixed' }
+                              })}
+                              className={cn(
+                                "px-3 py-1 rounded-lg text-[8px] font-black uppercase transition-all",
+                                editingCommissions[service.id]?.type === 'fixed' ? "bg-red-600 text-white" : "text-slate-500 hover:text-white"
+                              )}
+                            >
+                               Fixed
+                            </button>
+                         </div>
+                      </div>
+                      <div className="relative">
+                         <Input 
+                            type="number"
+                            value={editingCommissions[service.id]?.value}
+                            onChange={(e) => setEditingCommissions({
+                              ...editingCommissions,
+                              [service.id]: { ...editingCommissions[service.id], value: Number(e.target.value) }
+                            })}
+                            className="h-12 bg-white/5 border-white/10 rounded-xl px-5 font-black text-white"
+                            placeholder="0"
+                         />
+                         <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-600">
+                            {editingCommissions[service.id]?.type === 'percent' ? '%' : (selectedSubAdmin?.balanceType || 'VND')}
+                         </span>
+                      </div>
+                   </div>
+                 ))}
+              </div>
+           </div>
+
+           <div className="p-8 border-t border-white/5 bg-slate-950/50 flex gap-4">
+              <Button 
+                onClick={() => setIsCommissionModalOpen(false)}
+                className="flex-1 h-12 bg-slate-800 hover:bg-slate-700 text-white rounded-2xl font-bold"
+              >
+                 Cancel
+              </Button>
+              <Button 
+                onClick={handleUpdateCommissions}
+                disabled={loading}
+                className="flex-[2] h-12 bg-red-600 hover:bg-red-500 text-white rounded-2xl font-bold shadow-xl shadow-red-600/20"
+              >
+                 {loading ? 'Saving Rates...' : 'Save Commissions'}
+              </Button>
            </div>
         </DialogContent>
       </Dialog>

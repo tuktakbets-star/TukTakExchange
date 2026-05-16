@@ -184,6 +184,8 @@ export default function Wallet() {
       const realProofUrl = await firebaseService.uploadFile(proofFile);
       const tx = {
         uid: profile?.uid,
+        user_name: profile?.full_name || profile?.displayName || "Customer",
+        full_name: profile?.full_name || profile?.displayName || "Customer",
         type: 'deposit',
         status: 'pending',
         amount: Number(amount),
@@ -193,6 +195,19 @@ export default function Wallet() {
         proofUrl: realProofUrl
       };
       const docId = await firebaseService.addDocument('transactions', tx);
+      
+      if (docId) {
+        // --- SEND TELEGRAM NOTIFICATION DIRECTLY ---
+        try {
+          fetch('/api/telegram-notifier', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...tx, id: docId })
+          }).catch(e => console.error('Telegram Notify Error:', e));
+        } catch (e) {}
+        // -------------------------------------------
+      }
+
       toast.success('Deposit request submitted!');
       navigate(`/waiting/${docId}`);
     } catch (error) {
@@ -327,6 +342,9 @@ export default function Wallet() {
 
       const tx = selectedTxForConfirm;
       await firebaseService.updateDocument('transactions', tx.id, { status: 'completed' });
+      
+      // Process Sub-Admin Commission
+      await firebaseService.processSubAdminCommission(tx);
       
       const walletId = `${profile?.uid}_${tx.targetCurrency || tx.currency}`;
       const wallet = wallets.find(w => w.currency === (tx.targetCurrency || tx.currency));

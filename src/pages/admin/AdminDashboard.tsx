@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { firebaseService } from '../../lib/firebaseService';
+import { supabaseService } from '../../lib/supabaseService';
 import { useTranslation } from 'react-i18next';
 import { 
   Users, 
@@ -44,26 +44,39 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubUsers = firebaseService.subscribeToCollection('users', [], (data) => {
+    const unsubUsers = supabaseService.subscribeToCollection('users', [], (data) => {
       setStats(prev => ({ ...prev, users: data.length }));
     });
 
-    const unsubWallets = firebaseService.subscribeToCollection('wallets', [], (data) => {
-      const total = data.reduce((acc, curr) => {
-        const amount = curr.currency === 'VND' ? curr.balance : curr.balance * 25000;
-        return acc + amount;
-      }, 0);
-      setStats(prev => ({ ...prev, totalBalance: total }));
+    const unsubWallets = supabaseService.subscribeToCollection('wallets', [], (walletsData) => {
+      supabaseService.getCollection('sub_admins').then(subAdminsData => {
+        const userTotal = walletsData.reduce((acc, curr) => {
+          const amount = curr.currency === 'VND' ? (Number(curr.balance) || 0) : (Number(curr.balance) || 0) * 25000;
+          return acc + amount;
+        }, 0);
+        
+        const subAdminTotal = (subAdminsData || []).reduce((acc: number, curr: any) => {
+          return acc + (Number(curr.walletBalance ?? curr.wallet_balance ?? 0));
+        }, 0);
+
+        setStats(prev => ({ ...prev, totalBalance: userTotal + subAdminTotal }));
+      });
     });
 
-    const unsubTX = firebaseService.subscribeToCollection('transactions', [], (data) => {
-      const pendingD = data.filter(tx => tx.type === 'deposit' && tx.status === 'pending').length;
-      const pendingS = data.filter(tx => tx.type === 'send' && tx.status === 'pending').length;
-      const pendingW = data.filter(tx => tx.type === 'withdraw' && tx.status === 'pending').length;
-      const pendingR = data.filter(tx => tx.type === 'recharge' && tx.status === 'pending').length;
-      const disputes = data.filter(tx => tx.status === 'disputed').length;
-      const donations = data.filter(tx => tx.type === 'donation').reduce((acc, curr) => acc + curr.amount, 0);
+    const unsubTX = supabaseService.subscribeToCollection('transactions', [], (data) => {
+      const pendingD = data.filter((tx: any) => tx.type === 'deposit' && tx.status === 'pending').length;
+      const pendingS = data.filter((tx: any) => tx.type === 'send' && tx.status === 'pending').length;
+      const pendingW = data.filter((tx: any) => tx.type === 'withdraw' && tx.status === 'pending').length;
+      const pendingR = data.filter((tx: any) => tx.type === 'recharge' && tx.status === 'pending').length;
+      const disputes = data.filter((tx: any) => tx.status === 'disputed').length;
+      const donations = data.filter((tx: any) => tx.type === 'donation').reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
       
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const volume = data
+        .filter((tx: any) => (tx.status === 'completed' || tx.status === 'approved') && new Date(tx.created_at || tx.createdAt) >= today)
+        .reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
+
       setStats(prev => ({ 
         ...prev, 
         pendingDeposits: pendingD,
@@ -71,25 +84,29 @@ export default function AdminDashboard() {
         pendingWithdraws: pendingW,
         pendingRecharges: pendingR,
         disputes,
-        donations
+        donations,
+        todayVolume: volume
       }));
-      setRecentActivity(data.slice(0, 8));
+      setRecentActivity(data.slice(0, 8).map(tx => ({
+        ...tx,
+        amount: Number(tx.amount) || 0
+      })));
     });
 
-    const unsubRates = firebaseService.subscribeToCollection('rates', [], (data) => {
+    const unsubRates = supabaseService.subscribeToCollection('rates', [], (data) => {
       setStats(prev => ({ ...prev, rates: data }));
     });
 
-    const unsubMessages = firebaseService.subscribeToCollection('chats', [], (data) => {
+    const unsubMessages = supabaseService.subscribeToCollection('chats', [], (data) => {
       setStats(prev => ({ ...prev, messages: data.length }));
     });
 
-    const unsubNotifications = firebaseService.subscribeToCollection('notifications', [], (data) => {
+    const unsubNotifications = supabaseService.subscribeToCollection('notifications', [], (data) => {
       setStats(prev => ({ ...prev, notifications: data.length }));
     });
 
-    const unsubKYC = firebaseService.subscribeToCollection('kycSubmissions', [], (data) => {
-      const pending = data.filter(k => k.status === 'pending' || k.status === 'submitted');
+    const unsubKYC = supabaseService.subscribeToCollection('kyc_submissions', [], (data) => {
+      const pending = data.filter((k: any) => k.status === 'pending' || k.status === 'submitted');
       setStats(prev => ({ ...prev, pendingKYC: pending.length }));
       setPendingKYCList(pending.slice(0, 5));
     });
@@ -108,8 +125,9 @@ export default function AdminDashboard() {
 
   const statCards = [
     { label: t('totalUsers'), value: stats.users, icon: Users, color: 'text-blue-500', bg: 'bg-blue-500/10', path: '/admin/users' },
-    { label: t('totalBalance'), value: `₫${stats.totalBalance.toLocaleString()}`, icon: Wallet, color: 'text-emerald-500', bg: 'bg-emerald-500/10', path: '/admin/users' },
-    { label: t('pendingDeposits'), value: stats.pendingDeposits, icon: ArrowDownLeft, color: 'text-yellow-500', bg: 'bg-yellow-500/10', path: '/admin/deposits' },
+    { label: t('totalBalance'), value: `₫${stats.totalBalance.toLocaleString()}`, icon: Wallet, color: 'text-emerald-500', bg: 'bg-emerald-500/10', path: '/admin-dashboard/users' },
+    { label: t('today_volume', "Today's Volume"), value: `₫${(stats.todayVolume || 0).toLocaleString()}`, icon: TrendingUp, color: 'text-blue-400', bg: 'bg-blue-400/10', path: '/admin-dashboard' },
+    { label: t('pendingDeposits'), value: stats.pendingDeposits, icon: ArrowDownLeft, color: 'text-yellow-500', bg: 'bg-yellow-500/10', path: '/admin-dashboard' },
     { label: t('pendingSends'), value: stats.pendingSends, icon: Send, color: 'text-purple-500', bg: 'bg-purple-500/10', path: '/admin/send-money' },
     { label: t('pendingWithdraws'), value: stats.pendingWithdraws, icon: ArrowUpRight, color: 'text-orange-500', bg: 'bg-orange-500/10', path: '/admin/withdraw' },
     { label: t('pendingRecharges'), value: stats.pendingRecharges, icon: Zap, color: 'text-cyan-500', bg: 'bg-cyan-500/10', path: '/admin/recharge' },

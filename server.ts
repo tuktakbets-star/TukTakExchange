@@ -86,7 +86,7 @@ async function startServer() {
     });
   });
 
-  // API 1: Transaction Notifier (Called by Supabase Webhook)
+  // API 1: Transaction Notifier (Called by Supabase Webhook OR Frontend)
   // Support both POST (from Supabase) and GET (for browser testing)
   app.all("/api/telegram-notifier", async (req, res) => {
     try {
@@ -112,14 +112,14 @@ async function startServer() {
         return res.status(200).json({ status: "ignored", reason: "no_data_found" });
       }
 
-      log(`✅ Processing Order for: ${record.user_name || record.userName || 'Unknown'}`);
+      log(`✅ Processing Order for: ${record.user_name || record.userName || record.full_name || 'Unknown'}`);
       
       const userName = record.user_name || record.userName || record.full_name || record.customer_name || record.name || "Customer";
-      const orderType = (record.type || record.order_type || "Transaction").toUpperCase();
+      const orderType = (record.type || record.order_type || "Transaction").replace('_', ' ').toUpperCase();
       const amount = record.amount || record.source_amount || record.total_amount || 0;
       const currency = record.currency || (record.type?.includes('withdraw') ? 'BDT' : 'VND');
-      const country = record.country || "Bangladesh";
-      const txId = record.id || "test_" + Date.now();
+      const country = record.country || record.target_country || "Bangladesh";
+      const txId = record.id || record.uid || "test_" + Date.now();
       
       let bankInfo: any = {};
       try {
@@ -128,23 +128,31 @@ async function startServer() {
         bankInfo = record;
       }
       
-      const bankName = (bankInfo as any).bankName || (bankInfo as any).bank_name || record.method || "N/A";
-      const holderName = (bankInfo as any).accountName || (bankInfo as any).account_name || (bankInfo as any).name || "N/A";
-      const accNumber = (bankInfo as any).accountNumber || (bankInfo as any).account_number || record.receiver_number || "N/A";
+      const bankName = (bankInfo as any).bankName || (bankInfo as any).bank_name || record.method || record.account_type || "N/A";
+      const holderName = (bankInfo as any).accountName || (bankInfo as any).account_name || (bankInfo as any).name || (bankInfo as any).receiverName || "N/A";
+      const accNumber = (bankInfo as any).accountNumber || (bankInfo as any).account_number || record.receiver_number || (bankInfo as any).account_no || "N/A";
 
       const now = new Date();
       const timeStr = now.toLocaleDateString('en-GB') + ' ' + now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Dhaka' });
 
-      const message = `🚨 <b>[V3-LIVE] New Order Received!</b>\n\n` +
+      let message = `🚀 <b>New ${orderType} Received!</b>\n\n` +
                       `👤 <b>User:</b> ${userName}\n` +
                       `🌍 <b>Country:</b> ${country}\n` +
-                      `💱 <b>Type:</b> ${orderType}\n` +
-                      `💰 <b>Amount:</b> ${amount} ${currency}\n` +
-                      `💳 <b>Method:</b> ${bankName}\n` +
-                      `🔢 <b>Number:</b> ${accNumber}\n` +
-                      `👤 <b>Holder:</b> ${holderName}\n` +
-                      `⏰ <b>Time:</b> ${timeStr}`;
+                      `💰 <b>Amount:</b> ${Number(amount).toLocaleString()} ${currency}\n`;
+      
+      if (record.target_currency && record.target_amount) {
+        message += `🎯 <b>Target:</b> ${Number(record.target_amount).toLocaleString()} ${record.target_currency}\n`;
+      }
 
+      message += `💳 <b>Method:</b> ${bankName}\n` +
+                 `🔢 <b>Number:</b> ${accNumber}\n` +
+                 `👤 <b>Holder:</b> ${holderName}\n` +
+                 `🆔 <b>ID:</b> <code>${txId}</code>\n` +
+                 `⏰ <b>Time:</b> ${timeStr}\n\n` +
+                 `[Click here to view Admin Panel](${process.env.APP_URL || 'https://ai.studio'}/admin/transactions)`;
+
+      log(`📤 Sending message to Chat ID: ${TELEGRAM_CHAT_ID}`);
+      
       const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -159,8 +167,13 @@ async function startServer() {
       });
 
       const data = await response.json();
-      log(`📤 Telegram Result: ${data.ok ? 'SUCCESS' : 'FAILED'}`);
-      res.json({ success: data.ok, record_id: txId, method: req.method });
+      log(`📤 Telegram API Response: ${JSON.stringify(data)}`);
+      
+      if (!data.ok) {
+        log(`❌ Telegram Send Failed: ${data.description}`);
+      }
+
+      res.json({ success: data.ok, record_id: txId, method: req.method, tg: data });
     } catch (error: any) {
       log(`❌ Notifier Error: ${error.message}`);
       res.status(500).json({ error: error.message });

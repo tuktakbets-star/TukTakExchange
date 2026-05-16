@@ -132,7 +132,7 @@ export default function OperatorDashboard() {
       ]);
 
       const flow = (walletTx || []).reduce((acc, tx) => {
-        if (tx.type === 'deposit' || tx.type === 'credit' || tx.type === 'refill' || tx.type === 'adjustment_add' || tx.type === 'bonus') acc.credit += (tx.amount || 0);
+        if (tx.type === 'deposit' || tx.type === 'credit' || tx.type === 'refill' || tx.type === 'adjustment_add' || tx.type === 'bonus' || tx.type === 'commission') acc.credit += (tx.amount || 0);
         if (tx.type === 'debit' || tx.type === 'withdraw' || tx.type === 'adjustment_sub' || tx.type === 'fee') acc.debit += (tx.amount || 0);
         return acc;
       }, { credit: 0, debit: 0 });
@@ -220,7 +220,7 @@ export default function OperatorDashboard() {
 
       {/* Quick Shortcuts */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
-        {(!operator?.allowed_services?.length || operator?.allowed_services?.includes('add_money')) && (
+        {(!operator?.allowedServices?.length || operator?.allowedServices?.includes('add_money')) && (
           <button 
             onClick={() => navigate('/operator/orders/add-money')}
             className="p-3 sm:p-4 bg-green-600/10 border border-green-500/20 rounded-2xl flex flex-col items-center gap-2 hover:bg-green-600/20 transition-all group"
@@ -231,7 +231,7 @@ export default function OperatorDashboard() {
             <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t('addMoney')}</span>
           </button>
         )}
-        {(!operator?.allowed_services?.length || operator?.allowed_services?.includes('withdraw')) && (
+        {(!operator?.allowedServices?.length || operator?.allowedServices?.includes('withdraw')) && (
           <button 
             onClick={() => navigate('/operator/orders/withdraw')}
             className="p-3 sm:p-4 bg-purple-600/10 border border-purple-500/20 rounded-2xl flex flex-col items-center gap-2 hover:bg-purple-600/20 transition-all group"
@@ -242,7 +242,7 @@ export default function OperatorDashboard() {
             <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t('withdraw')}</span>
           </button>
         )}
-        {(!operator?.allowed_services?.length || operator?.allowed_services?.includes('exchange')) && (
+        {(!operator?.allowedServices?.length || operator?.allowedServices?.includes('exchange')) && (
           <button 
             onClick={() => navigate('/operator/orders/exchange')}
             className="p-3 sm:p-4 bg-blue-600/10 border border-blue-500/20 rounded-2xl flex flex-col items-center gap-2 hover:bg-blue-600/20 transition-all group"

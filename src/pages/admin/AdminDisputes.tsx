@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { firebaseService, collection, addDoc, serverTimestamp, db } from '../../lib/firebaseService';
+import { supabaseService, serverTimestamp } from '../../lib/supabaseService';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { 
@@ -32,11 +32,11 @@ export default function AdminDisputes() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubTX = firebaseService.subscribeToCollection('transactions', [], (data) => {
-      setDisputes(data.filter(tx => tx.status === 'disputed'));
+    const unsubTX = supabaseService.subscribeToCollection('transactions', [], (data) => {
+      setDisputes(data.filter((tx: any) => tx.status === 'disputed'));
     });
-    const unsubUsers = firebaseService.subscribeToCollection('users', [], (data) => setUsers(data));
-    const unsubWallets = firebaseService.subscribeToCollection('wallets', [], (data) => setWallets(data));
+    const unsubUsers = supabaseService.subscribeToCollection('users', [], (data) => setUsers(data));
+    const unsubWallets = supabaseService.subscribeToCollection('wallets', [], (data) => setWallets(data));
 
     setLoading(false);
     return () => {
@@ -51,23 +51,23 @@ export default function AdminDisputes() {
 
     try {
       if (action === 'complete') {
-        await firebaseService.updateDocument('transactions', tx.id, { 
+        await supabaseService.updateDocument('transactions', tx.id, { 
           status: 'completed', 
-          updatedAt: new Date().toISOString() 
+          updated_at: new Date().toISOString() 
         });
         toast.success(t('transaction_completed_success'));
       } else {
-        await firebaseService.updateDocument('transactions', tx.id, { 
+        await supabaseService.updateDocument('transactions', tx.id, { 
           status: 'failed', 
-          updatedAt: new Date().toISOString() 
+          updated_at: new Date().toISOString() 
         });
         // Refund logic
         const walletId = `${tx.uid}_${tx.currency}`;
         const wallet = wallets.find(w => w.id === walletId);
         if (wallet) {
-          await firebaseService.updateDocument('wallets', walletId, {
-            balance: wallet.balance + tx.amount,
-            updatedAt: new Date().toISOString()
+          await supabaseService.updateDocument('wallets', walletId, {
+            balance: Number(wallet.balance || 0) + Number(tx.amount || 0),
+            updated_at: new Date().toISOString()
           });
         }
         toast.success(t('transaction_refunded_success'));
@@ -84,26 +84,25 @@ export default function AdminDisputes() {
   const handleMessageUser = async (tx: any, initialMsg?: string) => {
     try {
       const user = users.find(u => u.uid === tx.uid);
-      const chatRef = collection(db, 'chats', tx.uid, 'messages');
       const text = initialMsg || `Hello ${user?.displayName || 'User'}, regarding your dispute for transaction ${tx.id.slice(-8)}, I would like to discuss some details.`;
       
-      await addDoc(chatRef, {
+      await supabaseService.addDocument(`chats/${tx.uid}/messages`, {
         text,
-        senderId: 'admin',
-        senderName: 'Admin',
-        senderRole: 'admin',
-        createdAt: serverTimestamp(),
+        sender_id: 'admin',
+        sender_name: 'Admin',
+        sender_role: 'admin',
+        created_at: serverTimestamp(),
         type: 'text'
       });
 
-      await firebaseService.setDocument('chats', tx.uid, {
-        lastMessage: text,
-        lastMessageAt: serverTimestamp(),
-        unreadCount: 0,
-        userName: user?.displayName || 'User',
-        userEmail: user?.email || '',
+      await supabaseService.setDocument('chats', tx.uid, {
+        last_message: text,
+        last_message_at: serverTimestamp(),
+        unread_count: 0,
+        user_name: user?.displayName || 'User',
+        user_email: user?.email || '',
         uid: tx.uid,
-        updatedAt: serverTimestamp()
+        updated_at: serverTimestamp()
       });
 
       toast.success('Message sent to customer');
@@ -116,7 +115,7 @@ export default function AdminDisputes() {
   const handleDeleteTransaction = async (txId: string) => {
     if (!confirm('Are you sure you want to delete this transaction record? This only removes the record from the history, it does not refund balance.')) return;
     try {
-      await firebaseService.deleteDocument('transactions', txId);
+      await supabaseService.deleteDocument('transactions', txId);
       toast.success('Transaction record deleted');
     } catch (error) {
       toast.error('Failed to delete transaction');

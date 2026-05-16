@@ -52,8 +52,6 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
   const [isStartConfirmOpen, setIsStartConfirmOpen] = useState(false);
   const [isPaidConfirmOpen, setIsPaidConfirmOpen] = useState(false);
   const [proofFile, setProofFile] = useState<File | null>(null);
-  const [fromAccount, setFromAccount] = useState('');
-  const [transactionId, setTransactionId] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -97,6 +95,31 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
     toast.loading('Accepting order...', { id: 'accept' });
     
     try {
+      // Check current status to avoid race conditions
+      const { data: currentOrder } = await supabaseService.getDocument('transactions', selectedOrder.id);
+      
+      if (!currentOrder) {
+        toast.error('Order not found', { id: 'accept' });
+        setIsAcceptConfirmOpen(false);
+        return;
+      }
+
+      const assignedId = currentOrder.assigned_sub_admin_id || currentOrder.assignedSubAdminId;
+      
+      if (currentOrder.status !== 'pending' && currentOrder.status !== 'accepted') {
+        toast.error('Order is already being processed or finished by someone else.', { id: 'accept' });
+        setIsAcceptConfirmOpen(false);
+        fetchData();
+        return;
+      }
+
+      if (assignedId && assignedId !== operator.id) {
+        toast.error('This order has already been claimed by another operator.', { id: 'accept' });
+        setIsAcceptConfirmOpen(false);
+        fetchData();
+        return;
+      }
+
       await supabaseService.updateDocument('transactions', selectedOrder.id, {
         status: 'accepted',
         assigned_sub_admin_id: operator.id,
@@ -115,6 +138,18 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
 
   const handleStartProcessing = async () => {
     if (!selectedOrder || !operator) return;
+    
+    // Verify ownership before starting
+    const { data: currentOrder } = await supabaseService.getDocument('transactions', selectedOrder.id);
+    const assignedId = currentOrder?.assigned_sub_admin_id || currentOrder?.assignedSubAdminId;
+    
+    if (assignedId && assignedId !== operator.id) {
+      toast.error('This order is assigned to another operator!', { id: 'start' });
+      setIsStartConfirmOpen(false);
+      fetchData();
+      return;
+    }
+
     toast.loading('Starting task...', { id: 'start' });
     
     try {
@@ -136,22 +171,40 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
       toast.error('Please upload a payment proof screenshot');
       return;
     }
+
+    // Verify ownership before marking as paid
+    const { data: currentOrder } = await supabaseService.getDocument('transactions', selectedOrder.id);
+    const assignedId = currentOrder?.assigned_sub_admin_id || currentOrder?.assignedSubAdminId;
+    
+    if (assignedId && assignedId !== operator.id) {
+      toast.error('This order is assigned to another operator!', { id: 'paid' });
+      setIsSubmitting(false);
+      setIsPaidConfirmOpen(false);
+      fetchData();
+      return;
+    }
+
     setIsSubmitting(true);
     toast.loading('Uploading proof and marking as paid...', { id: 'paid' });
     
     try {
       const proofUrl = await supabaseService.uploadFile(proofFile);
       
-      await supabaseService.updateDocument('transactions', selectedOrder.id, {
+      const res = await supabaseService.updateDocument('transactions', selectedOrder.id, {
         status: 'waiting_confirmation',
         admin_proof: proofUrl,
-        sub_admin_from_account: fromAccount,
-        transaction_id: transactionId,
         sub_admin_action: 'mark_as_paid',
         sub_admin_actioned_at: new Date().toISOString(),
+        assigned_sub_admin_id: operator.id,
+        assignedSubAdminId: operator.id,
         paid_at: new Date().toISOString(),
-        paidAt: new Date().toISOString()
+        updated_at: new Date().toISOString()
       });
+
+      if (!res.success) {
+        setIsSubmitting(false);
+        return; // supabaseService already showed a toast error
+      }
 
       await supabaseService.addDocument('sub_admin_logs', {
         sub_admin_id: operator.id,
@@ -263,6 +316,7 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
                 <th className="px-6 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">User & Source</th>
                 <th className="px-6 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">Bank/Dest Details</th>
                 <th className="px-6 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">Amount</th>
+                <th className="px-6 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap text-green-500">Comm.</th>
                 <th className="px-6 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">Status</th>
                 <th className="px-6 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right whitespace-nowrap">Actions</th>
               </tr>
@@ -345,6 +399,15 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
                         <span className="text-xs font-bold text-blue-400">
                            → {order.targetAmount || order.target_amount} {order.targetCurrency || order.target_currency}
                         </span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-6 py-5">
+                    <div className="flex flex-col">
+                      {order.commission_amount || order.commissionAmount ? (
+                        <span className="text-green-500 font-bold text-xs">₫{(order.commission_amount || order.commissionAmount).toLocaleString()}</span>
+                      ) : (
+                        <span className="text-slate-500 text-[10px]">-</span>
                       )}
                     </div>
                   </td>
@@ -464,6 +527,11 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
                     <div>
                       <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">Amount</p>
                       <p className="font-black text-white text-base">{(order.currency === 'VND' || order.type === 'cash_in' || order.type === 'add_money') ? '₫' : order.currency === 'USDT' ? '$' : '৳'}{order.amount?.toLocaleString()}</p>
+                      {(order.commission_amount || order.commissionAmount) && (
+                        <p className="text-[10px] text-green-500 font-bold mt-1">
+                          Comm: ₫{(order.commission_amount || order.commissionAmount).toLocaleString()}
+                        </p>
+                      )}
                       {mode === 'exchange' && (
                         <p className="text-[10px] text-blue-400 font-bold mt-1">
                           → {order.targetAmount || order.target_amount || (order.amount * 1000)} {order.targetCurrency || order.target_currency}
@@ -719,28 +787,6 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
                       <span className="text-slate-500 font-bold uppercase tracking-widest text-[10px]">Paying User:</span>
                       <span className="text-white font-black">{(selectedOrder?.currency === 'VND' || selectedOrder?.type === 'cash_in' || selectedOrder?.type === 'add_money') ? '₫' : selectedOrder?.currency === 'USDT' ? '$' : '৳'}{selectedOrder?.amount}</span>
                     </div>
-                 </div>
-
-                 <div className="space-y-4 pt-4">
-                   <div className="space-y-2 text-left">
-                     <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Paid From (Your Account)</Label>
-                     <Input 
-                       placeholder="e.g. My Bank / My Number / Card X"
-                       value={fromAccount}
-                       onChange={(e) => setFromAccount(e.target.value)}
-                       className="bg-white/5 border-white/10 rounded-xl"
-                     />
-                   </div>
-
-                   <div className="space-y-2 text-left">
-                     <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Transaction ID / Reference (Optional)</Label>
-                     <Input 
-                       placeholder="Enter transaction code"
-                       value={transactionId}
-                       onChange={(e) => setTransactionId(e.target.value)}
-                       className="bg-white/5 border-white/10 rounded-xl"
-                     />
-                   </div>
                  </div>
               </div>
               

@@ -17,7 +17,8 @@ import {
   Eye,
   Info,
   X,
-  FileText
+  FileText,
+  Calculator
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -57,9 +58,11 @@ export default function OperatorHistory() {
     
     // Calculate simple stats
     const totalAmount = (data || []).reduce((acc, curr) => acc + (curr.amount || 0), 0);
+    const totalCommission = (data || []).reduce((acc, curr) => acc + (curr.commission_amount || 0), 0);
     setStats({
       totalHandled: data?.length || 0,
-      totalAmount
+      totalAmount,
+      totalCommission
     });
     
     setLoading(false);
@@ -94,7 +97,7 @@ export default function OperatorHistory() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
         <motion.div
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
@@ -109,6 +112,25 @@ export default function OperatorHistory() {
             </div>
             <div className="w-12 h-12 sm:w-16 sm:h-16 bg-blue-600/10 rounded-2xl sm:rounded-3xl flex items-center justify-center border border-blue-500/20">
                <ArrowUpRight className="w-6 h-6 sm:w-8 sm:h-8 text-blue-500" />
+            </div>
+          </div>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, x: 0, y: 20 }}
+          animate={{ opacity: 1, x: 0, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="p-6 sm:p-8 bg-gradient-to-br from-[#161b22] to-slate-900 border border-white/5 rounded-[2rem] sm:rounded-[2.5rem] relative overflow-hidden"
+        >
+          <div className="absolute top-0 right-0 w-32 h-32 bg-green-600/10 blur-[80px] rounded-full" />
+          <div className="relative flex items-center justify-between">
+            <div className="space-y-1 sm:space-y-2">
+              <p className="text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] leading-none mb-1">Total Commission</p>
+              <h3 className="text-2xl sm:text-3xl font-black text-green-500">₫{(stats.totalCommission || 0).toLocaleString()}</h3>
+              <p className="text-[10px] sm:text-xs font-bold text-slate-600 italic">Earnings summary</p>
+            </div>
+            <div className="w-12 h-12 sm:w-16 sm:h-16 bg-green-600/10 rounded-2xl sm:rounded-3xl flex items-center justify-center border border-green-500/20">
+               <Calculator className="w-6 h-6 sm:w-8 sm:h-8 text-green-500" />
             </div>
           </div>
         </motion.div>
@@ -168,6 +190,7 @@ export default function OperatorHistory() {
                 <th className="px-6 py-4 text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">User</th>
                 <th className="px-6 py-4 text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">Type</th>
                 <th className="px-6 py-4 text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">Amount</th>
+                <th className="px-6 py-4 text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">Commission</th>
                 <th className="px-6 py-4 text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">Action</th>
                 <th className="px-6 py-4 text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right whitespace-nowrap">Status</th>
               </tr>
@@ -196,6 +219,11 @@ export default function OperatorHistory() {
                           row.currency === 'USDT' ? '$' : 
                           row.currency === 'BDT' ? '৳' : '₫'}
                          {row.amount.toLocaleString()}
+                       </span>
+                    </td>
+                    <td className="px-6 py-4">
+                       <span className="text-xs font-bold text-green-500">
+                         +{row.commission_amount ? row.commission_amount.toLocaleString() : '0'}
                        </span>
                     </td>
                     <td className="px-6 py-4">
@@ -255,6 +283,7 @@ export default function OperatorHistory() {
                 <div className="space-y-1">
                   <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">#{row.id.substring(0, 8).toUpperCase()}</p>
                   <p className="text-lg font-black text-white">{row.currency === 'VND' ? '₫' : row.currency === 'USDT' ? '$' : '৳'}{row.amount.toLocaleString()}</p>
+                  <p className="text-[10px] font-bold text-green-500">Commission: +{row.commission_amount ? row.commission_amount.toLocaleString() : '0'}</p>
                 </div>
                 <div className={cn(
                   "px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider border",
@@ -350,6 +379,14 @@ export default function OperatorHistory() {
                       {selectedOrder.amount.toLocaleString()}
                     </h4>
                   </div>
+                  {selectedOrder.commission_amount > 0 && (
+                    <div className="p-5 bg-green-500/10 border border-green-500/20 rounded-3xl space-y-1 col-span-2">
+                      <p className="text-[10px] font-black text-green-500 uppercase tracking-widest leading-none mb-1">Commission Earned</p>
+                      <h4 className="text-xl font-black text-green-500">
+                        +₫{selectedOrder.commission_amount.toLocaleString()}
+                      </h4>
+                    </div>
+                  )}
                 </div>
 
                 {/* Transaction Information */}

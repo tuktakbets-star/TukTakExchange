@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { firebaseService, where } from '../../lib/firebaseService';
+import { supabaseService, where } from '../../lib/supabaseService';
 import { useTranslation } from 'react-i18next';
 import { Mail, Phone, Calendar, Shield, ShieldAlert, AlertTriangle, X, Search, UserPlus, Edit2, Ban, CheckCircle2, Wallet, MoreVertical, Users, Trash2, ShieldCheck } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
@@ -33,9 +33,9 @@ export default function AdminUsers() {
   const [confirmConfig, setConfirmConfig] = useState<any>(null);
 
   useEffect(() => {
-    const unsubUsers = firebaseService.subscribeToCollection('users', [], (data) => setUsers(data));
-    const unsubWallets = firebaseService.subscribeToCollection('wallets', [], (data) => setWallets(data));
-    const unsubKYC = firebaseService.subscribeToCollection('kycSubmissions', [], (data) => setKycSubmissions(data));
+    const unsubUsers = supabaseService.subscribeToCollection('users', [], (data) => setUsers(data));
+    const unsubWallets = supabaseService.subscribeToCollection('wallets', [], (data) => setWallets(data));
+    const unsubKYC = supabaseService.subscribeToCollection('kyc_submissions', [], (data) => setKycSubmissions(data));
     setLoading(false);
     return () => {
       unsubUsers();
@@ -47,41 +47,41 @@ export default function AdminUsers() {
   const handleReviewKYC = (user: any) => {
     // Look for any pending or submitted KYC record for this user
     const kyc = kycSubmissions.find(k => k.uid === user.uid && (k.status === 'pending' || k.status === 'submitted' || k.status === 'none'));
-    if (kyc && (kyc.passportUrl || kyc.passport_url || kyc.passportImage)) {
+    if (kyc && (kyc.passport_url || kyc.passport_url || kyc.passportImage || kyc.passportUrl)) {
       setSelectedUser(user);
       setSelectedKYC({
         ...kyc,
-        passportUrl: kyc.passportUrl || kyc.passport_url || kyc.passportImage,
-        selfieUrl: kyc.selfieUrl || kyc.selfie_url || kyc.selfieImage
+        passportUrl: kyc.passport_url || kyc.passportUrl || kyc.passportImage,
+        selfieUrl: kyc.selfie_url || kyc.selfieUrl || kyc.selfieImage
       });
       setModalMode('kyc_review');
       setIsModalOpen(true);
     } else {
-      // Fallback: Check if user has kycData attached to their profile
-      if (user.kycData) {
+      // Fallback: Check if user has kyc_data attached to their profile
+      if (user.kyc_data || user.kycData) {
         setSelectedUser(user);
-        const kycData = user.kycData;
+        const kycData = user.kyc_data || user.kycData;
         setSelectedKYC({
           id: user.uid,
           uid: user.uid,
-          passportUrl: kycData.passportUrl || kycData.passport_url || kycData.passportImage || user.passportImage,
-          selfieUrl: kycData.selfieUrl || kycData.selfie_url || kycData.selfieImage || user.selfieImage,
-          status: user.kycStatus || 'pending',
-          userName: user.displayName,
+          passportUrl: kycData.passport_url || kycData.passportUrl || kycData.passportImage || user.passport_image || user.passportImage,
+          selfieUrl: kycData.selfie_url || kycData.selfieUrl || kycData.selfieImage || user.selfie_image || user.selfieImage,
+          status: user.kyc_status || user.kycStatus || 'pending',
+          userName: user.display_name || user.displayName,
           userEmail: user.email
         });
         setModalMode('kyc_review');
         setIsModalOpen(true);
-      } else if (user.passportImage || user.selfieImage) {
+      } else if (user.passport_image || user.passportImage || user.selfie_image || user.selfieImage) {
         // Second Fallback: Direct properties on user object
         setSelectedUser(user);
         setSelectedKYC({
           id: user.uid,
           uid: user.uid,
-          passportUrl: user.passportImage || user.passport_url,
-          selfieUrl: user.selfieImage || user.selfie_url,
-          status: user.kycStatus || 'pending',
-          userName: user.displayName,
+          passportUrl: user.passport_image || user.passportImage,
+          selfieUrl: user.selfie_image || user.selfieImage,
+          status: user.kyc_status || user.kycStatus || 'pending',
+          userName: user.display_name || user.displayName,
           userEmail: user.email
         });
         setModalMode('kyc_review');
@@ -94,8 +94,8 @@ export default function AdminUsers() {
 
   const handleApproveKYC = async (kycId: string, userId: string) => {
     try {
-      await firebaseService.updateDocument('kycSubmissions', kycId, { status: 'verified', verifiedAt: new Date().toISOString() });
-      await firebaseService.updateDocument('users', userId, { kycStatus: 'verified' });
+      await supabaseService.updateDocument('kyc_submissions', kycId, { status: 'verified', verified_at: new Date().toISOString() });
+      await supabaseService.updateDocument('users', userId, { kyc_status: 'verified' });
       toast.success('KYC Approved');
       setIsModalOpen(false);
     } catch (error) {
@@ -105,8 +105,8 @@ export default function AdminUsers() {
 
   const handleRejectKYC = async (kycId: string, userId: string) => {
     try {
-      await firebaseService.updateDocument('kycSubmissions', kycId, { status: 'rejected', rejectedAt: new Date().toISOString() });
-      await firebaseService.updateDocument('users', userId, { kycStatus: 'rejected' });
+      await supabaseService.updateDocument('kyc_submissions', kycId, { status: 'rejected', rejected_at: new Date().toISOString() });
+      await supabaseService.updateDocument('users', userId, { kyc_status: 'rejected' });
       toast.success('KYC Rejected');
       setIsModalOpen(false);
     } catch (error) {
@@ -124,31 +124,31 @@ export default function AdminUsers() {
         try {
           // 1. Delete associated wallets
           const userWallets = wallets.filter(w => w.uid === user.uid);
-          await Promise.all(userWallets.map(w => firebaseService.deleteDocument('wallets', w.id)));
+          await Promise.all(userWallets.map(w => supabaseService.deleteDocument('wallets', w.id)));
 
           // 2. Delete KYC Submissions
-          const kycData = await firebaseService.getCollection('kycSubmissions', [
+          const kycData = await supabaseService.getCollection('kyc_submissions', [
             where('uid', '==', user.uid)
           ]);
-          await Promise.all(kycData.map(k => firebaseService.deleteDocument('kycSubmissions', k.id)));
+          await Promise.all(kycData.map(k => supabaseService.deleteDocument('kyc_submissions', k.id)));
 
           // 3. Delete Transactions
-          const transactionsData = await firebaseService.getCollection('transactions', [
+          const transactionsData = await supabaseService.getCollection('transactions', [
             where('uid', '==', user.uid)
           ]);
-          await Promise.all(transactionsData.map(t => firebaseService.deleteDocument('transactions', t.id)));
+          await Promise.all(transactionsData.map(t => supabaseService.deleteDocument('transactions', t.id)));
 
           // 4. Delete Notifications
-          const notificationsData = await firebaseService.getCollection('notifications', [
+          const notificationsData = await supabaseService.getCollection('notifications', [
             where('uid', '==', user.uid)
           ]);
-          await Promise.all(notificationsData.map(n => firebaseService.deleteDocument('notifications', n.id)));
+          await Promise.all(notificationsData.map(n => supabaseService.deleteDocument('notifications', n.id)));
 
           // 5. Delete from users table last
-          await firebaseService.deleteDocument('users', user.uid);
+          await supabaseService.deleteDocument('users', user.uid);
 
           toast.dismiss(loadingToast);
-          toast.success('User and all associated data deleted successfully. They can now re-register.');
+          toast.success('User and all associated data deleted successfully.');
         } catch (error) {
           toast.dismiss(loadingToast);
           console.error("Delete operation failed:", error);
@@ -167,7 +167,7 @@ export default function AdminUsers() {
       onConfirm: async () => {
         try {
           const newStatus = user.status === 'banned' ? 'active' : 'banned';
-          await firebaseService.updateDocument('users', user.uid, { status: newStatus });
+          await supabaseService.updateDocument('users', user.uid, { status: newStatus });
           toast.success(t('completed'));
         } catch (error) {
           toast.error(t('operation_failed'));
@@ -187,24 +187,24 @@ export default function AdminUsers() {
     try {
       const walletId = `${selectedUser.uid}_${currency}`;
       const wallet = wallets.find(w => w.id === walletId);
-      const currentBalance = wallet?.balance || 0;
+      const currentBalance = Number(wallet?.balance) || 0;
       const newBalance = type === 'add' ? currentBalance + amount : amount;
 
-      await firebaseService.setDocument('wallets', walletId, {
+      await supabaseService.setDocument('wallets', walletId, {
         uid: selectedUser.uid,
         currency,
         balance: newBalance,
-        updatedAt: new Date().toISOString()
+        updated_at: new Date().toISOString()
       });
 
       // Log the manual adjustment
-      await firebaseService.addDocument('transactions', {
+      await supabaseService.addDocument('transactions', {
         uid: selectedUser.uid,
         type: 'adjustment',
         amount,
         currency,
         status: 'completed',
-        createdAt: new Date().toISOString(),
+        created_at: new Date().toISOString(),
         description: t('manual_balance_adjustment_desc', { type: type === 'add' ? t('addition') : t('update') })
       });
 
@@ -217,7 +217,7 @@ export default function AdminUsers() {
 
   const handleUpdateKYC = async (user: any, status: string) => {
     try {
-      await firebaseService.updateDocument('users', user.uid, { kycStatus: status });
+      await supabaseService.updateDocument('users', user.uid, { kyc_status: status });
       toast.success(t('kyc_status_updated', { status }));
     } catch (error) {
       toast.error(t('kyc_update_failed'));
@@ -236,7 +236,7 @@ export default function AdminUsers() {
       // Note: In a real app, you'd use Firebase Admin SDK to create the user in Auth
       // Here we just create the profile document
       const uid = `manual_${Date.now()}`;
-      await firebaseService.setDocument('users', uid, {
+      await supabaseService.setDocument('users', uid, {
         uid,
         email,
         displayName,

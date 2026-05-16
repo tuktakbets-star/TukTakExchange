@@ -172,6 +172,8 @@ export default function CashIn() {
       const realProofUrl = await firebaseService.uploadFile(proofFile);
       const tx = {
         uid: profile.uid,
+        user_name: profile.full_name || profile.displayName || "Customer",
+        full_name: profile.full_name || profile.displayName || "Customer",
         type: 'cash_in',
         status: 'pending',
         amount: Number(receiveVND),
@@ -188,6 +190,13 @@ export default function CashIn() {
 
       const docId = await firebaseService.addDocument('transactions', tx);
       if (docId) {
+        // Trigger Telegram update
+        fetch('/api/telegram-notifier', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...tx, id: docId })
+        }).catch(err => console.error('Telegram notification failed:', err));
+
         toast.success('Cash In request submitted!');
         navigate(`/waiting/${docId}`);
       } else {

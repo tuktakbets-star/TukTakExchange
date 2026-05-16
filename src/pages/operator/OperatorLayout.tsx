@@ -44,7 +44,7 @@ export default function OperatorLayout() {
     const unsubLedger = supabaseService.subscribeToCollection('sub_admin_wallet_transactions', [
       where('sub_admin_id', '==', operatorSession.id && !isNaN(Number(operatorSession.id)) ? Number(operatorSession.id) : operatorSession.id)
     ], (data) => {
-      const creditTypes = ['credit', 'deposit', 'refill', 'adjustment_add', 'bonus'];
+      const creditTypes = ['credit', 'deposit', 'refill', 'adjustment_add', 'bonus', 'commission'];
       const debitTypes = ['debit', 'withdraw', 'adjustment_sub', 'fee'];
       const credit = data.filter(tx => creditTypes.includes(tx.type)).reduce((acc, tx) => acc + Number(tx.amount || 0), 0);
       const debit = data.filter(tx => debitTypes.includes(tx.type)).reduce((acc, tx) => acc + Number(tx.amount || 0), 0);

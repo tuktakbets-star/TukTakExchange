@@ -25,8 +25,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { auth } from '../../lib/firebase';
-import { firebaseService } from '../../lib/firebaseService';
+import { supabaseService } from '../../lib/supabaseService';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 
@@ -37,13 +36,27 @@ export default function AdminLayout() {
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [pendingKYCCount, setPendingKYCCount] = useState(0);
+  const [adminBalance, setAdminBalance] = useState<number>(0);
 
   React.useEffect(() => {
-    const unsub = firebaseService.subscribeToCollection('kycSubmissions', [], (data) => {
-      setPendingKYCCount(data.filter(k => k.status === 'pending').length);
+    const unsubKYC = supabaseService.subscribeToCollection('kyc_submissions', [], (data) => {
+      setPendingKYCCount(data.filter((k: any) => k.status === 'pending').length);
     });
-    return unsub;
-  }, []);
+
+    let unsubWallets: any = null;
+    if (profile?.uid) {
+      unsubWallets = supabaseService.subscribeToDocument('wallets', `${profile.uid}_VND`, (data) => {
+        if (data) {
+          setAdminBalance(Number(data.balance) || 0);
+        }
+      });
+    }
+
+    return () => {
+      unsubKYC();
+      if (unsubWallets) unsubWallets();
+    };
+  }, [profile?.uid]);
 
   const menuItems = [
     { id: 'dashboard', label: t('dashboard'), icon: LayoutDashboard, path: '/admin-dashboard' },
@@ -82,6 +95,10 @@ export default function AdminLayout() {
           <span className="font-display font-bold text-lg tracking-tight">Tuktak Admin</span>
         </div>
         <div className="flex items-center gap-3">
+          <div className="flex flex-col items-end mr-2">
+            <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest leading-none mb-1">Wallet Balance</span>
+            <span className="text-sm font-black text-red-500">₫{adminBalance.toLocaleString()}</span>
+          </div>
           <Button variant="ghost" size="icon" className="relative text-slate-400" onClick={() => navigate('/admin-dashboard/notifications')}>
             <Bell className="w-5 h-5" />
             {pendingKYCCount > 0 && <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full" />}
@@ -201,6 +218,11 @@ export default function AdminLayout() {
             </div>
             
             <div className="flex items-center gap-4">
+              <div className="text-right">
+                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest leading-none mb-1">Wallet Balance</p>
+                <p className="text-lg font-black text-red-500 leading-none">₫{adminBalance.toLocaleString()}</p>
+              </div>
+              <div className="h-8 w-[1px] bg-white/10 mx-2" />
               <Button 
                 variant="ghost" 
                 size="icon" 

@@ -44,7 +44,6 @@ export default function OperatorAddMoney({ type = 'add_money' }: { type?: 'add_m
   const [rejectionReason, setRejectionReason] = useState('');
   const [isPaidConfirmOpen, setIsPaidConfirmOpen] = useState(false);
   const [proofFile, setProofFile] = useState<File | null>(null);
-  const [transactionId, setTransactionId] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAcceptConfirmOpen, setIsAcceptConfirmOpen] = useState(false);
   const [isStartConfirmOpen, setIsStartConfirmOpen] = useState(false);
@@ -99,6 +98,32 @@ export default function OperatorAddMoney({ type = 'add_money' }: { type?: 'add_m
     toast.loading('Accepting order...', { id: 'accept' });
     
     try {
+      // Re-fetch current status to prevent race condition
+      const { data: currentOrder } = await supabaseService.getDocument('transactions', selectedOrder.id);
+      
+      if (!currentOrder) {
+        toast.error('Order not found', { id: 'accept' });
+        setIsAcceptConfirmOpen(false);
+        return;
+      }
+
+      const assignedId = currentOrder.assigned_sub_admin_id || currentOrder.assignedSubAdminId;
+      
+      // If already processing, completed, or claimed by someone else
+      if (currentOrder.status !== 'pending' && currentOrder.status !== 'accepted') {
+        toast.error('Order is already being processed or finished by someone else.', { id: 'accept' });
+        setIsAcceptConfirmOpen(false);
+        fetchData();
+        return;
+      }
+
+      if (assignedId && assignedId !== operator.id) {
+        toast.error('This order has already been claimed by another operator.', { id: 'accept' });
+        setIsAcceptConfirmOpen(false);
+        fetchData();
+        return;
+      }
+
       await supabaseService.updateDocument('transactions', selectedOrder.id, {
         status: 'accepted',
         assigned_sub_admin_id: operator.id,
@@ -117,6 +142,18 @@ export default function OperatorAddMoney({ type = 'add_money' }: { type?: 'add_m
 
   const handleStartProcessing = async () => {
     if (!selectedOrder || !operator) return;
+
+    // Verify ownership before starting
+    const { data: currentOrder } = await supabaseService.getDocument('transactions', selectedOrder.id);
+    const assignedId = currentOrder?.assigned_sub_admin_id || currentOrder?.assignedSubAdminId;
+    
+    if (assignedId && assignedId !== operator.id) {
+      toast.error('This order is assigned to another operator!', { id: 'start' });
+      setIsStartConfirmOpen(false);
+      fetchData();
+      return;
+    }
+
     toast.loading('Starting processing...', { id: 'start' });
     
     try {
@@ -136,6 +173,18 @@ export default function OperatorAddMoney({ type = 'add_money' }: { type?: 'add_m
   const handleMarkAsPaid = async () => {
     if (!selectedOrder || !operator) return;
     
+    // Verify ownership before finalizing
+    const { data: currentOrder } = await supabaseService.getDocument('transactions', selectedOrder.id);
+    const assignedId = currentOrder?.assigned_sub_admin_id || currentOrder?.assignedSubAdminId;
+    
+    if (assignedId && assignedId !== operator.id) {
+      toast.error('This order is assigned to another operator!', { id: 'paid' });
+      setIsSubmitting(false);
+      setIsPaidConfirmOpen(false);
+      fetchData();
+      return;
+    }
+
     setIsSubmitting(true);
     toast.loading('Finalizing transaction...', { id: 'paid' });
     
@@ -156,39 +205,56 @@ export default function OperatorAddMoney({ type = 'add_money' }: { type?: 'add_m
       
       // AUTO-COMPLETE Workflow for Add Money / Cash In
       // 1. Update User Balance (Increase)
-      await supabaseService.updateWalletBalance(selectedOrder.uid, selectedOrder.currency, amount, 0);
+      const uRes = await supabaseService.updateWalletBalance(selectedOrder.uid, selectedOrder.currency, amount, 0);
 
-      // 2. Update Sub-Admin Balance (Decrease)
+      if (!uRes) {
+        setIsSubmitting(false);
+        return; // supabaseService.updateWalletBalance already shows toast error via updateDocument
+      }
+
+      // 2. Update Sub-Admin Balance (Deduct Order Amount)
       const currentSaBal = Number(operator.walletBalance || 0);
-      const newSaBalance = currentSaBal - amount;
+      const balanceAfterDeduction = currentSaBal - amount;
       
-      await supabaseService.updateDocument('sub_admins', operator.id, {
-        wallet_balance: newSaBalance,
+      const saRes = await supabaseService.updateDocument('sub_admins', operator.id, {
+        wallet_balance: balanceAfterDeduction,
         updated_at: new Date().toISOString()
       });
 
-      // 3. Log Sub-Admin Wallet Transaction
+      if (!saRes.success) {
+        setIsSubmitting(false);
+        return;
+      }
+
+      // 3. Record transaction with proof_url (Deduction of the full amount)
       await supabaseService.addDocument('sub_admin_wallet_transactions', {
         sub_admin_id: operator.id,
         type: 'debit',
         amount: amount,
-        reason: `Order #${selectedOrder.id} finalized (Add Money/Cash In)`,
+        reason: `Order #${selectedOrder.id} finalized (Deduction)`,
         order_id: selectedOrder.id,
-        balance_after: newSaBalance,
+        balance_after: balanceAfterDeduction,
         created_at: new Date().toISOString(),
-        proof_url: adminProofUrl || selectedOrder.proof_url // Save proof for reference in ledger
+        proof_url: adminProofUrl || selectedOrder.proof_url
       });
 
-      // 4. Update Transaction status to completed
-      await supabaseService.updateDocument('transactions', selectedOrder.id, {
+      // 3.1 Process Commission (This adds commission to the balanceAfterDeduction)
+      await supabaseService.processSubAdminCommission(selectedOrder, balanceAfterDeduction);
+      const txRes = await supabaseService.updateDocument('transactions', selectedOrder.id, {
         status: 'completed',
         admin_proof: adminProofUrl || null,
-        transaction_id: transactionId,
         sub_admin_action: 'finalize_completed',
         sub_admin_actioned_at: new Date().toISOString(),
+        assigned_sub_admin_id: operator.id,
+        assignedSubAdminId: operator.id,
         paid_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       });
+
+      if (!txRes.success) {
+        setIsSubmitting(false);
+        return;
+      }
 
       // 5. Log Sub-Admin Activity
       await supabaseService.addDocument('sub_admin_logs', {
@@ -296,6 +362,7 @@ export default function OperatorAddMoney({ type = 'add_money' }: { type?: 'add_m
                 <th className="px-6 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">User Info</th>
                 <th className="px-6 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">Amount</th>
                 <th className="px-6 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">Status</th>
+                <th className="px-6 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap text-green-500">Commission</th>
                 <th className="px-6 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">Proof</th>
                 <th className="px-6 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right whitespace-nowrap">Actions</th>
               </tr>
@@ -376,6 +443,15 @@ export default function OperatorAddMoney({ type = 'add_money' }: { type?: 'add_m
                              order.status?.toUpperCase()}
                           </Badge>
                           <span className="text-[9px] font-mono text-slate-600 truncate max-w-[100px]">{order.senderNumber || order.sender_number || 'No Phone'}</span>
+                       </div>
+                    </td>
+                    <td className="px-6 py-5">
+                       <div className="flex flex-col">
+                         {order.commission_amount || order.commissionAmount ? (
+                           <span className="text-green-500 font-bold">₫{(order.commission_amount || order.commissionAmount).toLocaleString()}</span>
+                         ) : (
+                           <span className="text-slate-500 text-xs">-</span>
+                         )}
                        </div>
                     </td>
                     <td className="px-6 py-5">
@@ -530,6 +606,11 @@ export default function OperatorAddMoney({ type = 'add_money' }: { type?: 'add_m
                   <div>
                     <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">Amount</p>
                     <p className="text-xl font-black text-white">{(order.currency === 'VND' || order.type === 'cash_in' || order.type === 'add_money') ? '₫' : order.currency === 'USDT' ? '$' : '৳'}{order.amount}</p>
+                    {(order.commission_amount || order.commissionAmount) && (
+                      <p className="text-[10px] text-green-500 font-bold mt-1 uppercase tracking-tighter">
+                        Earned: ₫{(order.commission_amount || order.commissionAmount).toLocaleString()}
+                      </p>
+                    )}
                   </div>
                   <button 
                     onClick={() => {
@@ -803,16 +884,6 @@ export default function OperatorAddMoney({ type = 'add_money' }: { type?: 'add_m
                    <span className="text-slate-500 font-bold uppercase tracking-widest text-[10px]">User to Receive:</span>
                    <span className="text-white font-black text-lg">{(selectedOrder?.currency === 'VND' || selectedOrder?.type === 'add_money' || selectedOrder?.type === 'cash_in') ? '₫' : selectedOrder?.currency === 'USDT' ? '$' : '৳'}{selectedOrder?.amount}</span>
                  </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Transaction ID / Reference (Optional)</label>
-                <Input 
-                  placeholder="Enter transaction code"
-                  value={transactionId}
-                  onChange={(e) => setTransactionId(e.target.value)}
-                  className="bg-white/5 border-white/10 rounded-xl"
-                />
               </div>
 
               <div className="space-y-2">

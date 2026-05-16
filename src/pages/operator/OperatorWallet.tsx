@@ -72,11 +72,7 @@ export default function OperatorWallet() {
       where('sub_admin_id', '==', session.id && !isNaN(Number(session.id)) ? Number(session.id) : session.id),
       orderBy('created_at', 'desc')
     ], (updated) => {
-      const processed = updated.map(tx => ({
-        ...tx,
-        created_at: tx.created_at?.toDate ? tx.created_at.toDate().toISOString() : tx.created_at
-      }));
-      setTransactions(processed);
+      setTransactions(updated);
       setLoading(false);
     });
 
@@ -128,7 +124,7 @@ export default function OperatorWallet() {
   }, [operator?.id, transactions, flow.credit, flow.debit]);
 
   function getTotalFlow() {
-    const creditTypes = ['credit', 'deposit', 'refill', 'adjustment_add', 'bonus'];
+    const creditTypes = ['credit', 'deposit', 'refill', 'adjustment_add', 'bonus', 'commission'];
     const debitTypes = ['debit', 'withdraw', 'adjustment_sub', 'fee'];
 
     const credit = transactions.filter(tx => creditTypes.includes(tx.type)).reduce((acc, tx) => acc + Number(tx.amount || 0), 0);
@@ -345,11 +341,12 @@ export default function OperatorWallet() {
                       <th className="px-6 py-4 text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap text-center">Proof</th>
                       <th className="px-6 py-4 text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right whitespace-nowrap">Balance</th>
                    </tr>
-                 </thead>
-                 <tbody className="divide-y divide-white/5 font-medium text-xs sm:text-sm">
+                  </thead>
+                  <tbody className="divide-y divide-white/5 font-medium text-xs sm:text-sm">
                     {filteredTransactions.map((tx, idx) => {
-                      const txDate = tx.created_at?.toDate ? tx.created_at.toDate() : new Date(tx.created_at);
-                      const isValidDate = !isNaN(txDate.getTime());
+                      const txDate = tx.createdAt?.toDate ? tx.createdAt.toDate() : new Date(tx.createdAt || Date.now());
+                      const isValidDate = !!tx.createdAt;
+                      const isCredit = ['credit', 'deposit', 'refill', 'adjustment_add', 'bonus', 'commission'].includes(tx.type);
                       
                       return (
                        <tr key={idx} className="hover:bg-white/[0.02] transition-colors">
@@ -360,17 +357,17 @@ export default function OperatorWallet() {
                           </td>
                          <td className="px-6 py-4">
                             <span className={cn(
-                              "px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold uppercase tracking-wider inline-block",
-                              tx.type === 'credit' ? "bg-green-500/10 text-green-500 border border-green-500/20" : "bg-red-500/10 text-red-500 border border-red-500/20"
+                               "px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold uppercase tracking-wider inline-block",
+                               isCredit ? "bg-green-500/10 text-green-500 border border-green-500/20" : "bg-red-500/10 text-red-500 border border-red-500/20"
                             )}>
                                {tx.type}
                             </span>
                          </td>
                          <td className="px-6 py-4 font-black">
                             <span className={cn(
-                              tx.type === 'credit' ? "text-green-500" : "text-red-500"
+                               isCredit ? "text-green-500" : "text-red-500"
                             )}>
-                               {tx.type === 'credit' ? '+' : '-'}{operator?.balanceType === 'BDT' ? '৳' : operator?.balanceType === 'USDT' ? '$' : '₫'}{Number(tx.amount || 0).toLocaleString()}
+                               {isCredit ? '+' : '-'}{operator?.balanceType === 'BDT' ? '৳' : operator?.balanceType === 'USDT' ? '$' : '₫'}{Number(tx.amount || 0).toLocaleString()}
                             </span>
                          </td>
                          <td className="px-6 py-4">
@@ -379,16 +376,16 @@ export default function OperatorWallet() {
                                 onClick={() => { setSelectedTx(tx); setIsDetailOpen(true); }}
                              >
                                <span className="text-slate-200 font-bold truncate max-w-[120px]">{tx.reason}</span>
-                               <span className="text-[9px] font-bold text-blue-500 mt-0.5">#{String(tx.order_id || tx.id || '').slice(0, 8)}</span>
+                               <span className="text-[9px] font-bold text-blue-500 mt-0.5">#{String(tx.orderId || tx.id || '').slice(0, 8)}</span>
                             </div>
                          </td>
                          <td className="px-6 py-4 text-center">
-                            {(tx.proof_url || tx.metadata?.proof_url) ? (
+                            {(tx.proofUrl || tx.metadata?.proofUrl) ? (
                               <Button 
                                 variant="ghost" 
                                 size="icon" 
                                 className="w-8 h-8 text-slate-500 hover:text-blue-500 rounded-full"
-                                onClick={() => { setViewerSrc(tx.proof_url || tx.metadata?.proof_url); setIsViewerOpen(true); }}
+                                onClick={() => { setViewerSrc(tx.proofUrl || tx.metadata?.proofUrl); setIsViewerOpen(true); }}
                               >
                                 <Eye className="w-4 h-4" />
                               </Button>
@@ -397,12 +394,12 @@ export default function OperatorWallet() {
                             )}
                          </td>
                          <td className="px-6 py-4 text-right">
-                             <span className="font-black text-white">{operator?.balanceType === 'BDT' ? '৳' : operator?.balanceType === 'USDT' ? '$' : '₫'}{(tx.balance_after || 0).toLocaleString()}</span>
+                             <span className="font-black text-white">{operator?.balanceType === 'BDT' ? '৳' : operator?.balanceType === 'USDT' ? '$' : '₫'}{(tx.balanceAfter || 0).toLocaleString()}</span>
                          </td>
                       </tr>
                       );
                     })}
-                 </tbody>
+                  </tbody>
               </table>
            </div>
         </div>

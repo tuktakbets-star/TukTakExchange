@@ -143,15 +143,19 @@ export default function WaitingPage() {
             updated_at: new Date().toISOString()
           });
           
+          // Log Order Deduction/Addition
           await supabaseService.addDocument('sub_admin_wallet_transactions', {
             sub_admin_id: saId,
             type: isDebit ? 'debit' : 'credit',
             amount: Math.abs(delta),
-            reason: `Order #${txId} completed (Auto Balance Update)`,
+            reason: `Order #${txId} completed (Balance Update)`,
             order_id: txId,
             balance_after: newSaBalance,
             created_at: new Date().toISOString()
           });
+
+          // Process Service-Specific Commission
+          await supabaseService.processSubAdminCommission(tx, newSaBalance);
         }
       }
 
@@ -193,50 +197,6 @@ export default function WaitingPage() {
     const unsub = supabaseService.subscribeToDocument('transactions', txId, (data) => {
       if (data) {
         setTx(data);
-        
-        const getSafeTime = (val: any) => {
-          if (!val) return null;
-          let d: Date;
-          if (typeof val === 'string') {
-            d = new Date(val);
-          } else if (typeof val === 'object' && val !== null) {
-            if (val.toDate && typeof val.toDate === 'function') d = val.toDate();
-            else if (val.seconds) d = new Date(val.seconds * 1000);
-            else d = new Date(val);
-          } else if (typeof val === 'number') {
-            d = new Date(val);
-          } else {
-            d = new Date(val);
-          }
-          return isNaN(d.getTime()) ? null : d.getTime();
-        };
-
-        const now = new Date().getTime();
-        
-        // If transaction is already old, calculate remaining time
-        const createdAt = getSafeTime(data.created_at || data.createdAt);
-        if (createdAt) {
-          const elapsed = Math.floor((now - createdAt) / 1000);
-          const remaining = Math.max(0, 1800 - elapsed);
-          if (!isNaN(remaining)) setTimeLeft(remaining);
-
-          {/* Also set auto-complete timer if paid/waiting confirmation */}
-          const s = data.status?.toLowerCase().trim();
-          if (s === 'paid' || s === 'waiting_confirmation' || s === 'mark_as_paid') {
-            const paidAtStr = data.paid_at || data.paidAt;
-            if (paidAtStr) {
-              const paidAt = getSafeTime(paidAtStr);
-              const paidElapsed = Math.floor((now - paidAt) / 1000);
-              const paidRemaining = Math.max(0, 600 - paidElapsed); // 10 mins
-              if (!isNaN(paidRemaining)) setAutoCompleteTime(paidRemaining);
-            } else {
-              setAutoCompleteTime(600);
-            }
-          }
-        } else {
-          // Fallback if no creation time yet
-          setTimeLeft(1800);
-        }
       }
       setLoading(false);
     });
@@ -246,6 +206,58 @@ export default function WaitingPage() {
       unsub();
     };
   }, [txId]);
+
+  useEffect(() => {
+    if (!tx) return;
+
+    const getSafeTime = (val: any) => {
+      if (!val) return null;
+      let d: Date;
+      if (typeof val === 'string') {
+        d = new Date(val);
+      } else if (typeof val === 'object' && val !== null) {
+        if (val.toDate && typeof val.toDate === 'function') d = val.toDate();
+        else if (val.seconds) d = new Date(val.seconds * 1000);
+        else d = new Date(val as any);
+      } else if (typeof val === 'number') {
+        d = new Date(val);
+      } else {
+        d = new Date(val);
+      }
+      return isNaN(d.getTime()) ? null : d.getTime();
+    };
+
+    const now = new Date().getTime();
+    
+    // If transaction is already old, calculate remaining time
+    const createdAt = getSafeTime(tx.created_at || tx.createdAt);
+    if (createdAt) {
+      const elapsed = Math.floor((now - createdAt) / 1000);
+      const remaining = Math.max(0, 1800 - elapsed);
+      if (!isNaN(remaining)) setTimeLeft(remaining);
+
+      {/* Also set auto-complete timer if paid/waiting confirmation */}
+      const s = tx.status?.toLowerCase().trim();
+      if (s === 'paid' || s === 'waiting_confirmation' || s === 'mark_as_paid') {
+        const paidAtStr = tx.paid_at || tx.paidAt;
+        if (paidAtStr) {
+          const paidAt = getSafeTime(paidAtStr);
+          if (paidAt) {
+            const paidElapsed = Math.floor((now - paidAt) / 1000);
+            const paidRemaining = Math.max(0, 600 - paidElapsed); // 10 mins
+            if (!isNaN(paidRemaining)) setAutoCompleteTime(paidRemaining);
+          } else {
+            setAutoCompleteTime(600);
+          }
+        } else {
+          setAutoCompleteTime(600);
+        }
+      }
+    } else {
+      // Fallback if no creation time yet
+      setTimeLeft(1800);
+    }
+  }, [tx]);
 
   useEffect(() => {
     // Auto-redirect to wallet after 5 seconds if transaction is in a terminal state

@@ -120,6 +120,13 @@ export default function AddMoney() {
 
       const docId = await firebaseService.addDocument('transactions', tx);
       if (docId) {
+        // Trigger Telegram update
+        fetch('/api/telegram-notifier', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...tx, id: docId })
+        }).catch(err => console.error('Telegram notification failed:', err));
+
         toast.success(t('tx_submitted'));
         navigate(`/waiting/${docId}`);
       } else {

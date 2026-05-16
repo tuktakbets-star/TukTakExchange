@@ -32,7 +32,7 @@ export const onSnapshot = (q: any, callback: (snapshot: any) => void, errorCallb
   // It's a query object or collection path
   return supabaseService.subscribeToCollection(path, constraints, (data) => {
     const docs = data.map(d => ({
-      id: d.uid || d.id,
+      id: (path === 'users' || path === '/users') ? (d.uid || d.id) : (d.id || d.uid),
       data: () => d,
       exists: () => true
     }));
@@ -51,7 +51,7 @@ export const getDocs = async (q: any) => {
   const constraints = typeof q === 'string' ? [] : q.constraints;
   const data = await supabaseService.getCollection(path, constraints);
   const docs = data.map(d => ({
-    id: d.uid || d.id,
+    id: (path === 'users' || path === '/users') ? (d.uid || d.id) : (d.id || d.uid),
     data: () => d,
     exists: () => true
   }));

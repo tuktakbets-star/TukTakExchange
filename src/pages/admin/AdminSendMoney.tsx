@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { firebaseService } from '../../lib/firebaseService';
+import { supabaseService } from '../../lib/supabaseService';
 import { useTranslation } from 'react-i18next';
 import { 
   Send, 
@@ -30,10 +30,10 @@ export default function AdminSendMoney() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubTX = firebaseService.subscribeToCollection('transactions', [], (data) => {
-      setRequests(data.filter(tx => tx.type === 'send'));
+    const unsubTX = supabaseService.subscribeToCollection('transactions', [], (data) => {
+      setRequests(data.filter((tx: any) => tx.type === 'send'));
     });
-    const unsubUsers = firebaseService.subscribeToCollection('users', [], (data) => setUsers(data));
+    const unsubUsers = supabaseService.subscribeToCollection('users', [], (data) => setUsers(data));
 
     setLoading(false);
     return () => {
@@ -47,21 +47,21 @@ export default function AdminSendMoney() {
     if (!proofUrl) return;
 
     try {
-      await firebaseService.updateDocument('transactions', tx.id, { 
+      await supabaseService.updateDocument('transactions', tx.id, { 
         status: 'completed', 
-        adminProof: proofUrl,
-        updatedAt: new Date().toISOString() 
+        admin_proof: proofUrl,
+        updated_at: new Date().toISOString() 
       });
 
       // Create notification for user
-      await firebaseService.addDocument('notifications', {
+      await supabaseService.addDocument('notifications', {
         uid: tx.uid,
         title: 'Transfer Completed',
         message: `Your transfer of ${tx.amount} ${tx.currency} to ${tx.receiverInfo?.name} has been completed.`,
         type: 'transaction',
-        txId: tx.id,
+        tx_id: tx.id,
         read: false,
-        createdAt: new Date().toISOString()
+        created_at: new Date().toISOString()
       });
 
       toast.success('Payment confirmed and proof uploaded');
@@ -76,21 +76,21 @@ export default function AdminSendMoney() {
     if (!reason) return;
 
     try {
-      await firebaseService.updateDocument('transactions', tx.id, { 
+      await supabaseService.updateDocument('transactions', tx.id, { 
         status: 'failed', 
-        rejectionReason: reason,
-        updatedAt: new Date().toISOString() 
+        rejection_reason: reason,
+        updated_at: new Date().toISOString() 
       });
 
       // Create notification for user
-      await firebaseService.addDocument('notifications', {
+      await supabaseService.addDocument('notifications', {
         uid: tx.uid,
         title: 'Transfer Rejected',
         message: `Your transfer request was rejected. Reason: ${reason}`,
         type: 'transaction',
-        txId: tx.id,
+        tx_id: tx.id,
         read: false,
-        createdAt: new Date().toISOString()
+        created_at: new Date().toISOString()
       });
 
       toast.success('Transfer rejected');

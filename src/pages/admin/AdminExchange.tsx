@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { firebaseService } from '../../lib/firebaseService';
+import { supabaseService } from '../../lib/supabaseService';
 import { useTranslation } from 'react-i18next';
 import { 
   RefreshCw, 
@@ -7,15 +7,15 @@ import {
   ExternalLink, 
   CheckCircle2, 
   XCircle, 
-  Building2,
-  User,
-  QrCode,
-  ArrowRight,
-  Eye,
-  Settings2,
-  Plus,
-  Trash2,
-  Save,
+  Building2, 
+  User, 
+  QrCode, 
+  ArrowRight, 
+  Eye, 
+  Settings2, 
+  Plus, 
+  Trash2, 
+  Save, 
   Globe
 } from 'lucide-react';
 import { TransactionDetailsModal } from '@/components/TransactionDetailsModal';
@@ -30,9 +30,9 @@ import {
   Dialog, 
   DialogContent, 
   DialogHeader, 
-  DialogTitle,
-  DialogDescription,
-  DialogFooter
+  DialogTitle, 
+  DialogDescription, 
+  DialogFooter 
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -51,27 +51,18 @@ export default function AdminExchange() {
   const [isProcessing, setIsProcessing] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    const unsubTX = firebaseService.subscribeToCollection('transactions', [], (data) => {
-      // Keep existing local status overrides if they are newer?
-      // For simplicity, just set data and clear processing state for those IDs
-      setRequests(data.filter(tx => tx.type === 'exchange'));
+    const unsubTX = supabaseService.subscribeToCollection('transactions', [], (data) => {
+      setRequests(data.filter((tx: any) => tx.type === 'exchange'));
       setIsProcessing(prev => {
         const next = { ...prev };
-        data.forEach(d => delete next[d.id]);
+        data.forEach((d: any) => delete next[d.id]);
         return next;
       });
     });
-    const unsubUsers = firebaseService.subscribeToCollection('users', [], (data) => setUsers(data));
-    const unsubRates = firebaseService.subscribeToCollection('rates', [], (data) => {
+    const unsubUsers = supabaseService.subscribeToCollection('users', [], (data) => setUsers(data));
+    const unsubRates = supabaseService.subscribeToCollection('rates', [], (data) => {
       console.log('[AdminExchange] Rates Subscription Update:', data);
-      // Map tiered_rates to tieredRates if returning from Supabase directly
-      const mapped = data.map((r: any) => ({
-        ...r,
-        // Match both snake_case and camelCase to be safe
-        tieredRates: Array.isArray(r.tieredRates) ? r.tieredRates : 
-                     (Array.isArray(r.tiered_rates) ? r.tiered_rates : [])
-      }));
-      setRates(mapped);
+      setRates(data);
     });
 
     setLoading(false);
@@ -87,7 +78,7 @@ export default function AdminExchange() {
       const normalizedCurrency = currency.toUpperCase();
       const existingRate = rates.find(r => r.target?.toUpperCase() === normalizedCurrency);
       
-      const updatedAccountTypes = { ...(existingRate?.accountTypes || {}) };
+      const updatedAccountTypes = { ...(existingRate?.accountTypes || existingRate?.account_types || {}) };
       updatedAccountTypes[accountType] = { tieredRates: tiers };
 
       const payload = {
@@ -102,10 +93,10 @@ export default function AdminExchange() {
 
       let success = false;
       if (existingRate?.id) {
-        const result = await firebaseService.updateDocument('rates', existingRate.id, payload);
-        success = result.success;
+        const { success: updateSuccess } = await supabaseService.updateDocument('rates', existingRate.id, payload);
+        success = updateSuccess;
       } else {
-        const docId = await firebaseService.addDocument('rates', {
+        const docId = await supabaseService.addDocument('rates', {
           ...payload,
           base: 'VND'
         });
@@ -115,7 +106,7 @@ export default function AdminExchange() {
       if (success) {
         toast.success(`${accountType} (${normalizedCurrency}) rates updated successfully`, { id: 'rate-save' });
       } else {
-        toast.error(`Database Error: Could not save ${accountType} rates. Check your Supabase Table permissions.`, { id: 'rate-save' });
+        toast.error(`Database Error: Could not save ${accountType} rates.`, { id: 'rate-save' });
       }
     } catch (error: any) {
       console.error('Error updating rates:', error);
@@ -129,9 +120,8 @@ export default function AdminExchange() {
     setRequests(prev => prev.map(r => r.id === tx.id ? { ...r, status: 'accepted' } : r));
     
     try {
-      await firebaseService.updateDocument('transactions', tx.id, { 
+      await supabaseService.updateDocument('transactions', tx.id, { 
         status: 'accepted',
-        updatedAt: new Date().toISOString(),
         updated_at: new Date().toISOString()
       });
       toast.success('Order received. User will be notified.');
@@ -169,23 +159,21 @@ export default function AdminExchange() {
           // Optimistic update
           setRequests(prev => prev.map(r => r.id === tx.id ? { ...r, status: 'paid', adminProof: proofUrl } : r));
 
-          await firebaseService.updateDocument('transactions', tx.id, { 
+          await supabaseService.updateDocument('transactions', tx.id, { 
             status: 'paid', 
-            paidAt: new Date().toISOString(),
             paid_at: new Date().toISOString(),
-            adminProof: proofUrl,
-            updatedAt: new Date().toISOString(),
+            admin_proof: proofUrl,
             updated_at: new Date().toISOString()
           });
 
-          await firebaseService.addDocument('notifications', {
+          await supabaseService.addDocument('notifications', {
             uid: tx.uid,
             title: 'Payment Sent',
-            message: `Admin has sent ${tx.targetAmount} ${tx.targetCurrency} to your receiver. Please check and confirm receipt.`,
+            message: `Admin has sent ${tx.target_amount || tx.targetAmount} ${tx.target_currency || tx.targetCurrency} to your receiver. Please check and confirm receipt.`,
             type: 'transaction',
-            txId: tx.id,
+            tx_id: tx.id,
             read: false,
-            createdAt: new Date().toISOString()
+            created_at: new Date().toISOString()
           });
 
           toast.success('User notified about payment');
@@ -212,25 +200,25 @@ export default function AdminExchange() {
       onConfirm: async () => {
         try {
           // 1. Refund Locked Balance
-          await firebaseService.updateWalletBalance(tx.uid, tx.currency, 0, -(tx.totalToDeduct || tx.amount));
+          await supabaseService.updateWalletBalance(tx.uid, tx.currency, 0, -(Number(tx.total_to_deduct || tx.totalToDeduct || tx.amount)));
 
           // 2. Update status
-          await firebaseService.updateDocument('transactions', tx.id, { 
+          await supabaseService.updateDocument('transactions', tx.id, { 
             status: 'rejected', 
-            updatedAt: new Date().toISOString() 
+            updated_at: new Date().toISOString() 
           });
 
           // Optimistic update
           setRequests(prev => prev.map(r => r.id === tx.id ? { ...r, status: 'rejected' } : r));
 
-          await firebaseService.addDocument('notifications', {
+          await supabaseService.addDocument('notifications', {
             uid: tx.uid,
             title: 'Exchange Rejected',
             message: `Your exchange request for ${tx.amount} ${tx.currency} has been rejected and refunded.`,
             type: 'transaction',
-            txId: tx.id,
+            tx_id: tx.id,
             read: false,
-            createdAt: new Date().toISOString()
+            created_at: new Date().toISOString()
           });
 
           toast.success('Rejected and Refunded');
@@ -249,56 +237,57 @@ export default function AdminExchange() {
       onConfirm: async () => {
         setIsProcessing(prev => ({ ...prev, [tx.id]: true }));
         try {
-          const amountToDeduct = tx.total_to_deduct || tx.totalToDeduct || tx.amount;
+          const amountToDeduct = Number(tx.total_to_deduct || tx.totalToDeduct || tx.amount);
           
           // CRITICAL: Update sub-admin balance if assigned
           if (tx.assignedSubAdminId || tx.assigned_sub_admin_id) {
             const saId = tx.assignedSubAdminId || tx.assigned_sub_admin_id;
-            const { data: subAdmin } = await firebaseService.getDocument('sub_admins', saId);
+            const { data: subAdmin } = await supabaseService.getDocument('sub_admins', saId);
             if (subAdmin) {
-              const currentBalance = subAdmin.walletBalance || subAdmin.wallet_balance || subAdmin.vndBalance || subAdmin.vnd_balance || 0;
+              const currentBalance = Number(subAdmin.walletBalance || subAdmin.wallet_balance || subAdmin.vndBalance || subAdmin.vnd_balance || 0);
               const newSaBalance = currentBalance + amountToDeduct;
               
-              await firebaseService.updateDocument('sub_admins', saId, {
-                walletBalance: newSaBalance,
-                wallet_balance: newSaBalance, // Keep for backward compatibility
-                updatedAt: new Date().toISOString()
+              await supabaseService.updateDocument('sub_admins', saId, {
+                wallet_balance: newSaBalance,
+                updated_at: new Date().toISOString()
               });
               
-              await firebaseService.addDocument('sub_admin_wallet_transactions', {
-                subAdminId: saId,
+              await supabaseService.addDocument('sub_admin_wallet_transactions', {
                 sub_admin_id: saId,
                 type: 'credit',
                 amount: amountToDeduct,
                 reason: `Exchange #${tx.id} completed by admin`,
-                orderId: tx.id,
-                balanceAfter: newSaBalance,
-                createdAt: new Date().toISOString()
+                order_id: tx.id,
+                balance_after: newSaBalance,
+                created_at: new Date().toISOString()
               });
             }
           }
 
           // 1. Finalize Balance Deduction (Move from pendingLocked to real deduction)
-          await firebaseService.updateWalletBalance(tx.uid, tx.currency, -amountToDeduct, -amountToDeduct);
+          await supabaseService.updateWalletBalance(tx.uid, tx.currency, -amountToDeduct, -amountToDeduct);
 
           // 2. Update status
-          await firebaseService.updateDocument('transactions', tx.id, { 
+          await supabaseService.updateDocument('transactions', tx.id, { 
             status: 'completed', 
-            completedAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString() 
+            completed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString() 
           });
+
+          // 3. Process Sub-Admin Commission
+          await supabaseService.processSubAdminCommission(tx);
 
           // Optimistic update
           setRequests(prev => prev.map(r => r.id === tx.id ? { ...r, status: 'completed' } : r));
 
-          await firebaseService.addDocument('notifications', {
+          await supabaseService.addDocument('notifications', {
             uid: tx.uid,
             title: 'Task Completed',
             message: `Admin has finalized your exchange request of ${tx.amount} ${tx.currency}.`,
             type: 'transaction',
-            txId: tx.id,
+            tx_id: tx.id,
             read: false,
-            createdAt: new Date().toISOString()
+            created_at: new Date().toISOString()
           });
 
           toast.success('Order completed successfully');
@@ -321,7 +310,7 @@ export default function AdminExchange() {
   const handleDeleteTransaction = async (txId: string) => {
     if (!confirm('Are you sure you want to delete this transaction record? This only removes the record from the history, it does not refund balance.')) return;
     try {
-      await firebaseService.deleteDocument('transactions', txId);
+      await supabaseService.deleteDocument('transactions', txId);
       toast.success('Transaction record deleted');
     } catch (error) {
       toast.error('Failed to delete transaction');
@@ -345,8 +334,8 @@ export default function AdminExchange() {
           <Button 
             onClick={() => {
               setLoading(true);
-              firebaseService.getCollection('transactions').then(data => {
-                setRequests(data.filter(tx => tx.type === 'exchange'));
+              supabaseService.getCollection('transactions').then(data => {
+                setRequests(data.filter((tx: any) => tx.type === 'exchange'));
                 setLoading(false);
               });
             }}
@@ -376,7 +365,7 @@ export default function AdminExchange() {
               className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-red-400 hover:bg-red-500/10"
               onClick={async () => {
                 if (confirm(`Delete rates for ${rate.target}?`)) {
-                  await firebaseService.deleteDocument('rates', rate.id);
+                  await supabaseService.deleteDocument('rates', rate.id);
                   toast.success(`${rate.target} rates deleted`);
                 }
               }}

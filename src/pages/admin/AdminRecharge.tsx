@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { firebaseService } from '../../lib/firebaseService';
+import { supabaseService } from '../../lib/supabaseService';
 import { useTranslation } from 'react-i18next';
 import { 
   Zap, 
@@ -30,10 +30,10 @@ export default function AdminRecharge() {
   const [confirmConfig, setConfirmConfig] = useState<any>(null);
 
   useEffect(() => {
-    const unsubTX = firebaseService.subscribeToCollection('transactions', [], (data) => {
-      setRequests(data.filter(tx => tx.type === 'recharge'));
+    const unsubTX = supabaseService.subscribeToCollection('transactions', [], (data) => {
+      setRequests(data.filter((tx: any) => tx.type === 'recharge'));
     });
-    const unsubUsers = firebaseService.subscribeToCollection('users', [], (data) => setUsers(data));
+    const unsubUsers = supabaseService.subscribeToCollection('users', [], (data) => setUsers(data));
 
     setLoading(false);
     return () => {
@@ -44,9 +44,9 @@ export default function AdminRecharge() {
 
   const handleAccept = async (tx: any) => {
     try {
-      await firebaseService.updateDocument('transactions', tx.id, { 
+      await supabaseService.updateDocument('transactions', tx.id, { 
         status: 'accepted', 
-        updatedAt: new Date().toISOString() 
+        updated_at: new Date().toISOString() 
       });
       toast.success('Order Accepted');
     } catch (error) {
@@ -56,11 +56,10 @@ export default function AdminRecharge() {
 
   const handlePaid = async (tx: any) => {
     try {
-      await firebaseService.updateDocument('transactions', tx.id, { 
+      await supabaseService.updateDocument('transactions', tx.id, { 
         status: 'paid', 
-        paidAt: new Date().toISOString(),
         paid_at: new Date().toISOString(),
-        updatedAt: new Date().toISOString() 
+        updated_at: new Date().toISOString() 
       });
       toast.success('Marked as Paid');
     } catch (error) {
@@ -74,52 +73,53 @@ export default function AdminRecharge() {
       description: t('complete_recharge_msg'),
       onConfirm: async () => {
         try {
-          const amount = tx.amount || 0;
-          const totalToDeduct = tx.total_to_deduct || tx.totalToDeduct || amount;
+          const amount = Number(tx.amount || 0);
+          const totalToDeduct = Number(tx.total_to_deduct || tx.totalToDeduct || amount);
 
           // 1. Finalize Balance Deduction (Move from pendingLocked to real deduction)
-          await firebaseService.updateWalletBalance(tx.uid, tx.currency, -totalToDeduct, -totalToDeduct);
+          await supabaseService.updateWalletBalance(tx.uid, tx.currency, -totalToDeduct, -totalToDeduct);
 
           // 2. CRITICAL: Update sub-admin balance if assigned
           if (tx.assignedSubAdminId || tx.assigned_sub_admin_id) {
             const saId = tx.assignedSubAdminId || tx.assigned_sub_admin_id;
-            const { data: subAdmin } = await firebaseService.getDocument('sub_admins', saId);
+            const { data: subAdmin } = await supabaseService.getDocument('sub_admins', saId);
             if (subAdmin) {
-              const currentBalance = subAdmin.walletBalance || subAdmin.wallet_balance || subAdmin.vndBalance || subAdmin.vnd_balance || 0;
+              const currentBalance = Number(subAdmin.walletBalance || subAdmin.wallet_balance || subAdmin.vndBalance || subAdmin.vnd_balance || 0);
               const newSaBalance = currentBalance + totalToDeduct;
               
-              await firebaseService.updateDocument('sub_admins', saId, {
-                walletBalance: newSaBalance,
-                wallet_balance: newSaBalance, // Compatibility
-                updatedAt: new Date().toISOString()
+              await supabaseService.updateDocument('sub_admins', saId, {
+                wallet_balance: newSaBalance,
+                updated_at: new Date().toISOString()
               });
               
-              await firebaseService.addDocument('sub_admin_wallet_transactions', {
-                subAdminId: saId,
+              await supabaseService.addDocument('sub_admin_wallet_transactions', {
                 sub_admin_id: saId,
                 type: 'credit',
                 amount: totalToDeduct,
                 reason: `Recharge #${tx.id} completed by admin`,
-                orderId: tx.id,
-                balanceAfter: newSaBalance,
-                createdAt: new Date().toISOString()
+                order_id: tx.id,
+                balance_after: newSaBalance,
+                created_at: new Date().toISOString()
               });
             }
           }
 
-          await firebaseService.updateDocument('transactions', tx.id, { 
+          await supabaseService.updateDocument('transactions', tx.id, { 
             status: 'completed', 
-            updatedAt: new Date().toISOString() 
+            updated_at: new Date().toISOString() 
           });
 
-          await firebaseService.addDocument('notifications', {
+          // 3. Process Sub-Admin Commission
+          await supabaseService.processSubAdminCommission(tx);
+
+          await supabaseService.addDocument('notifications', {
             uid: tx.uid,
             title: 'Recharge Completed',
-            message: `Your mobile recharge of ${tx.amount} ${tx.currency} for ${tx.rechargeDetails?.phoneNumber} has been completed.`,
+            message: `Your mobile recharge of ${tx.amount} ${tx.currency} for ${tx.rechargeDetails?.phoneNumber || tx.recharge_details?.phone_number} has been completed.`,
             type: 'transaction',
-            txId: tx.id,
+            tx_id: tx.id,
             read: false,
-            createdAt: new Date().toISOString()
+            created_at: new Date().toISOString()
           });
 
           toast.success(t('completed'));
@@ -139,26 +139,26 @@ export default function AdminRecharge() {
       onConfirm: async () => {
         try {
           const reason = 'Invalid phone number or operator';
-          const amount = tx.amount || 0;
-          const totalToDeduct = tx.total_to_deduct || tx.totalToDeduct || amount;
+          const amount = Number(tx.amount || 0);
+          const totalToDeduct = Number(tx.total_to_deduct || tx.totalToDeduct || amount);
 
           // 1. Refund Locked Balance
-          await firebaseService.updateWalletBalance(tx.uid, tx.currency, 0, -totalToDeduct);
+          await supabaseService.updateWalletBalance(tx.uid, tx.currency, 0, -totalToDeduct);
 
-          await firebaseService.updateDocument('transactions', tx.id, { 
+          await supabaseService.updateDocument('transactions', tx.id, { 
             status: 'failed', 
-            rejectionReason: reason,
-            updatedAt: new Date().toISOString() 
+            rejection_reason: reason,
+            updated_at: new Date().toISOString() 
           });
 
-          await firebaseService.addDocument('notifications', {
+          await supabaseService.addDocument('notifications', {
             uid: tx.uid,
             title: 'Recharge Rejected',
             message: `Your recharge request was rejected. Reason: ${reason}. Amount has been refunded.`,
             type: 'transaction',
-            txId: tx.id,
+            tx_id: tx.id,
             read: false,
-            createdAt: new Date().toISOString()
+            created_at: new Date().toISOString()
           });
 
           toast.success(t('completed'));
@@ -173,7 +173,7 @@ export default function AdminRecharge() {
   const handleDeleteTransaction = async (txId: string) => {
     if (!confirm('Are you sure you want to delete this transaction record? This only removes the record from the history, it does not refund balance.')) return;
     try {
-      await firebaseService.deleteDocument('transactions', txId);
+      await supabaseService.deleteDocument('transactions', txId);
       toast.success('Transaction record deleted');
     } catch (error) {
       toast.error('Failed to delete transaction');

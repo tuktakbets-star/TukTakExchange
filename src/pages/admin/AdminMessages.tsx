@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { firebaseService, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, db } from '../../lib/firebaseService';
+import { supabaseService, serverTimestamp, orderBy } from '../../lib/supabaseService';
 import { useAuth } from '../../hooks/useAuth';
 import { useTranslation } from 'react-i18next';
-import { auth } from '../../lib/firebase';
 import { 
   MessageSquare, 
   Search, 
@@ -47,17 +46,24 @@ export default function AdminMessages() {
 
   useEffect(() => {
     // Subscribe to chats collection to see who has messaged
-    const q = query(collection(db, 'chats'), orderBy('lastMessageAt', 'desc'));
-    const unsubChats = onSnapshot(q, (snapshot) => {
-      const chatList = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+    const unsubChats = supabaseService.subscribeToCollection('chats', [orderBy('last_message_at', 'desc')], (data) => {
+      let chatList = data;
+
+      // Filter for sub-admins: They can ONLY see their own chat with the admin
+      if (profile?.role === 'sub_admin') {
+        chatList = chatList.filter(chat => chat.uid === profile.uid);
+      }
+
       setUsers(chatList);
+      
+      // Auto-select the only available chat for sub-admins
+      if (profile?.role === 'sub_admin' && chatList.length > 0 && !selectedUser) {
+        setSelectedUser(chatList[0]);
+      }
     });
 
     return () => unsubChats();
-  }, []);
+  }, [profile?.role, profile?.uid]);
 
   useEffect(() => {
     if (!selectedUser?.uid) {
@@ -65,15 +71,8 @@ export default function AdminMessages() {
       return;
     }
 
-    const chatRef = collection(db, 'chats', selectedUser.uid, 'messages');
-    const q = query(chatRef, orderBy('createdAt', 'asc'));
-
-    const unsub = onSnapshot(q, (snapshot) => {
-      const msgs = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setMessages(msgs);
+    const unsub = supabaseService.subscribeToCollection(`chats/${selectedUser.uid}/messages`, [orderBy('created_at', 'asc')], (data) => {
+      setMessages(data);
     });
 
     return () => unsub();
@@ -93,12 +92,11 @@ export default function AdminMessages() {
     setNewMessage('');
 
     try {
-      const chatRef = collection(db, 'chats', selectedUser.uid, 'messages');
       const payload: any = {
-        senderId: profile?.uid,
-        senderName: 'Admin',
-        senderRole: 'admin',
-        createdAt: serverTimestamp(),
+        sender_id: profile?.uid,
+        sender_name: 'Admin',
+        sender_role: 'admin',
+        created_at: serverTimestamp(),
         type: mediaData ? mediaData.type : 'text'
       };
 
@@ -109,14 +107,14 @@ export default function AdminMessages() {
         payload.text = msgText;
       }
 
-      await addDoc(chatRef, payload);
+      await supabaseService.addDocument(`chats/${selectedUser.uid}/messages`, payload);
 
       // Update the main chat document
-      await firebaseService.updateDocument('chats', selectedUser.uid, {
-        lastMessage: payload.text,
-        lastMessageAt: serverTimestamp(),
-        unreadCount: 0, // Admin just replied
-        updatedAt: serverTimestamp()
+      await supabaseService.updateDocument('chats', selectedUser.uid, {
+        last_message: payload.text,
+        last_message_at: serverTimestamp(),
+        unread_count: 0, // Admin just replied
+        updated_at: serverTimestamp()
       });
     } catch (error) {
       console.error(error);
@@ -130,7 +128,7 @@ export default function AdminMessages() {
 
     setIsUploading(true);
     try {
-      const base64 = await firebaseService.uploadFile(file);
+      const base64 = await supabaseService.uploadFile(file);
       await handleSendMessage(undefined, { type, url: base64 });
       toast.success(`${type} sent!`);
     } catch (error) {
@@ -154,8 +152,8 @@ export default function AdminMessages() {
   const userMessages = messages;
 
   const filteredUsers = users.filter(u => 
-    u.userName?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    u.userEmail?.toLowerCase().includes(searchQuery.toLowerCase())
+    (u.userName || u.user_name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+    (u.userEmail || u.user_email || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
