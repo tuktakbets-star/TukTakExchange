@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { firebaseService, where } from '../lib/firebaseService';
+import { supabaseService, where } from '../lib/supabaseService';
 import { 
   Users, 
   ArrowUpRight, 
@@ -26,7 +26,6 @@ import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
-import { auth } from '../lib/firebase';
 import { cn } from '@/lib/utils';
 
 export default function AdminPanel() {
@@ -46,10 +45,10 @@ export default function AdminPanel() {
   useEffect(() => {
     if (!isAdmin) return;
 
-    const unsubUsers = firebaseService.subscribeToCollection('users', [], (data) => setUsers(data));
-    const unsubWallets = firebaseService.subscribeToCollection('wallets', [], (data) => setWallets(data));
-    const unsubTX = firebaseService.subscribeToCollection('transactions', [], (data) => setTransactions(data));
-    const unsubRates = firebaseService.subscribeToCollection('rates', [], (data) => setRates(data));
+    const unsubUsers = supabaseService.subscribeToCollection('users', [], (data) => setUsers(data));
+    const unsubWallets = supabaseService.subscribeToCollection('wallets', [], (data) => setWallets(data));
+    const unsubTX = supabaseService.subscribeToCollection('transactions', [], (data) => setTransactions(data));
+    const unsubRates = supabaseService.subscribeToCollection('rates', [], (data) => setRates(data));
 
     setLoading(false);
     return () => {
@@ -79,13 +78,13 @@ export default function AdminPanel() {
 
       // 1. Update User Wallet
       if (isAddMoney) {
-        await firebaseService.updateWalletBalance(tx.uid, tx.currency, amount, 0);
+        await supabaseService.updateWalletBalance(tx.uid, tx.currency, amount, 0);
       } else {
-        await firebaseService.updateWalletBalance(tx.uid, tx.currency, -totalToDeduct, -totalToDeduct);
+        await supabaseService.updateWalletBalance(tx.uid, tx.currency, -totalToDeduct, -totalToDeduct);
       }
 
       // 2. Update Transaction status
-      await firebaseService.updateDocument('transactions', tx.id, { status: 'completed', updatedAt: new Date().toISOString() });
+      await supabaseService.updateDocument('transactions', tx.id, { status: 'completed', updatedAt: new Date().toISOString() });
       
       toast.success('Transaction approved');
     } catch (error) {
@@ -95,7 +94,7 @@ export default function AdminPanel() {
 
   const handleMarkAsPaid = async (tx: any) => {
     try {
-      await firebaseService.updateDocument('transactions', tx.id, { 
+      await supabaseService.updateDocument('transactions', tx.id, { 
         status: 'waiting_confirmation', 
         adminProof: 'https://picsum.photos/seed/proof/400/300',
         updatedAt: new Date().toISOString() 
@@ -114,10 +113,10 @@ export default function AdminPanel() {
 
       if (needsLockedRefund) {
         // Release locked balance
-        await firebaseService.updateWalletBalance(tx.uid, tx.currency, 0, -totalToDeduct);
+        await supabaseService.updateWalletBalance(tx.uid, tx.currency, 0, -totalToDeduct);
       }
 
-      await firebaseService.updateDocument('transactions', tx.id, { 
+      await supabaseService.updateDocument('transactions', tx.id, { 
         status: 'failed', 
         updatedAt: new Date().toISOString() 
       });
@@ -131,7 +130,7 @@ export default function AdminPanel() {
   const handleUpdateRate = async (id: string, newRate: number, currencyPair: string) => {
     try {
       // Use setDocument to handle both new and existing rate docs
-      const success = await firebaseService.setDocument('rates', id, { 
+      const success = await supabaseService.setDocument('rates', id, { 
         rate: newRate, 
         target: currencyPair,
         base: 'VND',
@@ -145,7 +144,7 @@ export default function AdminPanel() {
       }
 
       // Sync with adminSettings global_settings rates
-      const currentSettingsList = await firebaseService.getCollection('adminSettings', [
+      const currentSettingsList = await supabaseService.getCollection('adminSettings', [
         where('key', '==', 'global_settings')
       ]);
       
@@ -154,7 +153,7 @@ export default function AdminPanel() {
         const updatedRates = { ...(globalSettings.value?.rates || {}) };
         updatedRates[currencyPair] = newRate;
         
-        await firebaseService.updateDocument('adminSettings', globalSettings.id, {
+        await supabaseService.updateDocument('adminSettings', globalSettings.id, {
           value: { ...globalSettings.value, rates: updatedRates },
           updatedAt: new Date().toISOString()
         });
@@ -167,7 +166,7 @@ export default function AdminPanel() {
 
   const handleVerifyUser = async (uid: string) => {
     try {
-      await firebaseService.updateDocument('users', uid, { kycStatus: 'verified' });
+      await supabaseService.updateDocument('users', uid, { kycStatus: 'verified' });
       toast.success('User verified');
     } catch (error) {
       toast.error('Failed to verify');
@@ -176,7 +175,7 @@ export default function AdminPanel() {
 
   const handleBanUser = async (uid: string) => {
     try {
-      await firebaseService.updateDocument('users', uid, { status: 'banned' });
+      await supabaseService.updateDocument('users', uid, { status: 'banned' });
       toast.success('User banned');
     } catch (error) {
       toast.error('Failed to ban');
@@ -185,7 +184,7 @@ export default function AdminPanel() {
 
   const sendNotification = async (title: string, message: string) => {
     try {
-      await firebaseService.addDocument('notifications', {
+      await supabaseService.addDocument('notifications', {
         title,
         message,
         type: 'alert',
@@ -273,7 +272,7 @@ export default function AdminPanel() {
           <Button 
             variant="ghost" 
             className="w-full justify-start text-slate-400 hover:text-red-400 hover:bg-red-500/10"
-            onClick={() => auth.signOut()}
+            onClick={() => supabaseService.signOut()}
           >
             <LogOut className="w-4 h-4 mr-3" />
             Logout
@@ -525,7 +524,7 @@ export default function AdminPanel() {
                                 size="sm" 
                                 variant="ghost" 
                                 className={user.status === 'banned' ? 'text-green-400' : 'text-red-400'}
-                                onClick={() => user.status === 'banned' ? firebaseService.updateDocument('users', user.uid, { status: 'active' }) : handleBanUser(user.uid)}
+                                onClick={() => user.status === 'banned' ? supabaseService.updateDocument('users', user.uid, { status: 'active' }) : handleBanUser(user.uid)}
                               >
                                 {user.status === 'banned' ? 'Unban' : 'Ban'}
                               </Button>

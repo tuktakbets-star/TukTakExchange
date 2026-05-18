@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { firebaseService, where } from '../lib/firebaseService';
+import { supabaseService, where } from '../lib/supabaseService';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Plus, 
@@ -48,7 +48,7 @@ export default function AddMoney() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    const unsubSettings = firebaseService.subscribeToCollection('adminSettings', [], (data) => {
+    const unsubSettings = supabaseService.subscribeToCollection('adminSettings', [], (data) => {
       // Look for specific add_money_settings first, then fallback to global_settings (Vietnam section)
       const amSettings = data.find(s => s.key === 'add_money_settings');
       const globalSettings = data.find(s => s.key === 'global_settings');
@@ -95,14 +95,14 @@ export default function AddMoney() {
     setIsSubmitting(true);
     try {
       // 1. Verify Password first
-      const { error: authError } = await firebaseService.signIn(profile.email, password);
+      const { error: authError } = await supabaseService.signIn(profile.email, password);
       if (authError) {
         toast.error(t('password_incorrect'));
         setIsSubmitting(false);
         return;
       }
 
-      const realProofUrl = await firebaseService.uploadFile(proofFile);
+      const realProofUrl = await supabaseService.uploadFile(proofFile);
       const tx: any = {
         uid: profile.uid,
         user_name: profile.full_name || profile.displayName || "Customer", // Added for trigger compatibility
@@ -118,7 +118,7 @@ export default function AddMoney() {
         description: `Add Money ${amountSource} VND from Vietnam`
       };
 
-      const docId = await firebaseService.addDocument('transactions', tx);
+      const docId = await supabaseService.addDocument('transactions', tx);
       if (docId) {
         // Trigger Telegram update
         fetch('/api/telegram-notifier', {

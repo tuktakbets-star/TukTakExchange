@@ -42,6 +42,30 @@ export default function AdminSendMoney() {
     };
   }, []);
 
+  const handleAccept = async (tx: any) => {
+    try {
+      await supabaseService.updateDocument('transactions', tx.id, { 
+        status: 'accepted',
+        updated_at: new Date().toISOString()
+      });
+      toast.success('Task claimed');
+    } catch (error) {
+      toast.error('Failed to claim task');
+    }
+  };
+
+  const handleStartTask = async (tx: any) => {
+    try {
+      await supabaseService.updateDocument('transactions', tx.id, { 
+        status: 'processing',
+        updated_at: new Date().toISOString()
+      });
+      toast.success('Task started');
+    } catch (error) {
+      toast.error('Failed to start task');
+    }
+  };
+
   const handleConfirmPayment = async (tx: any) => {
     const proofUrl = prompt(t('enter_proof_url'), 'https://picsum.photos/seed/proof/800/600');
     if (!proofUrl) return;
@@ -100,10 +124,23 @@ export default function AdminSendMoney() {
     }
   };
 
-  const filteredRequests = requests.filter(req => {
+  const filteredRequests = requests.sort((a, b) => new Date(b.created_at || b.createdAt || 0).getTime() - new Date(a.created_at || a.createdAt || 0).getTime()).filter(req => {
     const sender = users.find(u => u.uid === req.uid);
-    return sender?.displayName?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-           req.receiverInfo?.name?.toLowerCase().includes(searchQuery.toLowerCase());
+    const searchLower = searchQuery.toLowerCase();
+    
+    if (!searchQuery) return true;
+
+    const matchesSender = sender && (
+      sender.displayName?.toLowerCase().includes(searchLower) ||
+      sender.email?.toLowerCase().includes(searchLower) ||
+      sender.uid?.toLowerCase().includes(searchLower)
+    );
+    
+    const receiverName = req.receiverInfo?.name || req.receiver_info?.name || '';
+    const matchesReceiver = receiverName.toLowerCase().includes(searchLower);
+    const matchesId = req.id.toLowerCase().includes(searchLower);
+    
+    return matchesSender || matchesReceiver || matchesId;
   });
 
   return (
@@ -194,39 +231,60 @@ export default function AdminSendMoney() {
                         </Badge>
                       </td>
                       <td className="px-8 py-6 text-right">
-                        {tx.status === 'pending' ? (
-                          <div className="flex justify-end gap-2">
+                        <div className="flex justify-end gap-2">
+                          {tx.status === 'pending' && (
+                            <>
+                              <Button 
+                                size="sm" 
+                                className="bg-brand-blue hover:bg-blue-500 h-9 px-4 rounded-xl"
+                                onClick={() => handleAccept(tx)}
+                              >
+                                {t('accept')}
+                              </Button>
+                              <Button 
+                                size="sm" 
+                                variant="ghost" 
+                                className="text-red-400 hover:text-red-300 hover:bg-red-500/10 h-9 px-4 rounded-xl"
+                                onClick={() => handleReject(tx)}
+                              >
+                                <XCircle className="w-4 h-4 mr-2" />
+                                {t('reject')}
+                              </Button>
+                            </>
+                          )}
+                          {tx.status === 'accepted' && (
                             <Button 
                               size="sm" 
-                              className="bg-red-600 hover:bg-red-500 h-9 px-4 rounded-xl"
+                              className="bg-indigo-600 hover:bg-indigo-500 h-9 px-4 rounded-xl font-bold font-display"
+                              onClick={() => handleStartTask(tx)}
+                            >
+                              Start Task
+                            </Button>
+                          )}
+                          {tx.status === 'processing' && (
+                            <Button 
+                              size="sm" 
+                              className="bg-green-600 hover:bg-green-500 h-9 px-4 rounded-xl font-bold font-display animate-pulse"
                               onClick={() => handleConfirmPayment(tx)}
                             >
                               <CheckCircle2 className="w-4 h-4 mr-2" />
                               {t('confirm_payment')}
                             </Button>
-                            <Button 
-                              size="sm" 
-                              variant="ghost" 
-                              className="text-red-400 hover:text-red-300 hover:bg-red-500/10 h-9 px-4 rounded-xl"
-                              onClick={() => handleReject(tx)}
+                          )}
+                          {tx.status === 'completed' && tx.adminProof ? (
+                            <a 
+                              href={tx.adminProof} 
+                              target="_blank" 
+                              rel="noreferrer" 
+                              className="inline-flex items-center gap-2 text-blue-500 hover:text-blue-400 text-xs font-bold transition-colors"
                             >
-                              <XCircle className="w-4 h-4 mr-2" />
-                              {t('reject')}
-                            </Button>
-                          </div>
-                        ) : tx.adminProof ? (
-                          <a 
-                            href={tx.adminProof} 
-                            target="_blank" 
-                            rel="noreferrer" 
-                            className="inline-flex items-center gap-2 text-blue-500 hover:text-blue-400 text-xs font-bold transition-colors"
-                          >
-                            <ExternalLink className="w-4 h-4" />
-                            {t('proof_sent')}
-                          </a>
-                        ) : (
-                          <span className="text-slate-600 text-xs italic">{t('processed')}</span>
-                        )}
+                              <ExternalLink className="w-4 h-4" />
+                              {t('proof_sent')}
+                            </a>
+                          ) : (
+                            <span className="text-slate-600 text-xs italic">{t('processed')}</span>
+                          )}
+                        </div>
                       </td>
                     </motion.tr>
                   );

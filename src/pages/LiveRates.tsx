@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { firebaseService } from '../lib/firebaseService';
+import { supabaseService } from '../lib/supabaseService';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../hooks/useAuth';
 import { cn } from '@/lib/utils';
@@ -31,7 +31,7 @@ export default function LiveRates() {
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   useEffect(() => {
-    const unsub = firebaseService.subscribeToCollection('rates', [], (data) => {
+    const unsub = supabaseService.subscribeToCollection('rates', [], (data) => {
       setRates(data);
     });
     return () => unsub();

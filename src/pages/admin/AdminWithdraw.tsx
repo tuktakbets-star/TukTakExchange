@@ -63,6 +63,18 @@ export default function AdminWithdraw() {
   const [viewerSrc, setViewerSrc] = useState<string | null>(null);
   const [isViewerOpen, setIsViewerOpen] = useState(false);
 
+  const handleStartProcessing = async (tx: any) => {
+    try {
+      await supabaseService.updateDocument('transactions', tx.id, { 
+        status: 'processing',
+        updated_at: new Date().toISOString()
+      });
+      toast.success('Task started.');
+    } catch (error) {
+      toast.error('Failed to start task');
+    }
+  };
+
   const handlePaid = async (tx: any) => {
     setConfirmConfig({
       title: 'Mark as Paid',
@@ -217,10 +229,21 @@ export default function AdminWithdraw() {
     }
   };
 
-  const filteredRequests = requests.filter(req => {
+  const filteredRequests = requests.sort((a, b) => new Date(b.created_at || b.createdAt || 0).getTime() - new Date(a.created_at || a.createdAt || 0).getTime()).filter(req => {
     const user = users.find(u => u.uid === req.uid);
-    return user?.displayName?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-           user?.uid?.toLowerCase().includes(searchQuery.toLowerCase());
+    const searchLower = searchQuery.toLowerCase();
+    
+    if (!searchQuery) return true;
+
+    const matchesUser = user && (
+      user.displayName?.toLowerCase().includes(searchLower) ||
+      user.uid?.toLowerCase().includes(searchLower) ||
+      user.email?.toLowerCase().includes(searchLower)
+    );
+    
+    const matchesId = req.id.toLowerCase().includes(searchLower);
+    
+    return matchesUser || matchesId;
   });
 
   return (
@@ -353,7 +376,7 @@ export default function AdminWithdraw() {
                             <>
                               <Button 
                                 size="sm" 
-                                className="bg-blue-600 hover:bg-blue-500 h-9 px-4 rounded-xl"
+                                className="bg-brand-blue hover:bg-blue-500 h-9 px-4 rounded-xl"
                                 onClick={() => handleAccept(tx)}
                               >
                                 {t('accept')}
@@ -371,7 +394,16 @@ export default function AdminWithdraw() {
                           {tx.status === 'accepted' && (
                             <Button 
                               size="sm" 
-                              className="bg-purple-600 hover:bg-purple-500 h-9 px-4 rounded-xl"
+                              className="bg-indigo-600 hover:bg-indigo-500 h-9 px-4 rounded-xl font-bold font-display"
+                              onClick={() => handleStartProcessing(tx)}
+                            >
+                              Start Processing
+                            </Button>
+                          )}
+                          {tx.status === 'processing' && (
+                            <Button 
+                              size="sm" 
+                              className="bg-purple-600 hover:bg-purple-500 h-9 px-4 rounded-xl font-bold font-display animate-pulse"
                               onClick={() => handlePaid(tx)}
                             >
                               {t('mark_as_paid')}

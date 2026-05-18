@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { firebaseService } from '../../lib/firebaseService';
+import { supabaseService } from '../../lib/supabaseService';
 import { useTranslation } from 'react-i18next';
 import { 
   Bell, 
@@ -32,10 +32,10 @@ export default function AdminNotifications() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubNotifs = firebaseService.subscribeToCollection('notifications', [], (data) => {
+    const unsubNotifs = supabaseService.subscribeToCollection('notifications', [], (data) => {
       setNotifications(data.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
     });
-    const unsubUsers = firebaseService.subscribeToCollection('users', [], (data) => setUsers(data));
+    const unsubUsers = supabaseService.subscribeToCollection('users', [], (data) => setUsers(data));
     setLoading(false);
     return () => {
       unsubNotifs();
@@ -60,7 +60,7 @@ export default function AdminNotifications() {
         targetId: targetType === 'specific' ? selectedUser : 'all'
       };
 
-      await firebaseService.addDocument('notifications', notifData);
+      await supabaseService.addDocument('notifications', notifData);
       toast.success(t('notification_sent'));
       (e.target as HTMLFormElement).reset();
     } catch (error) {
@@ -71,7 +71,7 @@ export default function AdminNotifications() {
   const handleDelete = async (id: string) => {
     if (!confirm(t('confirm_action'))) return;
     try {
-      await firebaseService.deleteDocument('notifications', id);
+      await supabaseService.deleteDocument('notifications', id);
       toast.success(t('completed'));
     } catch (error) {
       toast.error(t('operation_failed'));

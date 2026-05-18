@@ -24,7 +24,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { firebaseService, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, db } from '../../lib/firebaseService';
+import { supabaseService, where, orderBy, serverTimestamp } from '../../lib/supabaseService';
 import { useAuth } from '../../hooks/useAuth';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -50,22 +50,19 @@ export default function OperatorMessages() {
       return;
     }
 
-    const chatRef = collection(db, 'chats', operatorId, 'messages');
-    const q = query(chatRef, orderBy('createdAt', 'asc'));
-
-    const unsub = onSnapshot(q, (snapshot) => {
-      const msgs = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setMessages(msgs);
-      setLoading(false);
-      
-      // Scroll to bottom
-      setTimeout(() => {
-        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-      }, 100);
-    });
+    const unsub = supabaseService.subscribeToCollection(
+      `chats/${operatorId}/messages`,
+      [orderBy('createdAt', 'asc')],
+      (data) => {
+        setMessages(data || []);
+        setLoading(false);
+        
+        // Scroll to bottom
+        setTimeout(() => {
+          chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }, 100);
+      }
+    );
 
     return () => unsub();
   }, [operatorId]);
@@ -78,12 +75,11 @@ export default function OperatorMessages() {
     setNewMessage('');
 
     try {
-      const chatRef = collection(db, 'chats', operatorId!, 'messages');
       const payload: any = {
         senderId: operatorSession.id,
         senderName: operatorName,
         senderRole: 'sub_admin',
-        createdAt: serverTimestamp(),
+        createdAt: new Date().toISOString(),
         type: mediaData ? mediaData.type : 'text'
       };
 
@@ -94,17 +90,17 @@ export default function OperatorMessages() {
         payload.text = msgText;
       }
 
-      await addDoc(chatRef, payload);
+      await supabaseService.addDocument(`chats/${operatorId}/messages`, payload);
 
       // Update main chat doc
-      await firebaseService.setDocument('chats', operatorId!, {
+      await supabaseService.setDocument('chats', operatorId!, {
         lastMessage: payload.text,
-        lastMessageAt: serverTimestamp(),
+        lastMessageAt: new Date().toISOString(),
         unreadCount: 1, // Admin should see this
         userName: operatorName,
         userRole: 'sub_admin',
         uid: operatorId,
-        updatedAt: serverTimestamp()
+        updatedAt: new Date().toISOString()
       });
     } catch (error) {
       console.error('Error sending message:', error);
@@ -118,7 +114,7 @@ export default function OperatorMessages() {
 
     setIsUploading(true);
     try {
-      const base64 = await firebaseService.uploadFile(file);
+      const base64 = await supabaseService.uploadFile(file);
       await handleSendMessage(undefined, { type, url: base64 });
       toast.success(`${type} sent!`);
     } catch (error) {

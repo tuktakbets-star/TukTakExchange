@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { firebaseService } from '../lib/firebaseService';
+import { supabaseService } from '../lib/supabaseService';
 import { useTranslation } from 'react-i18next';
 import { 
   TrendingUp, 
@@ -53,7 +53,7 @@ export default function ExchangeRates() {
   const [search, setSearch] = useState('');
 
   useEffect(() => {
-    const unsub = firebaseService.subscribeToCollection('rates', [], (data) => {
+    const unsub = supabaseService.subscribeToCollection('rates', [], (data) => {
       setRates(data);
     });
     return () => unsub();
@@ -72,7 +72,7 @@ export default function ExchangeRates() {
       return;
     }
     try {
-      const success = await firebaseService.setDocument('rates', pair, {
+      const success = await supabaseService.setDocument('rates', pair, {
         ...rateObj,
         rate: Number(editValue),
         updatedAt: new Date().toISOString()

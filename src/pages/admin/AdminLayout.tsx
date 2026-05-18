@@ -36,11 +36,17 @@ export default function AdminLayout() {
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [pendingKYCCount, setPendingKYCCount] = useState(0);
+  const [pendingExchangeCount, setPendingExchangeCount] = useState(0);
   const [adminBalance, setAdminBalance] = useState<number>(0);
 
   React.useEffect(() => {
     const unsubKYC = supabaseService.subscribeToCollection('kyc_submissions', [], (data) => {
       setPendingKYCCount(data.filter((k: any) => k.status === 'pending').length);
+    });
+
+    const unsubTX = supabaseService.subscribeToCollection('transactions', [], (data) => {
+      const activeStatuses = ['pending', 'accepted', 'processing', 'waiting_confirmation', 'mark_as_paid'];
+      setPendingExchangeCount(data.filter((tx: any) => tx.type === 'exchange' && activeStatuses.includes(tx.status)).length);
     });
 
     let unsubWallets: any = null;
@@ -54,6 +60,7 @@ export default function AdminLayout() {
 
     return () => {
       unsubKYC();
+      unsubTX();
       if (unsubWallets) unsubWallets();
     };
   }, [profile?.uid]);
@@ -62,7 +69,7 @@ export default function AdminLayout() {
     { id: 'dashboard', label: t('dashboard'), icon: LayoutDashboard, path: '/admin-dashboard' },
     { id: 'deposits', label: t('deposits'), icon: Wallet, path: '/admin-dashboard/deposits' },
     { id: 'send-money', label: t('sendMoney'), icon: Send, path: '/admin-dashboard/send-money' },
-    { id: 'exchange', label: 'Exchanges', icon: RefreshCw, path: '/admin-dashboard/exchange' },
+    { id: 'exchange', label: 'Exchanges', icon: RefreshCw, path: '/admin-dashboard/exchange', badge: pendingExchangeCount > 0 ? pendingExchangeCount : null },
     { id: 'withdraw', label: t('withdraw'), icon: ArrowUpRight, path: '/admin-dashboard/withdraw' },
     { id: 'recharge', label: t('recharge'), icon: Zap, path: '/admin-dashboard/recharge' },
     { id: 'sub-admins', label: 'Sub Admins', icon: ShieldCheck, path: '/admin-dashboard/sub-admins' },

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { firebaseService, where } from '../lib/firebaseService';
+import { supabaseService, where } from '../lib/supabaseService';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { calculateServiceFee } from '../lib/feeUtils';
@@ -48,13 +48,15 @@ export default function Recharge() {
   const [rechargeFee, setRechargeFee] = useState(0);
 
   useEffect(() => {
-    const unsubWallets = firebaseService.subscribeToCollection(
+    if (!profile?.uid) return;
+
+    const unsubWallets = supabaseService.subscribeToCollection(
       'wallets',
       [where('uid', '==', profile.uid)],
       (data) => setWallets(data)
     );
 
-    const unsubSettings = firebaseService.subscribeToCollection('adminSettings', [], (data) => {
+    const unsubSettings = supabaseService.subscribeToCollection('adminSettings', [], (data) => {
       const globalSettings = data.find(s => s.key === 'global_settings');
       if (globalSettings) setAdminSettings(globalSettings.value);
     });
@@ -113,14 +115,14 @@ export default function Recharge() {
     setIsSubmitting(true);
     try {
       // 1. Verify Password first
-      const { error: authError } = await firebaseService.signIn(profile.email, password);
+      const { error: authError } = await supabaseService.signIn(profile.email, password);
       if (authError) {
         toast.error('Incorrect password. Please try again.');
         setIsSubmitting(false);
         return;
       }
 
-      const tx = {
+      const tx: any = {
         uid: profile?.uid,
         user_name: profile?.full_name || profile?.displayName || "Customer",
         type: 'recharge',
@@ -144,7 +146,7 @@ export default function Recharge() {
         }
       };
       
-      const docId = await firebaseService.addDocument('transactions', tx);
+      const docId = await supabaseService.addDocument('transactions', tx);
       
       if (docId) {
         // --- SEND TELEGRAM NOTIFICATION DIRECTLY ---
@@ -158,7 +160,7 @@ export default function Recharge() {
         // -------------------------------------------
 
         // Lock balance instead of direct deduction
-        await firebaseService.updateWalletBalance(profile?.uid!, 'VND', 0, Number(amount) + Number(rechargeFee));
+        await supabaseService.updateWalletBalance(profile?.uid!, 'VND', 0, Number(amount) + Number(rechargeFee));
 
         toast.success(t('recharge_submitted'));
         navigate(`/waiting/${docId}`);

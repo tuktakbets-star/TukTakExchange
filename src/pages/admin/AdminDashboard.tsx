@@ -14,7 +14,8 @@ import {
   Heart,
   ArrowDownLeft,
   ArrowRight,
-  ShieldCheck
+  ShieldCheck,
+  RefreshCw
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -32,6 +33,7 @@ export default function AdminDashboard() {
     pendingSends: 0,
     pendingWithdraws: 0,
     pendingRecharges: 0,
+    pendingExchanges: 0,
     pendingKYC: 0,
     donations: 0,
     disputes: 0,
@@ -56,7 +58,8 @@ export default function AdminDashboard() {
         }, 0);
         
         const subAdminTotal = (subAdminsData || []).reduce((acc: number, curr: any) => {
-          return acc + (Number(curr.walletBalance ?? curr.wallet_balance ?? 0));
+          const balance = curr.walletBalance ?? curr.wallet_balance ?? curr.vndBalance ?? curr.vnd_balance ?? 0;
+          return acc + Number(balance);
         }, 0);
 
         setStats(prev => ({ ...prev, totalBalance: userTotal + subAdminTotal }));
@@ -64,10 +67,12 @@ export default function AdminDashboard() {
     });
 
     const unsubTX = supabaseService.subscribeToCollection('transactions', [], (data) => {
-      const pendingD = data.filter((tx: any) => tx.type === 'deposit' && tx.status === 'pending').length;
-      const pendingS = data.filter((tx: any) => tx.type === 'send' && tx.status === 'pending').length;
-      const pendingW = data.filter((tx: any) => tx.type === 'withdraw' && tx.status === 'pending').length;
-      const pendingR = data.filter((tx: any) => tx.type === 'recharge' && tx.status === 'pending').length;
+      const activeStatuses = ['pending', 'accepted', 'processing', 'waiting_confirmation', 'mark_as_paid'];
+      const pendingD = data.filter((tx: any) => (tx.type === 'deposit' || tx.type === 'cash_in' || tx.type === 'add_money') && activeStatuses.includes(tx.status)).length;
+      const pendingS = data.filter((tx: any) => tx.type === 'send' && activeStatuses.includes(tx.status)).length;
+      const pendingW = data.filter((tx: any) => tx.type === 'withdraw' && activeStatuses.includes(tx.status)).length;
+      const pendingR = data.filter((tx: any) => tx.type === 'recharge' && activeStatuses.includes(tx.status)).length;
+      const pendingE = data.filter((tx: any) => tx.type === 'exchange' && activeStatuses.includes(tx.status)).length;
       const disputes = data.filter((tx: any) => tx.status === 'disputed').length;
       const donations = data.filter((tx: any) => tx.type === 'donation').reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
       
@@ -83,14 +88,18 @@ export default function AdminDashboard() {
         pendingSends: pendingS,
         pendingWithdraws: pendingW,
         pendingRecharges: pendingR,
+        pendingExchanges: pendingE,
         disputes,
         donations,
         todayVolume: volume
       }));
-      setRecentActivity(data.slice(0, 8).map(tx => ({
-        ...tx,
-        amount: Number(tx.amount) || 0
-      })));
+      setRecentActivity(
+        data.sort((a, b) => new Date(b.created_at || b.createdAt || 0).getTime() - new Date(a.created_at || a.createdAt || 0).getTime())
+        .slice(0, 8).map(tx => ({
+          ...tx,
+          amount: Number(tx.amount) || 0
+        }))
+      );
     });
 
     const unsubRates = supabaseService.subscribeToCollection('rates', [], (data) => {
@@ -124,18 +133,19 @@ export default function AdminDashboard() {
   }, []);
 
   const statCards = [
-    { label: t('totalUsers'), value: stats.users, icon: Users, color: 'text-blue-500', bg: 'bg-blue-500/10', path: '/admin/users' },
+    { label: t('totalUsers'), value: stats.users, icon: Users, color: 'text-blue-500', bg: 'bg-blue-500/10', path: '/admin-dashboard/users' },
     { label: t('totalBalance'), value: `₫${stats.totalBalance.toLocaleString()}`, icon: Wallet, color: 'text-emerald-500', bg: 'bg-emerald-500/10', path: '/admin-dashboard/users' },
     { label: t('today_volume', "Today's Volume"), value: `₫${(stats.todayVolume || 0).toLocaleString()}`, icon: TrendingUp, color: 'text-blue-400', bg: 'bg-blue-400/10', path: '/admin-dashboard' },
-    { label: t('pendingDeposits'), value: stats.pendingDeposits, icon: ArrowDownLeft, color: 'text-yellow-500', bg: 'bg-yellow-500/10', path: '/admin-dashboard' },
-    { label: t('pendingSends'), value: stats.pendingSends, icon: Send, color: 'text-purple-500', bg: 'bg-purple-500/10', path: '/admin/send-money' },
-    { label: t('pendingWithdraws'), value: stats.pendingWithdraws, icon: ArrowUpRight, color: 'text-orange-500', bg: 'bg-orange-500/10', path: '/admin/withdraw' },
-    { label: t('pendingRecharges'), value: stats.pendingRecharges, icon: Zap, color: 'text-cyan-500', bg: 'bg-cyan-500/10', path: '/admin/recharge' },
+    { label: t('pendingDeposits'), value: stats.pendingDeposits, icon: ArrowDownLeft, color: 'text-yellow-500', bg: 'bg-yellow-500/10', path: '/admin-dashboard/deposits' },
+    { label: t('pendingSends'), value: stats.pendingSends, icon: Send, color: 'text-purple-500', bg: 'bg-purple-500/10', path: '/admin-dashboard/send-money' },
+    { label: t('pendingWithdraws'), value: stats.pendingWithdraws, icon: ArrowUpRight, color: 'text-orange-500', bg: 'bg-orange-500/10', path: '/admin-dashboard/withdraw' },
+    { label: t('pendingRecharges'), value: stats.pendingRecharges, icon: Zap, color: 'text-cyan-500', bg: 'bg-cyan-500/10', path: '/admin-dashboard/recharge' },
+    { label: 'Pending Exchanges', value: stats.pendingExchanges, icon: RefreshCw, color: 'text-orange-400', bg: 'bg-orange-400/10', path: '/admin-dashboard/exchange' },
     { label: 'Pending KYC', value: stats.pendingKYC, icon: ShieldCheck, color: 'text-rose-500', bg: 'bg-rose-500/10', path: '/admin-dashboard/users' },
     { label: t('totalDonations'), value: `₫${stats.donations.toLocaleString()}`, icon: Heart, color: 'text-pink-500', bg: 'bg-pink-500/10', path: '/admin-dashboard' },
-    { label: t('reports_disputes'), value: stats.disputes, icon: AlertTriangle, color: 'text-red-500', bg: 'bg-red-500/10', path: '/admin/disputes' },
-    { label: t('messages'), value: stats.messages, icon: MessageSquare, color: 'text-indigo-500', bg: 'bg-indigo-500/10', path: '/admin/messages' },
-    { label: t('notifications'), value: stats.notifications, icon: Bell, color: 'text-amber-500', bg: 'bg-amber-500/10', path: '/admin/notifications' },
+    { label: t('reports_disputes'), value: stats.disputes, icon: AlertTriangle, color: 'text-red-500', bg: 'bg-red-500/10', path: '/admin-dashboard/disputes' },
+    { label: t('messages'), value: stats.messages, icon: MessageSquare, color: 'text-indigo-500', bg: 'bg-indigo-500/10', path: '/admin-dashboard/messages' },
+    { label: t('notifications'), value: stats.notifications, icon: Bell, color: 'text-amber-500', bg: 'bg-amber-500/10', path: '/admin-dashboard/notifications' },
   ];
 
   return (
@@ -181,6 +191,41 @@ export default function AdminDashboard() {
 
       <div className="grid lg:grid-cols-3 gap-8">
         <Card className="lg:col-span-2 glass-dark border-white/5 rounded-[2.5rem] p-8">
+          <div className="flex items-center justify-between mb-8">
+            <h3 className="text-xl font-display font-bold">Recent Activity</h3>
+            <Button variant="ghost" className="text-slate-400 hover:text-white" onClick={() => navigate('/admin-dashboard/deposits')}>View All</Button>
+          </div>
+          <div className="space-y-4">
+            {recentActivity.length === 0 ? (
+              <div className="text-center py-12 text-slate-500">No recent activity</div>
+            ) : (
+              recentActivity.map((tx) => (
+                <div key={tx.id} className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5 hover:border-white/10 transition-colors group">
+                  <div className="flex items-center gap-4">
+                    <div className={cn(
+                      "w-12 h-12 rounded-xl flex items-center justify-center",
+                      tx.status === 'completed' ? "bg-green-500/10 text-green-500" :
+                      tx.status === 'pending' ? "bg-yellow-500/10 text-yellow-500" :
+                      "bg-blue-500/10 text-blue-500"
+                    )}>
+                      {tx.type === 'withdraw' ? <ArrowUpRight className="w-6 h-6" /> : <ArrowDownLeft className="w-6 h-6" />}
+                    </div>
+                    <div>
+                      <p className="font-bold capitalize">{tx.type.replace('_', ' ')}</p>
+                      <p className="text-[10px] text-slate-500 uppercase tracking-widest font-mono">#{tx.id.slice(0, 8)}</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-bold text-sm">₫{Number(tx.amount).toLocaleString()}</p>
+                    <p className="text-[10px] text-slate-500">{new Date(tx.createdAt || tx.created_at).toLocaleTimeString()}</p>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </Card>
+
+        <Card className="glass-dark border-white/5 rounded-[2.5rem] p-8">
           <div className="flex items-center justify-between mb-8">
             <h3 className="text-xl font-display font-bold">Pending KYC Applications</h3>
             <Button variant="ghost" className="text-slate-400 hover:text-white" onClick={() => navigate('/admin-dashboard/users')}>View All</Button>

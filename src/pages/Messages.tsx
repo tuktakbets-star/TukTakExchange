@@ -6,8 +6,7 @@ import { Input } from '@/components/ui/input';
 import { useTranslation } from 'react-i18next';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useAuth } from '../hooks/useAuth';
-import { firebaseService, orderBy, query, collection, onSnapshot, addDoc, serverTimestamp, db } from '../lib/firebaseService';
-import { auth } from '../lib/firebase';
+import { supabaseService, orderBy, where } from '../lib/supabaseService';
 import { toast } from 'sonner';
 
 export default function Messages() {
@@ -25,24 +24,21 @@ export default function Messages() {
   useEffect(() => {
     if (!profile?.uid) return;
 
-    const chatRef = collection(db, 'chats', profile.uid, 'messages');
-    const q = query(chatRef, orderBy('createdAt', 'asc'));
-
-    const unsub = onSnapshot(q, (snapshot) => {
-      const msgs = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setMessages(msgs);
-      setLoading(false);
-      
-      // Scroll to bottom
-      setTimeout(() => {
-        if (scrollRef.current) {
-          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-        }
-      }, 100);
-    });
+    const unsub = supabaseService.subscribeToCollection(
+      'messages', 
+      [where('chat_id', '==', profile.uid), orderBy('createdAt', 'asc')], 
+      (data) => {
+        setMessages(data);
+        setLoading(false);
+        
+        // Scroll to bottom
+        setTimeout(() => {
+          if (scrollRef.current) {
+            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+          }
+        }, 100);
+      }
+    );
 
     return () => unsub();
   }, [profile?.uid]);
@@ -55,12 +51,12 @@ export default function Messages() {
     setMessage('');
 
     try {
-      const chatRef = collection(db, 'chats', profile!.uid, 'messages');
       const payload: any = {
+        chat_id: profile!.uid,
         senderId: profile!.uid,
         senderName: profile!.displayName || 'User',
         senderRole: 'user',
-        createdAt: serverTimestamp(),
+        createdAt: new Date().toISOString(),
         type: mediaData ? mediaData.type : 'text'
       };
 
@@ -71,17 +67,17 @@ export default function Messages() {
         payload.text = msgText;
       }
 
-      await addDoc(chatRef, payload);
+      await supabaseService.addDocument('messages', payload);
 
       // Update the main chat document for admin to see latest message
-      await firebaseService.setDocument('chats', profile!.uid, {
+      await supabaseService.setDocument('chats', profile!.uid, {
         lastMessage: payload.text,
-        lastMessageAt: serverTimestamp(),
+        lastMessageAt: new Date().toISOString(),
         unreadCount: 1, // Admin will reset this
         userName: profile!.displayName || 'User',
         userEmail: profile!.email,
         uid: profile!.uid,
-        updatedAt: serverTimestamp()
+        updatedAt: new Date().toISOString()
       });
     } catch (error) {
       console.error('Error sending message:', error);
@@ -95,7 +91,7 @@ export default function Messages() {
 
     setIsUploading(true);
     try {
-      const base64 = await firebaseService.uploadFile(file);
+      const base64 = await supabaseService.uploadFile(file);
       await handleSendMessage(undefined, { type, url: base64 });
       toast.success(`${type} sent!`);
     } catch (error) {

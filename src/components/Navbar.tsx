@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { auth } from '../lib/firebase';
-import { firebaseService, where } from '../lib/firebaseService';
+import { supabaseService, where } from '../lib/supabaseService';
 import { useTranslation } from 'react-i18next';
 import AdminLoginModal from './AdminLoginModal';
 import BackButton from './BackButton';
@@ -48,7 +47,7 @@ export default function Navbar({ onMenuClick }: NavbarProps) {
 
   useEffect(() => {
     if (!profile?.uid) return;
-    const unsub = firebaseService.subscribeToCollection('wallets', [where('uid', '==', profile.uid)], (data) => {
+    const unsub = supabaseService.subscribeToCollection('wallets', [where('uid', '==', profile.uid)], (data) => {
       setWallets(data);
     });
     return () => unsub();

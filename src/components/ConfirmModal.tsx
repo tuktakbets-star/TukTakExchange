@@ -4,7 +4,7 @@ import { AlertCircle, X, Download, Upload, FileCheck } from 'lucide-react';
 import { Button } from './ui/button';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
-import { firebaseService } from '@/lib/firebaseService';
+import { supabaseService } from '@/lib/supabaseService';
 import { toast } from 'sonner';
 
 interface ConfirmModalProps {
@@ -137,7 +137,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
                   if (showInput && proofFile) {
                     setIsUploading(true);
                     try {
-                      const realUrl = await firebaseService.uploadFile(proofFile);
+                      const realUrl = await supabaseService.uploadFile(proofFile);
                       onConfirm({ proofUrl: realUrl });
                     } catch (error) {
                       toast.error('Failed to upload proof');

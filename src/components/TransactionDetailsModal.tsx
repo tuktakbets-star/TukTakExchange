@@ -104,7 +104,10 @@ export const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = (
                     <DetailRow label={t('type')} value={tx.type} icon={Tag} />
                     <DetailRow label={t('status')} value={tx.status} icon={Tag} />
                     <DetailRow label={t('amount')} value={`${tx.amount?.toLocaleString()} ${tx.currency}`} icon={DollarSign} />
-                    <DetailRow label={t('date')} value={new Date(tx.createdAt).toLocaleString()} icon={Calendar} />
+                    {tx.commissionAmount || tx.commission_amount ? (
+                      <DetailRow label="Commission" value={`₫${(tx.commissionAmount || tx.commission_amount).toLocaleString()}`} icon={Tag} />
+                    ) : null}
+                    <DetailRow label={t('date')} value={new Date(tx.createdAt || tx.created_at).toLocaleString()} icon={Calendar} />
                   </div>
                 </div>
               </div>

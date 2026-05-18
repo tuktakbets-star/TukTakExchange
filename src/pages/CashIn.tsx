@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { firebaseService, where } from '../lib/firebaseService';
+import { supabaseService, where } from '../lib/supabaseService';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Plus, 
@@ -48,11 +48,11 @@ export default function CashIn() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    const unsubRates = firebaseService.subscribeToCollection('rates', [], (data) => {
+    const unsubRates = supabaseService.subscribeToCollection('rates', [], (data) => {
       setRates(data);
     });
 
-    const unsubSettings = firebaseService.subscribeToCollection('adminSettings', [], (data) => {
+    const unsubSettings = supabaseService.subscribeToCollection('adminSettings', [], (data) => {
       const ciSettings = data.find(s => s.key === 'cash_in_settings');
       const globalSettings = data.find(s => s.key === 'global_settings');
 
@@ -162,15 +162,15 @@ export default function CashIn() {
     setIsSubmitting(true);
     try {
       // 1. Verify Password first
-      const { error: authError } = await firebaseService.signIn(profile.email, password);
+      const { error: authError } = await supabaseService.signIn(profile.email, password);
       if (authError) {
         toast.error('Incorrect password. Please try again.');
         setIsSubmitting(false);
         return;
       }
 
-      const realProofUrl = await firebaseService.uploadFile(proofFile);
-      const tx = {
+      const realProofUrl = await supabaseService.uploadFile(proofFile);
+      const tx: any = {
         uid: profile.uid,
         user_name: profile.full_name || profile.displayName || "Customer",
         full_name: profile.full_name || profile.displayName || "Customer",
@@ -188,7 +188,7 @@ export default function CashIn() {
         description: `Cash In ${amountSource} ${currentCountry.currency} from ${selectedCountry}`
       };
 
-      const docId = await firebaseService.addDocument('transactions', tx);
+      const docId = await supabaseService.addDocument('transactions', tx);
       if (docId) {
         // Trigger Telegram update
         fetch('/api/telegram-notifier', {

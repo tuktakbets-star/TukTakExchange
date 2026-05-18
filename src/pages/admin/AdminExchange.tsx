@@ -52,7 +52,7 @@ export default function AdminExchange() {
 
   useEffect(() => {
     const unsubTX = supabaseService.subscribeToCollection('transactions', [], (data) => {
-      setRequests(data.filter((tx: any) => tx.type === 'exchange'));
+      setRequests(data.filter((tx: any) => tx.type?.toLowerCase() === 'exchange'));
       setIsProcessing(prev => {
         const next = { ...prev };
         data.forEach((d: any) => delete next[d.id]);
@@ -142,6 +142,25 @@ export default function AdminExchange() {
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [viewerSrc, setViewerSrc] = useState<string | null>(null);
   const [isViewerOpen, setIsViewerOpen] = useState(false);
+
+  const handleStartProcessing = async (tx: any) => {
+    setIsProcessing(prev => ({ ...prev, [tx.id]: true }));
+    try {
+      await supabaseService.updateDocument('transactions', tx.id, { 
+        status: 'processing',
+        updated_at: new Date().toISOString()
+      });
+      toast.success('Task started.');
+    } catch (error) {
+      toast.error('Failed to start task');
+    } finally {
+      setIsProcessing(prev => {
+        const next = { ...prev };
+        delete next[tx.id];
+        return next;
+      });
+    }
+  };
 
   const handleConfirmPaid = async (tx: any) => {
     setConfirmConfig({
@@ -317,10 +336,24 @@ export default function AdminExchange() {
     }
   };
 
-  const filteredRequests = requests.filter(req => {
+  const filteredRequests = requests.sort((a, b) => new Date(b.created_at || b.createdAt || 0).getTime() - new Date(a.created_at || a.createdAt || 0).getTime()).filter(req => {
     const user = users.find(u => u.uid === req.uid);
-    return user?.displayName?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-           req.receiverInfo?.name?.toLowerCase().includes(searchQuery.toLowerCase());
+    const searchLower = searchQuery.toLowerCase();
+    
+    // If search is empty, show everything mapped to this type
+    if (!searchQuery) return true;
+
+    const matchesUser = user && (
+      user.displayName?.toLowerCase().includes(searchLower) ||
+      user.email?.toLowerCase().includes(searchLower) ||
+      user.uid?.toLowerCase().includes(searchLower)
+    );
+    
+    const receiverName = req.receiverInfo?.name || req.receiver_info?.name || req.bankInfo?.accountName || req.bank_info?.account_name || '';
+    const matchesReceiver = receiverName.toLowerCase().includes(searchLower);
+    const matchesId = req.id.toLowerCase().includes(searchLower);
+    
+    return matchesUser || matchesReceiver || matchesId;
   });
 
   return (
@@ -429,6 +462,7 @@ export default function AdminExchange() {
               <tr className="text-slate-500 text-[10px] uppercase tracking-[0.2em] border-b border-white/5">
                 <th className="px-8 py-5">User</th>
                 <th className="px-8 py-5">Amount</th>
+                <th className="px-8 py-5">Commission</th>
                 <th className="px-8 py-5">Receiver Details</th>
                 <th className="px-8 py-5">Status</th>
                 <th className="px-8 py-5 text-right">Actions</th>
@@ -463,6 +497,11 @@ export default function AdminExchange() {
                           <ArrowRight className="w-3 h-3 text-slate-500" />
                           <p className="font-bold text-brand-blue">{(tx.target_amount || tx.targetAmount)} {(tx.target_currency || tx.targetCurrency)}</p>
                         </div>
+                      </td>
+                      <td className="px-8 py-6">
+                        <p className="font-bold text-emerald-500">
+                          {tx.commissionAmount || tx.commission_amount ? `₫${(tx.commissionAmount || tx.commission_amount).toLocaleString()}` : '-'}
+                        </p>
                       </td>
                       <td className="px-8 py-6">
                         <div className="space-y-1">
@@ -520,6 +559,16 @@ export default function AdminExchange() {
                           {(tx.status?.toLowerCase().trim() === 'accepted') && (
                             <Button 
                               size="sm" 
+                              className="bg-indigo-600 hover:bg-indigo-500 h-10 px-6 rounded-xl font-bold shadow-lg shadow-indigo-600/30"
+                              onClick={() => handleStartProcessing(tx)}
+                              disabled={isProcessing[tx.id]}
+                            >
+                              {isProcessing[tx.id] ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Start Processing'}
+                            </Button>
+                          )}
+                          {(tx.status?.toLowerCase().trim() === 'processing') && (
+                            <Button 
+                              size="sm" 
                               className="bg-green-600 hover:bg-green-500 h-10 px-6 rounded-xl font-bold shadow-lg shadow-green-600/30 animate-pulse"
                               onClick={() => handleConfirmPaid(tx)}
                               disabled={isProcessing[tx.id]}
@@ -575,6 +624,15 @@ export default function AdminExchange() {
               </AnimatePresence>
             </tbody>
           </table>
+          {filteredRequests.length === 0 && (
+            <div className="py-20 text-center flex flex-col items-center justify-center">
+              <div className="w-20 h-20 bg-white/5 rounded-[2rem] flex items-center justify-center mb-4">
+                <RefreshCw className="w-10 h-10 text-slate-700" />
+              </div>
+              <h3 className="text-xl font-bold text-slate-400">No Exchange Requests</h3>
+              <p className="text-sm text-slate-600 mt-2">New requests from users will appear here automatically.</p>
+            </div>
+          )}
         </div>
 
         {/* Mobile View */}
@@ -667,6 +725,15 @@ export default function AdminExchange() {
                         </Button>
                       )}
                       {status === 'accepted' && (
+                        <Button 
+                          className="flex-1 bg-indigo-600 hover:bg-indigo-500 h-11 rounded-2xl font-bold text-xs"
+                          onClick={() => handleStartProcessing(tx)}
+                          disabled={isProcessing[tx.id]}
+                        >
+                          {isProcessing[tx.id] ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Start Task'}
+                        </Button>
+                      )}
+                      {status === 'processing' && (
                         <Button 
                           className="flex-1 bg-green-600 hover:bg-green-500 h-11 rounded-2xl font-bold text-xs animate-pulse"
                           onClick={() => handleConfirmPaid(tx)}

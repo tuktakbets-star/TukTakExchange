@@ -92,47 +92,26 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
 
   const handleAccept = async () => {
     if (!selectedOrder || !operator) return;
-    toast.loading('Accepting order...', { id: 'accept' });
+    toast.loading('Claiming order...', { id: 'accept' });
     
     try {
-      // Check current status to avoid race conditions
-      const { data: currentOrder } = await supabaseService.getDocument('transactions', selectedOrder.id);
+      const res = await supabaseService.claimOrder(selectedOrder.id, operator.id);
       
-      if (!currentOrder) {
-        toast.error('Order not found', { id: 'accept' });
+      if (res.success) {
+        toast.success('Order claimed successfully!', { id: 'accept' });
+        const updatedOrder = { ...selectedOrder, status: 'accepted', assigned_sub_admin_id: operator.id };
+        setSelectedOrder(updatedOrder);
+        setOrders((prev: any[]) => prev.map(o => o.id === selectedOrder.id ? updatedOrder : o));
         setIsAcceptConfirmOpen(false);
-        return;
+        setIsStartConfirmOpen(true);
+      } else {
+        toast.error(res.message || 'Failed to claim order', { id: 'accept' });
+        setIsAcceptConfirmOpen(false);
       }
-
-      const assignedId = currentOrder.assigned_sub_admin_id || currentOrder.assignedSubAdminId;
       
-      if (currentOrder.status !== 'pending' && currentOrder.status !== 'accepted') {
-        toast.error('Order is already being processed or finished by someone else.', { id: 'accept' });
-        setIsAcceptConfirmOpen(false);
-        fetchData();
-        return;
-      }
-
-      if (assignedId && assignedId !== operator.id) {
-        toast.error('This order has already been claimed by another operator.', { id: 'accept' });
-        setIsAcceptConfirmOpen(false);
-        fetchData();
-        return;
-      }
-
-      await supabaseService.updateDocument('transactions', selectedOrder.id, {
-        status: 'accepted',
-        assigned_sub_admin_id: operator.id,
-        sub_admin_action: 'accepted',
-        sub_admin_actioned_at: new Date().toISOString(),
-        claim_time: new Date().toISOString()
-      });
-      
-      toast.success('Order claimed. Find it in Ongoing list to Start Processing.', { id: 'accept' });
-      setIsAcceptConfirmOpen(false);
       fetchData();
     } catch (error) {
-      toast.error('Failed to accept', { id: 'accept' });
+      toast.error('Unexpected error while claiming', { id: 'accept' });
     }
   };
 
@@ -196,7 +175,6 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
         sub_admin_action: 'mark_as_paid',
         sub_admin_actioned_at: new Date().toISOString(),
         assigned_sub_admin_id: operator.id,
-        assignedSubAdminId: operator.id,
         paid_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       });
@@ -336,7 +314,7 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
                   const isUnassigned = !saId;
                   const isOther = saId && saId !== operator?.id;
 
-                  const allowed = operator?.allowed_services || [];
+                  const allowed = operator?.allowedServices || [];
                   const isAllowed = !allowed.length || allowed.includes(o.type?.toLowerCase());
                   return isAllowed && !isOther;
                 })
@@ -488,7 +466,7 @@ export default function OperatorExchange({ mode = 'exchange' }: { mode?: 'exchan
               const isUnassigned = !saId;
               const isOther = saId && saId !== operator?.id;
 
-              const allowed = operator?.allowed_services || [];
+              const allowed = operator?.allowedServices || [];
               const isAllowed = !allowed.length || allowed.includes(o.type?.toLowerCase());
               return isAllowed && !isOther;
             })

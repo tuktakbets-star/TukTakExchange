@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
-import { firebaseService, where } from '../lib/firebaseService';
+import { supabaseService, where } from '../lib/supabaseService';
 import { 
   User, 
   Mail, 
@@ -62,7 +62,7 @@ export default function Profile() {
     try {
       // 1. Check for uniqueness (Phone) - exclude self
       if (phoneNumber.trim() !== profile.phoneNumber) {
-        const checkPhone = await firebaseService.getCollection('users', [
+        const checkPhone = await supabaseService.getCollection('users', [
           where('phoneNumber', '==', phoneNumber.trim())
         ]);
         if (checkPhone.length > 0) {
@@ -72,7 +72,7 @@ export default function Profile() {
         }
       }
 
-      await firebaseService.updateDocument('users', profile.uid, {
+      await supabaseService.updateDocument('users', profile.uid, {
         displayName,
         phoneNumber: phoneNumber.trim(),
         accountNumber: phoneNumber.trim() // Keep them synced as in registration
@@ -111,8 +111,8 @@ export default function Profile() {
         submittedAt: new Date().toISOString()
       };
       
-      await firebaseService.addDocument('kycSubmissions', submission);
-      await firebaseService.updateDocument('users', profile.uid, { 
+      await supabaseService.addDocument('kycSubmissions', submission);
+      await supabaseService.updateDocument('users', profile.uid, { 
         kycStatus: 'pending',
         kycData: {
           passportUrl: passportBase64,
@@ -144,7 +144,7 @@ export default function Profile() {
     setIsUploadingPhoto(true);
     try {
       const base64 = await toBase64(file);
-      await firebaseService.updateDocument('users', profile.uid, {
+      await supabaseService.updateDocument('users', profile.uid, {
         photoURL: base64
       });
       toast.success(t('profile_updated'));

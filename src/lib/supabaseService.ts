@@ -472,6 +472,12 @@ export const supabaseService = {
     });
   },
 
+  async updatePassword(password: string) {
+    return await supabase.auth.updateUser({
+      password: password
+    });
+  },
+
   async processSubAdminCommission(tx: any, latestBalance?: number) {
     if (!tx || (!tx.assignedSubAdminId && !tx.assigned_sub_admin_id)) return;
     
@@ -557,6 +563,52 @@ export const supabaseService = {
 
     console.log(`[Commission] Order #${tx.id} updated with commission_amount: ${commissionAmount}`);
     return commissionAmount;
+  },
+
+  async claimOrder(orderId: string, operatorId: string) {
+    try {
+      // First, find the order to check current status and assignee
+      const { data: tx, error: fetchError } = await (supabase as any)
+        .from('transactions')
+        .select('status, assigned_sub_admin_id')
+        .eq('id', orderId)
+        .maybeSingle();
+
+      if (fetchError) throw fetchError;
+      if (!tx) return { success: false, message: 'Order not found.' };
+
+      // Allow if:
+      // 1. Status is pending AND (assigned_to_me OR assigned_to_nobody)
+      const isAlreadyAssignedToMe = tx.assigned_sub_admin_id === operatorId;
+      const isUnassigned = !tx.assigned_sub_admin_id;
+
+      if (tx.status !== 'pending') {
+        return { success: false, message: `This order is already ${tx.status}.` };
+      }
+
+      if (!isAlreadyAssignedToMe && !isUnassigned) {
+        return { success: false, message: 'This order has already been claimed by another operator.' };
+      }
+
+      const { error } = await (supabase as any)
+        .from('transactions')
+        .update({
+          status: 'accepted',
+          assigned_sub_admin_id: operatorId,
+          claim_time: new Date().toISOString(),
+          sub_admin_action: 'accepted',
+          sub_admin_actioned_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', orderId);
+
+      if (error) throw error;
+      
+      return { success: true };
+    } catch (error: any) {
+      console.error('Claim Order Error:', error);
+      return { success: false, message: error.message };
+    }
   },
 
   async signOut() {

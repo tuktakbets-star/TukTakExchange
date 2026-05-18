@@ -18,13 +18,21 @@ async function startServer() {
   app.use(cors());
   app.use(express.json());
 
+  // Global Request Logger to help debug API reaching issues
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/api')) {
+      log(`[API Request] ${req.method} ${req.path}`);
+    }
+    next();
+  });
+
   // Supabase Admin Client
   const supabaseUrl = process.env.VITE_SUPABASE_URL || "";
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || "";
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-  const TELEGRAM_BOT_TOKEN = "8057725957:AAHTq11nuL7JPjz_t-7OsuvZvfZIVDeEYGU";
-  const TELEGRAM_CHAT_ID = "-1003961332934";
+  const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "8057725957:AAHTq11nuL7JPjz_t-7OsuvZvfZIVDeEYGU";
+  const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "-1003961332934";
 
   // Health check
   app.get("/api/health", (req, res) => {
@@ -90,36 +98,33 @@ async function startServer() {
   // Support both POST (from Supabase) and GET (for browser testing)
   app.all("/api/telegram-notifier", async (req, res) => {
     try {
-      log(`🔔 TELEGRAM NOTIFIER CALL RECEIVED (${req.method})`);
-      
-      // Combine body and query for max flexibility
+      // Process payload from various sources
       const payload = { ...(req.body || {}), ...(req.query || {}) };
-      logWebhook(payload); 
+      log(`🔔 NOTIFIER: Received ${req.method} call to /api/telegram-notifier`);
       
       let record = payload.record || payload.new || payload.data || payload;
       
+      // Handle Supabase Webhook wrapper
       if (payload.content && typeof payload.content === 'object') {
         record = payload.content.record || payload.content;
       }
 
-      // If it's a GET request with specific params like ?user_name=...
+      // Manual GET test fallback
       if (req.method === 'GET' && req.query.user_name) {
         record = req.query;
       }
 
       if (!record || (typeof record === 'object' && Object.keys(record).length < 2)) {
-        log(`⚠️ Ignored empty/invalid payload.`);
-        return res.status(200).json({ status: "ignored", reason: "no_data_found" });
+        log(`⚠️ NOTIFIER: Ignored empty/invalid payload. Method: ${req.method}`);
+        return res.status(200).json({ status: "ignored", reason: "no_data_found", received: req.method });
       }
 
-      log(`✅ Processing Order for: ${record.user_name || record.userName || record.full_name || 'Unknown'}`);
-      
       const userName = record.user_name || record.userName || record.full_name || record.customer_name || record.name || "Customer";
       const orderType = (record.type || record.order_type || "Transaction").replace('_', ' ').toUpperCase();
       const amount = record.amount || record.source_amount || record.total_amount || 0;
       const currency = record.currency || (record.type?.includes('withdraw') ? 'BDT' : 'VND');
       const country = record.country || record.target_country || "Bangladesh";
-      const txId = record.id || record.uid || "test_" + Date.now();
+      const txId = record.id || record.uid || record.tx_id || "test_" + Date.now();
       
       let bankInfo: any = {};
       try {
@@ -128,12 +133,12 @@ async function startServer() {
         bankInfo = record;
       }
       
-      const bankName = (bankInfo as any).bankName || (bankInfo as any).bank_name || record.method || record.account_type || "N/A";
-      const holderName = (bankInfo as any).accountName || (bankInfo as any).account_name || (bankInfo as any).name || (bankInfo as any).receiverName || "N/A";
-      const accNumber = (bankInfo as any).accountNumber || (bankInfo as any).account_number || record.receiver_number || (bankInfo as any).account_no || "N/A";
+      const bankName = (bankInfo as any).bankName || (bankInfo as any).bank_name || record.method || record.account_type || record.receiverName || record.receiver_name || "N/A";
+      const holderName = (bankInfo as any).accountName || (bankInfo as any).account_name || (bankInfo as any).name || (bankInfo as any).receiverName || (bankInfo as any).receiver_name || record.receiverName || "N/A";
+      const accNumber = (bankInfo as any).accountNumber || (bankInfo as any).account_number || record.receiver_number || record.receiverPhone || record.receiver_phone || (bankInfo as any).account_no || "N/A";
 
       const now = new Date();
-      const timeStr = now.toLocaleDateString('en-GB') + ' ' + now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Dhaka' });
+      const timeStr = now.toLocaleDateString('en-GB') + ' ' + now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 
       let message = `🚀 <b>New ${orderType} Received!</b>\n\n` +
                       `👤 <b>User:</b> ${userName}\n` +
@@ -145,13 +150,13 @@ async function startServer() {
       }
 
       message += `💳 <b>Method:</b> ${bankName}\n` +
-                 `🔢 <b>Number:</b> ${accNumber}\n` +
+                 `🔢 <b>Number:</b> <code>${accNumber}</code>\n` +
                  `👤 <b>Holder:</b> ${holderName}\n` +
                  `🆔 <b>ID:</b> <code>${txId}</code>\n` +
                  `⏰ <b>Time:</b> ${timeStr}\n\n` +
                  `[Click here to view Admin Panel](${process.env.APP_URL || 'https://ai.studio'}/admin/transactions)`;
 
-      log(`📤 Sending message to Chat ID: ${TELEGRAM_CHAT_ID}`);
+      log(`📤 NOTIFIER: Attempting to send to Telegram chat ${TELEGRAM_CHAT_ID}...`);
       
       const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
         method: "POST",
@@ -166,16 +171,16 @@ async function startServer() {
         }),
       });
 
-      const data = await response.json();
-      log(`📤 Telegram API Response: ${JSON.stringify(data)}`);
-      
+      const data: any = await response.json();
       if (!data.ok) {
-        log(`❌ Telegram Send Failed: ${data.description}`);
+        log(`❌ NOTIFIER: Telegram Send Failed: ${data.description}`);
+      } else {
+        log(`✅ NOTIFIER: Telegram Message Sent Successfully.`);
       }
 
       res.json({ success: data.ok, record_id: txId, method: req.method, tg: data });
     } catch (error: any) {
-      log(`❌ Notifier Error: ${error.message}`);
+      log(`❌ NOTIFIER: Exception: ${error.message}`);
       res.status(500).json({ error: error.message });
     }
   });
@@ -432,20 +437,20 @@ async function startServer() {
             return;
           }
 
-          // PERMISSION CHECK (Enhanced)
-          const allowedServices = subAdmin.allowed_services || [];
-          const txType = tx.type?.toLowerCase(); // ensure lowercase matching
-          
-          // If sub-admin has restrictions, check if txType is allowed
-          if (allowedServices.length > 0 && !allowedServices.includes(txType)) {
-            log(`🚫 Access Denied: ${subAdmin.username} attempted to claim ${txType}`);
-            await sendMsg(TELEGRAM_BOT_TOKEN, cb.from.id, `❌ <b>নিষেধাজ্ঞা:</b> আপনি ${txType.replace('_', ' ').toUpperCase()} অর্ডার ক্লেইম করার জন্য অনুমোদিত নন।`);
+          // Check if already claimed OR no longer pending
+          const currentAssignee = tx.assigned_sub_admin_id || tx.assignedSubAdminId;
+          if (currentAssignee || tx.status !== 'pending') {
+            log(`⏳ Already claimed or processing: ${txId} (Status: ${tx.status}, Assigned: ${currentAssignee})`);
+            await sendMsg(TELEGRAM_BOT_TOKEN, cb.from.id, "⏳ দুঃখিত, এটি অলরেডি অন্য একজন ক্লেইম করেছেন বা প্রোসেসিং হচ্ছে।");
             return;
           }
 
-          if (tx.assigned_sub_admin_id) {
-            log(`⏳ Already claimed: ${txId}`);
-            await sendMsg(TELEGRAM_BOT_TOKEN, cb.from.id, "⏳ দুঃখিত, এটি অলরেডি অন্য একজন ক্লেইম করেছেন।");
+          // PERMISSION CHECK (Restored)
+          const allowedServices = subAdmin.allowed_services || [];
+          const txType = tx.type?.toLowerCase(); 
+          if (allowedServices.length > 0 && !allowedServices.includes(txType)) {
+            log(`🚫 Access Denied: ${subAdmin.username} attempted to claim ${txType}`);
+            await sendMsg(TELEGRAM_BOT_TOKEN, cb.from.id, `❌ <b>নিষেধাজ্ঞা:</b> আপনি ${txType.replace('_', ' ').toUpperCase()} অর্ডার ক্লেইম করার জন্য অনুমোদিত নন।`);
             return;
           }
 

@@ -58,7 +58,7 @@ export default function OperatorHistory() {
     
     // Calculate simple stats
     const totalAmount = (data || []).reduce((acc, curr) => acc + (curr.amount || 0), 0);
-    const totalCommission = (data || []).reduce((acc, curr) => acc + (curr.commission_amount || 0), 0);
+    const totalCommission = (data || []).reduce((acc, curr) => acc + (curr.commission_amount || curr.commissionAmount || 0), 0);
     setStats({
       totalHandled: data?.length || 0,
       totalAmount,
@@ -223,7 +223,7 @@ export default function OperatorHistory() {
                     </td>
                     <td className="px-6 py-4">
                        <span className="text-xs font-bold text-green-500">
-                         +{row.commission_amount ? row.commission_amount.toLocaleString() : '0'}
+                         +{(row.commission_amount || row.commissionAmount) ? (row.commission_amount || row.commissionAmount).toLocaleString() : '0'}
                        </span>
                     </td>
                     <td className="px-6 py-4">
@@ -283,7 +283,7 @@ export default function OperatorHistory() {
                 <div className="space-y-1">
                   <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">#{row.id.substring(0, 8).toUpperCase()}</p>
                   <p className="text-lg font-black text-white">{row.currency === 'VND' ? '₫' : row.currency === 'USDT' ? '$' : '৳'}{row.amount.toLocaleString()}</p>
-                  <p className="text-[10px] font-bold text-green-500">Commission: +{row.commission_amount ? row.commission_amount.toLocaleString() : '0'}</p>
+                  <p className="text-[10px] font-bold text-green-500">Commission: +{(row.commission_amount || row.commissionAmount) ? (row.commission_amount || row.commissionAmount).toLocaleString() : '0'}</p>
                 </div>
                 <div className={cn(
                   "px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider border",
@@ -379,11 +379,11 @@ export default function OperatorHistory() {
                       {selectedOrder.amount.toLocaleString()}
                     </h4>
                   </div>
-                  {selectedOrder.commission_amount > 0 && (
+                  {(selectedOrder.commission_amount > 0 || selectedOrder.commissionAmount > 0) && (
                     <div className="p-5 bg-green-500/10 border border-green-500/20 rounded-3xl space-y-1 col-span-2">
                       <p className="text-[10px] font-black text-green-500 uppercase tracking-widest leading-none mb-1">Commission Earned</p>
                       <h4 className="text-xl font-black text-green-500">
-                        +₫{selectedOrder.commission_amount.toLocaleString()}
+                        +₫{(selectedOrder.commission_amount || selectedOrder.commissionAmount).toLocaleString()}
                       </h4>
                     </div>
                   )}

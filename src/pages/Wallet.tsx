@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
-import { firebaseService, where, orderBy } from '../lib/firebaseService';
+import { supabaseService, where, orderBy } from '../lib/supabaseService';
 import { QRScanner } from '../components/QRScanner';
 import { calculateServiceFee } from '../lib/feeUtils';
 import { 
@@ -106,13 +106,13 @@ export default function Wallet() {
   useEffect(() => {
     if (!profile?.uid) return;
 
-    const unsubWallets = firebaseService.subscribeToCollection(
+    const unsubWallets = supabaseService.subscribeToCollection(
       'wallets',
       [where('uid', '==', profile.uid)],
       (data) => setWallets(data)
     );
 
-    const unsubTransactions = firebaseService.subscribeToCollection(
+    const unsubTransactions = supabaseService.subscribeToCollection(
       'transactions',
       [where('uid', '==', profile.uid)],
       (data) => {
@@ -126,7 +126,7 @@ export default function Wallet() {
       }
     );
 
-    const unsubActive = firebaseService.subscribeToCollection(
+    const unsubActive = supabaseService.subscribeToCollection(
       'transactions',
       [
         where('uid', '==', profile.uid), 
@@ -135,13 +135,13 @@ export default function Wallet() {
       (data) => setActiveTransactions(data)
     );
 
-    const unsubIncoming = firebaseService.subscribeToCollection(
+    const unsubIncoming = supabaseService.subscribeToCollection(
       'transactions',
       [where('receiverInfo.email', '==', profile.email), where('status', '==', 'pending')],
       (data) => setPendingIncoming(data)
     );
 
-    const unsubSettings = firebaseService.subscribeToCollection('adminSettings', [], (data) => {
+    const unsubSettings = supabaseService.subscribeToCollection('adminSettings', [], (data) => {
       const globalSettings = data.find(s => s.key === 'global_settings');
       if (globalSettings) setAdminSettings(globalSettings.value);
     });
@@ -181,7 +181,7 @@ export default function Wallet() {
 
     setIsSubmitting(true);
     try {
-      const realProofUrl = await firebaseService.uploadFile(proofFile);
+      const realProofUrl = await supabaseService.uploadFile(proofFile);
       const tx = {
         uid: profile?.uid,
         user_name: profile?.full_name || profile?.displayName || "Customer",
@@ -194,7 +194,7 @@ export default function Wallet() {
         description: `Deposit ${currency} to wallet`,
         proofUrl: realProofUrl
       };
-      const docId = await firebaseService.addDocument('transactions', tx);
+      const docId = await supabaseService.addDocument('transactions', tx);
       
       if (docId) {
         // --- SEND TELEGRAM NOTIFICATION DIRECTLY ---
@@ -241,9 +241,10 @@ export default function Wallet() {
     }
 
     setIsSubmitting(true);
+    setIsSubmitting(true);
     try {
       // 1. Verify Password first
-      const { error: authError } = await firebaseService.signIn(profile.email, withdrawPassword);
+      const { error: authError } = await supabaseService.signIn(profile.email, withdrawPassword);
       if (authError) {
         toast.error('Incorrect password. Please try again.');
         setIsSubmitting(false);
@@ -279,7 +280,7 @@ export default function Wallet() {
       };
 
       // 1. Create Transaction
-      const docId = await firebaseService.addDocument('transactions', tx);
+      const docId = await supabaseService.addDocument('transactions', tx);
 
       if (docId) {
         // --- SEND TELEGRAM NOTIFICATION DIRECTLY ---
@@ -294,7 +295,7 @@ export default function Wallet() {
       }
 
       // 2. Lock Balance (Hidden Deduction)
-      await firebaseService.updateWalletBalance(profile?.uid!, currency, 0, Number(amount) + Number(withdrawFee));
+      await supabaseService.updateWalletBalance(profile?.uid!, currency, 0, Number(amount) + Number(withdrawFee));
 
       toast.success('Withdrawal request submitted!');
       navigate(`/waiting/${docId}`);
@@ -333,7 +334,7 @@ export default function Wallet() {
     setIsConfirmingReceive(true);
     try {
       // 1. Verify Password
-      const { error: authError } = await firebaseService.signIn(profile.email, receivePassword);
+      const { error: authError } = await supabaseService.signIn(profile.email, receivePassword);
       if (authError) {
         toast.error('Incorrect password. Please try again.');
         setIsConfirmingReceive(false);
@@ -341,10 +342,10 @@ export default function Wallet() {
       }
 
       const tx = selectedTxForConfirm;
-      await firebaseService.updateDocument('transactions', tx.id, { status: 'completed' });
+      await supabaseService.updateDocument('transactions', tx.id, { status: 'completed' });
       
       // Process Sub-Admin Commission
-      await firebaseService.processSubAdminCommission(tx);
+      await supabaseService.processSubAdminCommission(tx);
       
       const walletId = `${profile?.uid}_${tx.targetCurrency || tx.currency}`;
       const wallet = wallets.find(w => w.currency === (tx.targetCurrency || tx.currency));
@@ -352,7 +353,7 @@ export default function Wallet() {
       const currentBalance = wallet?.balance || 0;
       const newBalance = currentBalance + (tx.targetAmount || tx.amount);
 
-      await firebaseService.setDocument('wallets', walletId, {
+      await supabaseService.setDocument('wallets', walletId, {
         uid: profile?.uid,
         currency: tx.targetCurrency || tx.currency,
         balance: newBalance,
@@ -382,7 +383,7 @@ export default function Wallet() {
 
   const handleAppeal = async (tx: any) => {
     try {
-      await firebaseService.updateDocument('transactions', tx.id, { 
+      await supabaseService.updateDocument('transactions', tx.id, { 
         status: 'disputed',
         disputedAt: new Date().toISOString(),
         disputeReason: 'User reported issue with transaction'

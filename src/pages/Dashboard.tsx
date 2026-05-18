@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { firebaseService, where, orderBy, limit } from '../lib/firebaseService';
+import { supabaseService, where, orderBy, limit } from '../lib/supabaseService';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Wallet, 
@@ -80,14 +80,14 @@ export default function Dashboard() {
     if (!profile?.uid) return;
 
     const fetchData = async () => {
-      const activeData = await firebaseService.getCollection('transactions', [
+      const activeData = await supabaseService.getCollection('transactions', [
         where('uid', '==', profile.uid),
         where('status', 'in', ['pending', 'accepted', 'processing', 'paid', 'waiting_confirmation', 'mark_as_paid', 'disputed']),
         orderBy('createdAt', 'desc')
       ]);
       setActiveTransactions(activeData || []);
       
-      const txData = await firebaseService.getCollection('transactions', [
+      const txData = await supabaseService.getCollection('transactions', [
         where('uid', '==', profile.uid),
         orderBy('createdAt', 'desc'),
         limit(5)
@@ -98,19 +98,19 @@ export default function Dashboard() {
     fetchData();
     const interval = setInterval(fetchData, 30000); // 30s pulse
 
-    const unsubWallets = firebaseService.subscribeToCollection(
+    const unsubWallets = supabaseService.subscribeToCollection(
       'wallets',
       [where('uid', '==', profile.uid)],
       (data) => setWallets(data)
     );
 
-    const unsubTransactions = firebaseService.subscribeToCollection(
+    const unsubTransactions = supabaseService.subscribeToCollection(
       'transactions',
       [where('uid', '==', profile.uid), orderBy('createdAt', 'desc'), limit(5)],
       (data) => setTransactions(data)
     );
 
-    const unsubActive = firebaseService.subscribeToCollection(
+    const unsubActive = supabaseService.subscribeToCollection(
       'transactions',
       [
         where('uid', '==', profile.uid), 
@@ -120,11 +120,11 @@ export default function Dashboard() {
       (data) => setActiveTransactions(data)
     );
 
-    const unsubRates = firebaseService.subscribeToCollection('rates', [], (data) => {
+    const unsubRates = supabaseService.subscribeToCollection('rates', [], (data) => {
       setRates(data);
     });
 
-    const unsubNotifications = firebaseService.subscribeToCollection(
+    const unsubNotifications = supabaseService.subscribeToCollection(
       'notifications',
       [where('uid', '==', profile.uid), orderBy('createdAt', 'desc'), limit(5)],
       (data) => setNotifications(data)
@@ -143,7 +143,7 @@ export default function Dashboard() {
 
   const handleNotificationClick = async (notif: any) => {
     if (!notif.read) {
-      await firebaseService.updateDocument('notifications', notif.id, { read: true });
+      await supabaseService.updateDocument('notifications', notif.id, { read: true });
     }
     
     if (notif.txId) {
@@ -152,7 +152,7 @@ export default function Dashboard() {
         handleTransactionClick(tx);
       } else {
         // Fetch tx if not in recent
-        const { data: fetchedTx } = await firebaseService.getDocument('transactions', notif.txId);
+        const { data: fetchedTx } = await supabaseService.getDocument('transactions', notif.txId);
         if (fetchedTx) handleTransactionClick({ id: notif.txId, ...fetchedTx });
       }
     }
@@ -531,7 +531,9 @@ export default function Dashboard() {
                   )}>
                     {tx.type === 'deposit' || tx.type === 'receive' ? '+' : '-'} {tx.amount.toLocaleString()} {tx.currency}
                   </p>
-                  <p className="text-[10px] text-slate-500">{t('fee')}: ₫0</p>
+                  <p className="text-[10px] text-slate-500">
+                    {t('fee')}: ₫{(tx.fee || tx.commission_amount || tx.commissionAmount || 0).toLocaleString()}
+                  </p>
                 </div>
                 <div className="flex items-center gap-3">
                   <Badge variant="outline" className={cn(

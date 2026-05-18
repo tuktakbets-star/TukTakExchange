@@ -439,7 +439,14 @@ export default function AdminSubAdmins() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {[
           { label: 'Total Operators', value: subAdmins.length, icon: User, color: 'blue' },
-          { label: 'Total team Balance', value: `${subAdmins[0]?.balanceType === 'BDT' ? '৳' : subAdmins[0]?.balanceType === 'USDT' ? '$' : '₫'}${subAdmins.reduce((acc, curr) => acc + (ledgerBalances[curr.id] ?? curr.walletBalance ?? curr.wallet_balance ?? 0), 0).toLocaleString()}`, icon: Wallet, color: 'green' },
+          { label: 'Total team Balance', value: `${subAdmins[0]?.balanceType === 'BDT' ? '৳' : subAdmins[0]?.balanceType === 'USDT' ? '$' : '₫'}${subAdmins.reduce((acc, curr) => {
+            const docBalance = curr.walletBalance ?? curr.wallet_balance ?? curr.vndBalance ?? curr.vnd_balance ?? 0;
+            const ledgerBalance = ledgerBalances[curr.id];
+            // Only use ledgerBalance if it's NOT 0 OR if we explicitly want to trust it.
+            // Since the user reported Admin seeing 0, we should prefer the document balance if ledger is 0 but doc is not.
+            const balance = (ledgerBalance && ledgerBalance !== 0) ? ledgerBalance : docBalance;
+            return acc + Number(balance);
+          }, 0).toLocaleString()}`, icon: Wallet, color: 'green' },
           { label: 'Currently Active', value: subAdmins.filter(s => s.status === 'active').length, icon: ShieldCheck, color: 'cyan' },
         ].map((stat, i) => (
           <div key={i} className="p-8 bg-[#161b22] border border-white/5 rounded-[2.5rem] relative overflow-hidden group">
@@ -544,7 +551,7 @@ export default function AdminSubAdmins() {
                               </div>
                            </td>
                            <td className="px-8 py-6">
-                              <span className="text-lg font-black text-white">{sub.balanceType === 'BDT' ? '৳' : sub.balanceType === 'USDT' ? '$' : '₫'}{(ledgerBalances[sub.id] ?? sub.walletBalance ?? sub.wallet_balance ?? 0).toLocaleString()}</span>
+                              <span className="text-lg font-black text-white">{sub.balanceType === 'BDT' ? '৳' : sub.balanceType === 'USDT' ? '$' : '₫'}{(sub.walletBalance ?? sub.wallet_balance ?? sub.vndBalance ?? sub.vnd_balance ?? 0).toLocaleString()}</span>
                            </td>
                            <td className="px-8 py-6 text-center">
                               <span className={cn(
@@ -902,7 +909,10 @@ export default function AdminSubAdmins() {
               <div className="p-6 bg-white/5 rounded-2xl border border-white/10 flex items-center justify-between">
                 <div>
                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Current Balance</p>
-                  <p className="text-xl font-black text-white mt-1">{selectedSubAdmin?.balanceType === 'BDT' ? '৳' : selectedSubAdmin?.balanceType === 'USDT' ? '$' : '₫'}{(ledgerBalances[selectedSubAdmin?.id] ?? selectedSubAdmin?.walletBalance ?? selectedSubAdmin?.wallet_balance ?? 0).toLocaleString()}</p>
+                  <p className="text-xl font-black text-white mt-1">
+                    {selectedSubAdmin?.balanceType === 'BDT' ? '৳' : selectedSubAdmin?.balanceType === 'USDT' ? '$' : '₫'}
+                    {Number(selectedSubAdmin?.walletBalance ?? selectedSubAdmin?.wallet_balance ?? selectedSubAdmin?.vndBalance ?? selectedSubAdmin?.vnd_balance ?? 0).toLocaleString()}
+                  </p>
                 </div>
                 <div className="w-12 h-12 bg-green-600/20 rounded-xl flex items-center justify-center">
                   <Wallet className="w-6 h-6 text-green-500" />

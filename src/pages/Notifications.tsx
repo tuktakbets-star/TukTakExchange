@@ -5,9 +5,8 @@ import { Button } from '@/components/ui/button';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { firebaseService, query, collection, where, orderBy, onSnapshot, db } from '../lib/firebaseService';
+import { supabaseService, orderBy } from '../lib/supabaseService';
 import { useAuth } from '../hooks/useAuth';
-import { auth } from '../lib/firebase';
 import { toast } from 'sonner';
 
 export default function Notifications() {
@@ -22,21 +21,23 @@ export default function Notifications() {
 
     // We can't easily do (targetId == 'all' OR targetId == uid) in a single simple query with where
     // So we subscribe to all and filter client-side for simplicity in this prototype
-    const q = query(collection(db, 'notifications'), orderBy('createdAt', 'desc'));
-    const unsub = onSnapshot(q, (snapshot) => {
-      const allNotifs = snapshot.docs.map(doc => ({ 
-        id: doc.id, 
-        ...doc.data(),
-        icon: (doc.data().type === 'alert' || doc.data().type === 'warning') ? AlertCircle :
-              doc.data().type === 'offer' ? Tag :
-              doc.data().type === 'success' ? CheckCircle2 :
-              doc.data().type === 'deposit' ? ArrowDownLeft : Info
-      }));
-      
-      const filtered = allNotifs.filter((n: any) => n.targetId === 'all' || n.targetId === profile.uid);
-      setNotifications(filtered);
-      setLoading(false);
-    });
+    const unsub = supabaseService.subscribeToCollection(
+      'notifications', 
+      [orderBy('createdAt', 'desc')],
+      (data) => {
+        const processed = (data || []).map(item => ({
+          ...item,
+          icon: (item.type === 'alert' || item.type === 'warning') ? AlertCircle :
+                item.type === 'offer' ? Tag :
+                item.type === 'success' ? CheckCircle2 :
+                item.type === 'deposit' ? ArrowDownLeft : Info
+        }));
+        
+        const filtered = processed.filter((n: any) => n.targetId === 'all' || n.targetId === profile.uid);
+        setNotifications(filtered);
+        setLoading(false);
+      }
+    );
 
     return () => unsub();
   }, [profile?.uid]);
@@ -49,7 +50,7 @@ export default function Notifications() {
 
   const deleteNotification = async (id: string) => {
     try {
-      await firebaseService.deleteDocument('notifications', id);
+      await supabaseService.deleteDocument('notifications', id);
       toast.success(t('notification_deleted', 'Notification deleted'));
     } catch (error) {
       toast.error(t('operation_failed'));

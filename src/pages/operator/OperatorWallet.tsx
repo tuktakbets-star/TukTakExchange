@@ -102,27 +102,6 @@ export default function OperatorWallet() {
 
   const flow = getTotalFlow();
 
-  // Sync ledger balance to DB to fix discrepancies
-  useEffect(() => {
-    if (operator && transactions.length > 0) {
-      const ledgerBalance = flow.credit - flow.debit;
-      // Check multiple possible field names just in case
-      const currentDbBalance = operator.walletBalance ?? operator.wallet_balance ?? operator.vndBalance ?? operator.vnd_balance ?? 0;
-      
-      if (Math.abs(currentDbBalance - ledgerBalance) > 1) { // 1 unit threshold
-        const targetId = !isNaN(Number(operator.id)) ? Number(operator.id) : operator.id;
-        supabaseService.updateDocument('sub_admins', targetId, {
-          walletBalance: ledgerBalance,
-          wallet_balance: ledgerBalance,
-          vndBalance: ledgerBalance,
-          vnd_balance: ledgerBalance,
-          updatedAt: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        });
-      }
-    }
-  }, [operator?.id, transactions, flow.credit, flow.debit]);
-
   function getTotalFlow() {
     const creditTypes = ['credit', 'deposit', 'refill', 'adjustment_add', 'bonus', 'commission'];
     const debitTypes = ['debit', 'withdraw', 'adjustment_sub', 'fee'];

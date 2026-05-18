@@ -114,7 +114,7 @@ export default function OperatorDashboard() {
       const isAllowed = (type: string) => !allowedServices.length || allowedServices.includes(type?.toLowerCase());
 
       const filteredOrders = (allRelevantOrders || []).filter(order => {
-        const saId = order.assignedSubAdminId || order.assignedSubAdminId;
+        const saId = order.assigned_sub_admin_id || order.assignedSubAdminId;
         // Show if assigned to me OR if pending and unassigned AND allowed for me
         const isPendingPublic = order.status === 'pending' && !saId;
         return saId === data.id || (isPendingPublic && isAllowed(order.type));
@@ -141,7 +141,7 @@ export default function OperatorDashboard() {
 
       // Active Conversations
       const convos = (allRelevantOrders || []).filter(tx => {
-        const saId = tx.assignedSubAdminId || tx.assignedSubAdminId;
+        const saId = tx.assigned_sub_admin_id || tx.assignedSubAdminId;
         return saId === data.id && 
           ['accepted', 'processing', 'paid', 'waiting_confirmation', 'mark_as_paid', 'disputed'].includes(tx.status);
       });
@@ -283,7 +283,15 @@ export default function OperatorDashboard() {
         </div>
 
         <div className="space-y-4 sm:space-y-6 relative">
-          <div className="flex items-center justify-between group">
+          <div className="flex items-baseline gap-1">
+               <span className="text-lg sm:text-2xl font-black">
+                 {currencySymbol}{(operator?.walletBalance ?? operator?.wallet_balance ?? 0).toLocaleString()}
+               </span>
+            </div>
+            <div className="h-px bg-white/10 w-full my-2" />
+            <span className="text-[10px] font-bold opacity-60 uppercase tracking-widest mb-4 block">{t('current_total_balance')}</span>
+
+            <div className="flex items-center justify-between group">
             <span className="text-xs sm:text-sm font-bold opacity-80 tracking-tight">{t('total_credit')}</span>
             <div className="flex items-baseline gap-1">
                <span className="text-lg sm:text-xl font-black">+{currencySymbol}{walletFlow.credit.toLocaleString()}</span>
@@ -309,7 +317,7 @@ export default function OperatorDashboard() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: idx * 0.1 }}
             onClick={() => {
-              const allowed = operator?.allowed_services || [];
+              const allowed = operator?.allowedServices || [];
               const canAccess = (type: string) => !allowed.length || allowed.includes(type);
 
               if (stat.label.includes('Available') || stat.label.includes('Claimed') || stat.label.includes('Active')) {

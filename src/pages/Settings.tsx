@@ -24,8 +24,7 @@ import {
   SelectTrigger, 
   SelectValue 
 } from '@/components/ui/select';
-import { auth } from '../lib/firebase';
-import { firebaseService } from '../lib/firebaseService';
+import { supabaseService } from '../lib/supabaseService';
 import { toast } from 'sonner';
 import { 
   Dialog, 
@@ -37,7 +36,6 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
 import { Plus, X, Trash2 } from 'lucide-react';
 
 export default function Settings() {
@@ -73,17 +71,13 @@ export default function Settings() {
 
     setIsUpdatingPassword(true);
     try {
-      const user = auth.currentUser;
-      if (user && user.email) {
-        const credential = EmailAuthProvider.credential(user.email, currentPassword);
-        await reauthenticateWithCredential(user, credential);
-        await updatePassword(user, newPassword);
-        toast.success('Password updated successfully');
-        setShowPasswordModal(false);
-        setCurrentPassword('');
-        setNewPassword('');
-        setConfirmPassword('');
-      }
+      const { error } = await supabaseService.updatePassword(newPassword);
+      if (error) throw error;
+      toast.success('Password updated successfully');
+      setShowPasswordModal(false);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
     } catch (error: any) {
       toast.error(error.message || 'Failed to update password');
     } finally {
@@ -109,7 +103,7 @@ export default function Settings() {
         createdAt: new Date().toISOString()
       };
 
-      await firebaseService.updateDocument('users', profile?.uid!, {
+      await supabaseService.updateDocument('users', profile?.uid!, {
         paymentMethods: [...currentMethods, newMethod]
       });
 
@@ -128,7 +122,7 @@ export default function Settings() {
     try {
       const currentMethods = profile?.paymentMethods || [];
       const filtered = currentMethods.filter((m: any) => m.id !== id);
-      await firebaseService.updateDocument('users', profile?.uid!, {
+      await supabaseService.updateDocument('users', profile?.uid!, {
         paymentMethods: filtered
       });
       toast.success('Payment method removed');
@@ -141,7 +135,7 @@ export default function Settings() {
     setTwoFactor(checked);
     if (profile?.uid) {
       try {
-        await firebaseService.updateDocument('users', profile.uid, {
+        await supabaseService.updateDocument('users', profile.uid, {
           twoFactorEnabled: checked
         });
         toast.success(checked ? t('two_factor_auth_active') : t('security_settings_updated'));
@@ -156,7 +150,7 @@ export default function Settings() {
     setNotifications(checked);
     if (profile?.uid) {
       try {
-        await firebaseService.updateDocument('users', profile.uid, {
+        await supabaseService.updateDocument('users', profile.uid, {
           notificationsEnabled: checked
         });
         toast.success(t('notification_settings_updated'));
@@ -164,6 +158,15 @@ export default function Settings() {
         toast.error(t('settings_update_failed'));
         setNotifications(!checked);
       }
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await supabaseService.signOut();
+      toast.success(t('logout_success'));
+    } catch (error) {
+      toast.error('Logout failed');
     }
   };
 
@@ -313,10 +316,7 @@ export default function Settings() {
           <Button 
             variant="ghost" 
             className="w-full h-14 rounded-2xl border border-red-500/20 text-red-500 hover:bg-red-500/10 hover:text-red-400 font-bold"
-            onClick={() => {
-              auth.signOut();
-              toast.success(t('logout_success'));
-            }}
+            onClick={handleLogout}
           >
             <LogOut className="w-5 h-5 mr-2" />
             {t('logout_all_devices')}

@@ -52,7 +52,10 @@ export default function AdminDeposits() {
 
   useEffect(() => {
     const unsubTX = supabaseService.subscribeToCollection('transactions', [], (data) => {
-      setRequests(data.filter((tx: any) => tx.type === 'deposit' || tx.type === 'cash_in' || tx.type === 'add_money'));
+      setRequests(data.filter((tx: any) => {
+        const type = tx.type?.toLowerCase();
+        return type === 'deposit' || type === 'cash_in' || type === 'add_money' || type === 'cashin';
+      }));
     });
     const unsubUsers = supabaseService.subscribeToCollection('users', [], (data) => {
       setUsers(data);
@@ -209,6 +212,18 @@ export default function AdminDeposits() {
     }
   };
 
+  const handleAccept = async (tx: any) => {
+    try {
+      await supabaseService.updateDocument('transactions', tx.id, { 
+        status: 'accepted',
+        updated_at: new Date().toISOString()
+      });
+      toast.success('Order Accepted - You have claimed this task.');
+    } catch (error) {
+      toast.error('Failed to accept order');
+    }
+  };
+
   const handleApprove = async (tx: any) => {
     setConfirmConfig({
       title: t('approve_deposit'),
@@ -274,11 +289,18 @@ export default function AdminDeposits() {
     setIsConfirmOpen(true);
   };
 
-  const filteredRequests = requests.filter(req => {
+  const filteredRequests = requests.sort((a, b) => new Date(b.created_at || b.createdAt || 0).getTime() - new Date(a.created_at || a.createdAt || 0).getTime()).filter(req => {
     const user = users.find(u => u.uid === req.uid);
     const matchesTab = activeTab === 'add_money' ? (req.type === 'deposit' || req.type === 'add_money') : req.type === 'cash_in';
-    const matchesSearch = user?.displayName?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                         user?.uid?.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    if (!searchQuery) return matchesTab;
+
+    const searchLower = searchQuery.toLowerCase();
+    const matchesSearch = (user?.displayName?.toLowerCase().includes(searchLower)) || 
+                         (user?.uid?.toLowerCase().includes(searchLower)) ||
+                         (user?.email?.toLowerCase().includes(searchLower)) ||
+                         (req.id.toLowerCase().includes(searchLower));
+    
     return matchesTab && matchesSearch;
   });
 
@@ -636,16 +658,37 @@ export default function AdminDeposits() {
                       <td className="px-8 py-6">
                         <Badge className={cn(
                           "rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider",
-                          tx.status === 'completed' ? "bg-green-500/10 text-green-500 border border-green-500/20" :
+                          tx.status === 'completed' || tx.status === 'approved' ? "bg-green-500/10 text-green-500 border border-green-500/20" :
                           tx.status === 'pending' ? "bg-yellow-500/10 text-yellow-500 border border-yellow-500/20" :
+                          tx.status === 'accepted' ? "bg-blue-500/10 text-blue-500 border border-blue-500/20" :
                           "bg-red-500/10 text-red-500 border border-red-500/20"
                         )}>
                           {tx.status}
                         </Badge>
                       </td>
                       <td className="px-8 py-6 text-right">
-                        {tx.status === 'pending' ? (
-                          <div className="flex justify-end gap-2">
+                        <div className="flex justify-end gap-2">
+                          {tx.status === 'pending' && (
+                            <>
+                              <Button 
+                                size="sm" 
+                                className="bg-brand-blue hover:bg-blue-500 h-9 px-4 rounded-xl"
+                                onClick={() => handleAccept(tx)}
+                              >
+                                {t('accept')}
+                              </Button>
+                              <Button 
+                                size="sm" 
+                                variant="cancel" 
+                                className="h-9 px-4 rounded-xl"
+                                onClick={() => handleReject(tx)}
+                              >
+                                <XCircle className="w-4 h-4 mr-2" />
+                                {t('reject')}
+                              </Button>
+                            </>
+                          )}
+                          {tx.status === 'accepted' && (
                             <Button 
                               size="sm" 
                               variant="confirm"
@@ -655,19 +698,11 @@ export default function AdminDeposits() {
                               <CheckCircle2 className="w-4 h-4 mr-2" />
                               {t('approve')}
                             </Button>
-                            <Button 
-                              size="sm" 
-                              variant="cancel" 
-                              className="h-9 px-4 rounded-xl"
-                              onClick={() => handleReject(tx)}
-                            >
-                              <XCircle className="w-4 h-4 mr-2" />
-                              {t('reject')}
-                            </Button>
-                          </div>
-                        ) : (
-                          <span className="text-slate-600 text-xs italic">{t('completed')}</span>
-                        )}
+                          )}
+                          {(tx.status === 'completed' || tx.status === 'approved') && (
+                            <span className="text-slate-600 text-xs italic">{t('completed')}</span>
+                          )}
+                        </div>
                       </td>
                     </motion.tr>
                   );
@@ -675,6 +710,15 @@ export default function AdminDeposits() {
               </AnimatePresence>
             </tbody>
           </table>
+          {filteredRequests.length === 0 && (
+            <div className="py-20 text-center flex flex-col items-center justify-center">
+              <div className="w-20 h-20 bg-white/5 rounded-[2rem] flex items-center justify-center mb-4">
+                <Wallet className="w-10 h-10 text-slate-700" />
+              </div>
+              <h3 className="text-xl font-bold text-slate-400">No Deposit Requests</h3>
+              <p className="text-sm text-slate-600 mt-2">Any Add Money or Cash In requests will appear here.</p>
+            </div>
+          )}
         </div>
 
         {/* Mobile View */}
