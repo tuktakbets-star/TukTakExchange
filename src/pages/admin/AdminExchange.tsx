@@ -368,7 +368,7 @@ export default function AdminExchange() {
             onClick={() => {
               setLoading(true);
               supabaseService.getCollection('transactions').then(data => {
-                setRequests(data.filter((tx: any) => tx.type === 'exchange'));
+                setRequests(data.filter((tx: any) => tx.type?.toLowerCase() === 'exchange'));
                 setLoading(false);
               });
             }}

@@ -49,12 +49,14 @@ async function startServer() {
     if (eventLogs.length > 20) eventLogs.shift();
     console.log(entry);
     
-    // Also append to a local file we can read
-    try {
-      import('fs').then(fs => {
-        fs.appendFileSync('server_logs.txt', entry + '\n');
-      });
-    } catch(e) {}
+    // Skip file logging in production/Vercel (read-only FS)
+    if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+      try {
+        import('fs').then(fs => {
+          fs.appendFileSync('server_logs.txt', entry + '\n');
+        });
+      } catch(e) {}
+    }
   };
 
   // Debug storage and last updates
@@ -72,6 +74,7 @@ async function startServer() {
     const protocol = req.headers['x-forwarded-proto'] || 'http';
     const host = req.headers.host;
     const currentBaseUrl = `${protocol}://${host}`;
+    const webhookUrl = `${currentBaseUrl}/api/telegram-webhook`;
 
     try {
       const bRes = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getMe`);
@@ -82,14 +85,18 @@ async function startServer() {
 
     res.json({
       status: "online",
+      deployment: process.env.VERCEL ? "Vercel (Polling Disabled)" : "Local/Generic",
       bot: botInfo?.ok ? "Connected ✅" : "Error ❌",
       bot_details: botInfo?.result,
       webhook_active: webhookInfo?.result?.url ? "Yes ✅" : "No ❌",
+      current_webhook_url: webhookInfo?.result?.url || "None",
+      suggested_webhook_url: webhookUrl,
       last_webhook_hits: webhookLogs,
       recent_logs: eventLogs, 
       instructions: {
         notifier_url: `${currentBaseUrl}/api/telegram-notifier`,
-        status: "Use the notifier_url in your Supabase Webhook configuration."
+        setup_webhook: `To enable bot replies on Vercel, visit: https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook?url=${webhookUrl}`,
+        troubleshooting: "If messages are not sending, ensure TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are set in Vercel Environment Variables."
       }
     });
   });
@@ -481,8 +488,12 @@ async function startServer() {
     }
   }
 
-  // Start Polling in background
-  pollUpdates();
+  // Start Polling in background (Only if NOT on Vercel)
+  if (!process.env.VERCEL) {
+    pollUpdates();
+  } else {
+    log("⚠️ Vercel detected: Polling Disabled. Set up a Webhook at /api/telegram-webhook to handle updates.");
+  }
 
   // Serve Frontend
   if (process.env.NODE_ENV !== "production") {

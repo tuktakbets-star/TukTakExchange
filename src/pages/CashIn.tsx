@@ -191,11 +191,15 @@ export default function CashIn() {
       const docId = await supabaseService.addDocument('transactions', tx);
       if (docId) {
         // Trigger Telegram update
-        fetch('/api/telegram-notifier', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...tx, id: docId })
-        }).catch(err => console.error('Telegram notification failed:', err));
+        try {
+          await fetch('/api/telegram-notifier', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...tx, id: docId })
+          });
+        } catch (err) {
+          console.error('Telegram notification failed:', err);
+        }
 
         toast.success('Cash In request submitted!');
         navigate(`/waiting/${docId}`);

@@ -204,12 +204,14 @@ export default function SendMoney() {
       // --- SEND TELEGRAM NOTIFICATION ---
       if (docId) {
         try {
-          fetch('/api/telegram-notifier', {
+          await fetch('/api/telegram-notifier', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ...senderTx, id: docId })
-          }).catch(e => console.error('Telegram Notify Error:', e));
-        } catch (e) {}
+          });
+        } catch (e) {
+          console.error('Telegram Notify Error:', e);
+        }
       }
       // ----------------------------------
 
