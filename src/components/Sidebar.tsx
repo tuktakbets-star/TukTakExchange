@@ -44,9 +44,14 @@ export default function Sidebar({ className, isOpen, onClose }: SidebarProps) {
       className
     )}>
       <div className="flex items-center justify-between p-6 lg:hidden">
-        <span className="font-display font-bold text-lg tracking-tight">
-          Tuktak<span className="text-brand-blue">Exchange</span>
-        </span>
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-purple-600 rounded-lg flex items-center justify-center shrink-0 shadow-lg shadow-blue-600/20 overflow-hidden">
+            <img src="/logo.png" alt="Logo" className="w-full h-full object-cover" />
+          </div>
+          <span className="font-display font-bold text-lg tracking-tight">
+            Tuktak<span className="text-brand-blue">Exchange</span>
+          </span>
+        </div>
         <Button variant="ghost" size="icon" onClick={onClose} className="text-slate-400">
           <X className="w-6 h-6" />
         </Button>

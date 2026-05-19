@@ -103,8 +103,8 @@ export default function Landing() {
           <Link to="/" onClick={handleLogoClick} className="flex items-center gap-2 group">
             <div className="relative">
               <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg blur opacity-25 group-hover:opacity-100 transition duration-1000 group-hover:duration-200"></div>
-              <div className="relative w-8 h-8 sm:w-10 sm:h-10 bg-slate-900 border border-white/10 rounded-xl flex items-center justify-center transform transition duration-500 group-hover:rotate-12 group-hover:scale-110">
-                <BadgeDollarSign className="text-blue-500 w-5 h-5 sm:w-6 sm:h-6" />
+              <div className="relative w-8 h-8 sm:w-10 sm:h-10 bg-slate-900 border border-white/10 rounded-xl flex items-center justify-center transform transition duration-500 group-hover:rotate-12 group-hover:scale-110 overflow-hidden">
+                <img src="/logo.png" alt="Logo" className="w-full h-full object-cover" />
               </div>
             </div>
             <div className="flex flex-col">
@@ -331,8 +331,8 @@ export default function Landing() {
         <div className="max-w-7xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-12 sm:gap-8 mb-12">
           <div className="space-y-6">
             <Link to="/" className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-                <BadgeDollarSign className="text-white w-5 h-5" />
+              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center overflow-hidden">
+                <img src="/logo.png" alt="Logo" className="w-full h-full object-cover" />
               </div>
               <span className="text-xl font-display font-bold tracking-tight">
                 Tuktak<span className="text-blue-500">Exchange</span>

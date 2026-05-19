@@ -28,7 +28,7 @@ export default function SplashScreen() {
           <div className="absolute -inset-4 bg-blue-500/20 rounded-full blur-2xl animate-pulse"></div>
           <div className="w-24 h-24 bg-slate-900 border-2 border-white/10 rounded-[2rem] flex items-center justify-center shadow-2xl relative overflow-hidden group">
             <div className="absolute inset-0 bg-gradient-to-tr from-blue-600/20 to-purple-600/20"></div>
-            <BadgeDollarSign className="text-blue-500 w-12 h-12 relative z-10" />
+            <img src="/logo.png" alt="Logo" className="w-16 h-16 relative z-10" />
           </div>
         </div>
         
