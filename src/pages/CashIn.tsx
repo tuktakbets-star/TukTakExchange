@@ -190,9 +190,6 @@ export default function CashIn() {
 
       const docId = await supabaseService.addDocument('transactions', tx);
       if (docId) {
-        // Trigger Telegram update
-        await supabaseService.sendTelegramNotification({ ...tx, id: docId });
-
         toast.success('Cash In request submitted!');
         navigate(`/waiting/${docId}`);
       } else {

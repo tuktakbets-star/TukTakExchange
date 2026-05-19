@@ -196,12 +196,6 @@ export default function Wallet() {
       };
       const docId = await supabaseService.addDocument('transactions', tx);
       
-      if (docId) {
-        // --- SEND TELEGRAM NOTIFICATION ---
-        await supabaseService.sendTelegramNotification({ ...tx, id: docId });
-        // -------------------------------------------
-      }
-
       toast.success('Deposit request submitted!');
       navigate(`/waiting/${docId}`);
     } catch (error) {
@@ -275,12 +269,6 @@ export default function Wallet() {
 
       // 1. Create Transaction
       const docId = await supabaseService.addDocument('transactions', tx);
-
-      if (docId) {
-        // --- SEND TELEGRAM NOTIFICATION ---
-        await supabaseService.sendTelegramNotification({ ...tx, id: docId });
-        // -------------------------------------------
-      }
 
       // 2. Lock Balance (Hidden Deduction)
       await supabaseService.updateWalletBalance(profile?.uid!, currency, 0, Number(amount) + Number(withdrawFee));

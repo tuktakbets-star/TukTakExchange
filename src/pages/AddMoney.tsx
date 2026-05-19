@@ -120,9 +120,6 @@ export default function AddMoney() {
 
       const docId = await supabaseService.addDocument('transactions', tx);
       if (docId) {
-        // Trigger Telegram update
-        await supabaseService.sendTelegramNotification({ ...tx, id: docId });
-
         toast.success(t('tx_submitted'));
         navigate(`/waiting/${docId}`);
       } else {

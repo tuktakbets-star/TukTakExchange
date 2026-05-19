@@ -149,10 +149,6 @@ export default function Recharge() {
       const docId = await supabaseService.addDocument('transactions', tx);
       
       if (docId) {
-        // --- SEND TELEGRAM NOTIFICATION ---
-        await supabaseService.sendTelegramNotification({ ...tx, id: docId });
-        // -------------------------------------------
-
         // Lock balance instead of direct deduction
         await supabaseService.updateWalletBalance(profile?.uid!, 'VND', 0, Number(amount) + Number(rechargeFee));
 

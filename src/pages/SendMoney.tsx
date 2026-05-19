@@ -201,12 +201,8 @@ export default function SendMoney() {
         description: `Internal Transfer from ${profile?.displayName || profile?.phoneNumber}`
       });
 
-      // --- SEND TELEGRAM NOTIFICATION ---
-      if (docId) {
-        await supabaseService.sendTelegramNotification({ ...senderTx, id: docId });
-      }
-      // ----------------------------------
-
+      // --- SEND TELEGRAM NOTIFICATION DISABLED (Handled by Webhook) ---
+      
       toast.success(t('p2p_transfer_success'));
       navigate('/wallet');
     } catch (error: any) {

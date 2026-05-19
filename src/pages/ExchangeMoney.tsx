@@ -360,10 +360,6 @@ export default function ExchangeMoney() {
         throw new Error('Database failed to create transaction record');
       }
 
-      // --- SEND TELEGRAM NOTIFICATION ---
-      await supabaseService.sendTelegramNotification({ ...tx, id: docId });
-      // -------------------------------------------
-
       // Lock balance immediately (Hidden deduction)
       const wallet = wallets.find(w => w.currency === sourceCurrency);
       if (wallet) {
