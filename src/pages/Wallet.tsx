@@ -198,15 +198,7 @@ export default function Wallet() {
       
       if (docId) {
         // --- SEND TELEGRAM NOTIFICATION ---
-        try {
-          await fetch('/api/telegram-notifier', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...tx, id: docId })
-          });
-        } catch (e) {
-          console.error('Telegram Notify Error:', e);
-        }
+        await supabaseService.sendTelegramNotification({ ...tx, id: docId });
         // -------------------------------------------
       }
 
@@ -286,15 +278,7 @@ export default function Wallet() {
 
       if (docId) {
         // --- SEND TELEGRAM NOTIFICATION ---
-        try {
-          await fetch('/api/telegram-notifier', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...tx, id: docId })
-          });
-        } catch (e) {
-          console.error('Telegram Notify Error:', e);
-        }
+        await supabaseService.sendTelegramNotification({ ...tx, id: docId });
         // -------------------------------------------
       }
 

@@ -203,15 +203,7 @@ export default function SendMoney() {
 
       // --- SEND TELEGRAM NOTIFICATION ---
       if (docId) {
-        try {
-          await fetch('/api/telegram-notifier', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...senderTx, id: docId })
-          });
-        } catch (e) {
-          console.error('Telegram Notify Error:', e);
-        }
+        await supabaseService.sendTelegramNotification({ ...senderTx, id: docId });
       }
       // ----------------------------------
 

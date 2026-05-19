@@ -147,6 +147,11 @@ async function startServer() {
       const now = new Date();
       const timeStr = now.toLocaleDateString('en-GB') + ' ' + now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 
+      const protocol = req.headers['x-forwarded-proto'] || 'https';
+      const host = req.headers.host;
+      const currentBaseUrl = `${protocol}://${host}`;
+      const appUrl = process.env.APP_URL || currentBaseUrl;
+
       let message = `🚀 <b>New ${orderType} Received!</b>\n\n` +
                       `👤 <b>User:</b> ${userName}\n` +
                       `🌍 <b>Country:</b> ${country}\n` +
@@ -161,7 +166,7 @@ async function startServer() {
                  `👤 <b>Holder:</b> ${holderName}\n` +
                  `🆔 <b>ID:</b> <code>${txId}</code>\n` +
                  `⏰ <b>Time:</b> ${timeStr}\n\n` +
-                 `[Click here to view Admin Panel](${process.env.APP_URL || 'https://ai.studio'}/admin/transactions)`;
+                 `<a href="${appUrl}/admin-dashboard">Click here to view Admin Panel</a>`;
 
       log(`📤 NOTIFIER: Attempting to send to Telegram chat ${TELEGRAM_CHAT_ID}...`);
       

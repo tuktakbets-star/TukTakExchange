@@ -565,6 +565,33 @@ export const supabaseService = {
     return commissionAmount;
   },
 
+  async sendTelegramNotification(payload: any) {
+    try {
+      console.log('[Telegram] Triggering notification via Edge Function...');
+      const { data, error } = await supabase.functions.invoke('telegram-notifier', {
+        body: payload
+      });
+      if (error) throw error;
+      return { success: true, data };
+    } catch (err: any) {
+      console.error('[Telegram] Edge Function Error:', err);
+      // Fallback to local API if on local dev
+      if (window.location.hostname === 'localhost' || window.location.hostname.includes('ais-dev')) {
+        try {
+          const res = await fetch('/api/telegram-notifier', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          return await res.json();
+        } catch (e) {
+          console.error('[Telegram] Local API Fallback failed:', e);
+        }
+      }
+      return { success: false, error: err.message };
+    }
+  },
+
   async claimOrder(orderId: string, operatorId: string) {
     try {
       // First, find the order to check current status and assignee
