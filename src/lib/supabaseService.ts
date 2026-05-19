@@ -567,28 +567,30 @@ export const supabaseService = {
 
   async sendTelegramNotification(payload: any) {
     try {
-      console.log('[Telegram] Triggering notification via Edge Function...');
-      const { data, error } = await supabase.functions.invoke('telegram-notifier', {
-        body: payload
+      console.log('[Telegram] Attempting notification via /api/telegram-notifier...');
+      const res = await fetch('/api/telegram-notifier', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
       });
-      if (error) throw error;
-      return { success: true, data };
-    } catch (err: any) {
-      console.error('[Telegram] Edge Function Error:', err);
-      // Fallback to local API if on local dev
-      if (window.location.hostname === 'localhost' || window.location.hostname.includes('ais-dev')) {
-        try {
-          const res = await fetch('/api/telegram-notifier', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          });
-          return await res.json();
-        } catch (e) {
-          console.error('[Telegram] Local API Fallback failed:', e);
-        }
+      
+      const data = await res.json();
+      if (res.ok && (data.success || data.ok)) {
+        console.log('[Telegram] Success ✅');
+        return { success: true, data };
       }
-      return { success: false, error: err.message };
+      
+      console.error('[Telegram] API Error ❌:', data);
+      
+      // Try Edge Function Fallback
+      console.log('[Telegram] Falling back to Edge Function...');
+      const edge = await supabase.functions.invoke('telegram-notifier', { body: payload });
+      if (!edge.error) return { success: true, data: edge.data };
+      
+      return { success: false, error: data.error || 'Failed to send notification' };
+    } catch (e: any) {
+      console.error('[Telegram] Network/Critical Error:', e);
+      return { success: false, error: e.message };
     }
   },
 

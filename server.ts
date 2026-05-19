@@ -166,7 +166,7 @@ async function startServer() {
                  `👤 <b>Holder:</b> ${holderName}\n` +
                  `🆔 <b>ID:</b> <code>${txId}</code>\n` +
                  `⏰ <b>Time:</b> ${timeStr}\n\n` +
-                 `<a href="${appUrl}/admin-dashboard">Click here to view Admin Panel</a>`;
+                 `<a href="${appUrl}/admin-dashboard">📥 ক্লেইম করুন (View Admin)</a>`;
 
       log(`📤 NOTIFIER: Attempting to send to Telegram chat ${TELEGRAM_CHAT_ID}...`);
       
@@ -177,6 +177,7 @@ async function startServer() {
           chat_id: TELEGRAM_CHAT_ID,
           text: message,
           parse_mode: "HTML",
+          disable_web_page_preview: true,
           reply_markup: {
             inline_keyboard: [[{ text: "📥 ক্লেইম করুন (Claim Now)", callback_data: `claim_${txId}` }]]
           }
